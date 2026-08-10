@@ -1,0 +1,4 @@
+{
+  "tv": true,
+  "note": "Presente apenas no flavor tv. A ausência deste arquivo (404) identifica o build de celular."
+}

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!--
+        `leanback` required=true is what files this as an Android TV app rather
+        than a phone app that happens to run on a box; declaring touchscreen
+        optional is the other half, without which TV launchers treat it as
+        incompatible.
+    -->
+    <uses-feature android:name="android.software.leanback" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+
+    <!--
+        The video buffer is `byte[]` on the Java heap, not native memory, so
+        the default 128-256MB growth limit on a set-top box is what the player
+        actually has to fit inside. Without this the allocator, the artwork
+        cache and Compose together ran the heap out mid-film. The buffer is
+        still sized from the heap it really gets at runtime (see
+        `PlaybackController`) — this raises the ceiling, it does not assume one.
+    -->
+    <application
+        android:name=".HubApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:largeHeap="true"
+        android:banner="@drawable/tv_banner"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:hardwareAccelerated="true"
+        android:usesCleartextTraffic="true"
+        android:theme="@style/Theme.MdblistHub">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density"
+            android:theme="@style/Theme.MdblistHub">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+                <!-- Kept so the same APK is reachable on a box with a normal
+                     launcher, which most cheap Android TV sticks ship. -->
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            WorkManager's automatic initializer runs before Application.onCreate
+            finishes, which is too early for it to be handed the factory that
+            knows how to build workers with dependencies. Removing it switches
+            WorkManager to on-demand initialisation via Configuration.Provider.
+        -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+    </application>
+</manifest>
