@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 
@@ -52,11 +53,12 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
     private suspend fun performSearch(query: String) {
         _isLoading.value = true
         try {
+            val preferredLang = graph.uiPreferences.language.first()
             kotlinx.coroutines.coroutineScope {
                 val searchDeferred = async {
                     graph.network.tmdb.search(
                         apiKey = ApiConfig.TMDB_KEY,
-                        language = "pt-BR",
+                        language = preferredLang,
                         query = query,
                         includeAdult = false,
                         page = 1
@@ -81,7 +83,7 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
                     if (keyword != null) {
                         graph.network.tmdb.discoverMovie(
                             apiKey = ApiConfig.TMDB_KEY,
-                            language = "pt-BR",
+                            language = preferredLang,
                             keywords = keyword.id.toString(),
                             page = 1
                         ).results.map { it.copy(mediaType = "movie") }
@@ -92,7 +94,7 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
                     if (keyword != null) {
                         graph.network.tmdb.discoverTv(
                             apiKey = ApiConfig.TMDB_KEY,
-                            language = "pt-BR",
+                            language = preferredLang,
                             keywords = keyword.id.toString(),
                             page = 1
                         ).results.map { it.copy(mediaType = "tv") }

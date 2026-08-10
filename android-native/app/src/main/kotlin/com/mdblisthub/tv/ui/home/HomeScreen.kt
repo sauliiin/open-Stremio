@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -62,6 +63,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
@@ -154,6 +157,7 @@ fun HomeScreen(
     onOpenTitle: (MediaItem) -> Unit,
     onOpenSearch: () -> Unit,
     onOpenAddons: () -> Unit,
+    onOpenSettings: () -> Unit,
     onResume: (ResumePoint) -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -365,14 +369,28 @@ fun HomeScreen(
     // Remembered because this composable recomposes on every card focus (it
     // reads `focused` for the hero panel), and neither of these depends on
     // that — rebuilding them per focus is pure allocation.
-    val rail = remember(isEditMode, HubColors.isCyberpunk, HubColors.isNetflixy) {
+    val menuHome = stringResource(R.string.menu_home)
+    val menuSearch = stringResource(R.string.menu_search)
+    val menuAddons = stringResource(R.string.menu_addons)
+    val menuLists = stringResource(R.string.menu_lists)
+    val menuListsDone = stringResource(R.string.menu_lists_done)
+    val menuThemeNormal = stringResource(R.string.menu_theme_normal)
+    val menuThemeCyberpunk = stringResource(R.string.menu_theme_cyberpunk)
+    val menuThemeNetflixy = stringResource(R.string.menu_theme_netflixy)
+    val menuSettings = stringResource(R.string.menu_settings)
+    val menuExit = stringResource(R.string.menu_exit)
+
+    val currentThemeName = if (HubColors.isCyberpunk) menuThemeCyberpunk else if (HubColors.isNetflixy) menuThemeNetflixy else menuThemeNormal
+
+    val rail = remember(isEditMode, HubColors.isCyberpunk, HubColors.isNetflixy, menuHome, menuSearch, menuAddons, menuLists, menuListsDone, currentThemeName, menuSettings, menuExit) {
         listOf(
-            RailItem("home", "Início", Icons.Default.Home),
-            RailItem("search", "Busca", Icons.Default.Search),
-            RailItem("addons", "Addons", Icons.Default.Extension),
-            RailItem("lists", if (isEditMode) "Concluir" else "Listas", if (isEditMode) Icons.Default.Check else Icons.AutoMirrored.Filled.ViewList),
-            RailItem("theme", if (HubColors.isCyberpunk) "Cyberpunk" else if (HubColors.isNetflixy) "Netflixy" else "Normal", Icons.Default.Palette),
-            RailItem("exit", "Sair", Icons.AutoMirrored.Filled.Logout),
+            RailItem("home", menuHome, Icons.Default.Home),
+            RailItem("search", menuSearch, Icons.Default.Search),
+            RailItem("addons", menuAddons, Icons.Default.Extension),
+            RailItem("lists", if (isEditMode) menuListsDone else menuLists, if (isEditMode) Icons.Default.Check else Icons.AutoMirrored.Filled.ViewList),
+            RailItem("theme", currentThemeName, Icons.Default.Palette),
+            RailItem("settings", menuSettings, Icons.Default.Settings),
+            RailItem("exit", menuExit, Icons.AutoMirrored.Filled.Logout),
         )
     }
     val resumeCards = remember(resumePoints) { resumePoints.map { it.toCardItem() } }
@@ -394,6 +412,7 @@ fun HomeScreen(
                         // Through the ViewModel, not HubColors directly: the
                         // choice has to be persisted as well as painted.
                         "theme" -> viewModel.cycleTheme()
+                        "settings" -> onOpenSettings()
                         "exit" -> showExitDialog = true
                     }
                 },
@@ -409,17 +428,17 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
                 ) {
                     Text(
-                        "Você está conectado ao Google",
+                        stringResource(R.string.home_empty_title),
                         style = MaterialTheme.typography.headlineSmall,
                         color = HubColors.Text,
                     )
                     Text(
-                        "Você pode configurar seus addons agora. A MDBList é opcional e pode ser vinculada depois.",
+                        stringResource(R.string.home_empty_desc),
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.TextDim,
                     )
                     HubButton(
-                        text = "Abrir Addons",
+                        text = stringResource(R.string.home_empty_button),
                         primary = true,
                         onClick = onOpenAddons,
                         modifier = Modifier.focusRequester(emptyStateFocusRequester),
@@ -428,9 +447,8 @@ fun HomeScreen(
                 return@Row
             }
 
-            if (!initialSyncComplete && lists.isEmpty() && feeds.isEmpty() && resumePoints.isEmpty() && extraCatalogs.isEmpty()) {
-                LoadingScreen(message = "Sincronizando suas listas…")
-                return@Row
+            if (lists.isNotEmpty() && allLists.isEmpty()) {
+                LoadingScreen(message = stringResource(R.string.home_syncing))
             }
 
             if (lists.isEmpty() && feeds.isEmpty() && resumePoints.isEmpty() && extraCatalogs.isEmpty()) {

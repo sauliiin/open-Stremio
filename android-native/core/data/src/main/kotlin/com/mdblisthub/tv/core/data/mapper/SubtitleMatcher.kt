@@ -20,8 +20,13 @@ import com.mdblisthub.tv.core.model.SubtitleOption
  */
 object SubtitleMatcher {
 
-    fun bestMatch(options: List<SubtitleOption>, playingRelease: String?): SubtitleOption? {
+    fun bestMatch(options: List<SubtitleOption>, playingRelease: String?, preferredLang: String? = null): SubtitleOption? {
         val releaseTokens = playingRelease?.let(::tokens) ?: emptySet()
+
+        if (preferredLang != null) {
+            val preferred = bestOf(options.filter { it.lang.lowercase().startsWith(preferredLang) }, releaseTokens)
+            if (preferred != null) return preferred
+        }
 
         return bestOf(options.filter { it.lang.looksPortuguese() }, releaseTokens)
             ?: bestOf(options.filter { it.lang.looksEnglish() }, releaseTokens)

@@ -6,10 +6,12 @@ import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.graphics.toArgb
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import androidx.compose.ui.graphics.Color as ComposeColor
 
 /**
  * The video output.
@@ -29,6 +31,7 @@ import androidx.media3.ui.PlayerView
 fun ExoVideoSurface(
     controller: PlaybackController,
     scaleType: VideoScaleType,
+    subtitleColor: ComposeColor = ComposeColor.Yellow,
     modifier: Modifier = Modifier,
 ) {
     AndroidView(
@@ -56,7 +59,7 @@ fun ExoVideoSurface(
                     setApplyEmbeddedFontSizes(false)
                     setStyle(
                         CaptionStyleCompat(
-                            Color.YELLOW,
+                            subtitleColor.toArgb(),
                             Color.TRANSPARENT,
                             Color.TRANSPARENT,
                             CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,

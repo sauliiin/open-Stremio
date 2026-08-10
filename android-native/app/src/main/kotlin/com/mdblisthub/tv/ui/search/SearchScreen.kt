@@ -39,7 +39,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
+import androidx.compose.ui.res.stringResource
 import androidx.tv.material3.Text
+import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.ui.component.PosterCard
@@ -70,7 +72,7 @@ fun SearchScreen(
         modifier = Modifier.fillMaxSize().padding(horizontal = HubDimens.ScreenPaddingHorizontal, vertical = HubDimens.ScreenPaddingVertical),
         verticalArrangement = Arrangement.spacedBy(HubDimens.RowSpacing)
     ) {
-        Text("Buscar no TMDB", style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
+        Text(stringResource(R.string.search_title), style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
         
         SearchBar(
             query = query,
@@ -139,7 +141,7 @@ private fun SearchBar(
                 Icon(Icons.Default.Search, contentDescription = null, tint = if (isFocused) HubColors.Accent else HubColors.TextDim)
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) {
-                        Text("Buscar filmes ou séries...", color = HubColors.TextDim, style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.search_placeholder), color = HubColors.TextDim, style = MaterialTheme.typography.bodyMedium)
                     }
                     innerTextField()
                 }

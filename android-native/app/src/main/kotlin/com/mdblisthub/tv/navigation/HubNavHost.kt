@@ -21,12 +21,14 @@ import com.mdblisthub.tv.ui.home.HomeScreen
 import com.mdblisthub.tv.ui.login.LoginScreen
 import com.mdblisthub.tv.ui.player.PlayerScreen
 import com.mdblisthub.tv.ui.search.SearchScreen
+import com.mdblisthub.tv.ui.settings.SettingsScreen
 
 object Routes {
     const val LOGIN = "login"
     const val HOME = "home"
     const val SEARCH = "search"
     const val ADDONS = "addons"
+    const val SETTINGS = "settings"
     const val DETAIL = "detail/{type}/{tmdbId}"
     const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}"
 
@@ -77,6 +79,7 @@ fun HubNavHost(graph: DataGraph) {
                 onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onResume = { point ->
                     navController.navigate(
                         Routes.player(point.type, point.tmdbId ?: 0, point.season, point.episode),
@@ -92,6 +95,10 @@ fun HubNavHost(graph: DataGraph) {
 
         composable(Routes.ADDONS) {
             AddonsScreen(graph = graph, onBack = { navController.popBackStack() })
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(graph = graph, onBack = { navController.popBackStack() })
         }
 
         composable(Routes.SEARCH) {

@@ -142,7 +142,7 @@ class DetailViewModel(
                         // The reason is shown, not just swallowed, so a real
                         // failure (network, parsing) reads differently from
                         // an actor who genuinely has no Wikipedia article.
-                        error = "Não foi encontrada biografia para ${member.name} na Wikipedia",
+                        error = "WIKIPEDIA_NOT_FOUND",
                     )
                 }
             }

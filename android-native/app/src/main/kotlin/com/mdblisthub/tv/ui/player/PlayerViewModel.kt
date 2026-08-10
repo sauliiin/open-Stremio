@@ -11,11 +11,14 @@ import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
+import com.mdblisthub.tv.player.label
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -57,12 +60,16 @@ class PlayerViewModel(
     private val _ui = MutableStateFlow(PlayerUiState())
     val ui: StateFlow<PlayerUiState> = _ui.asStateFlow()
 
+    val subtitleColor: StateFlow<String> = graph.uiPreferences.subtitleColor
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "white")
+
     private var target: ScrobbleTarget? = null
     private var lastReportedProgress = 0f
 
     init {
         viewModelScope.launch { start() }
         viewModelScope.launch { reportPlaybackToMdblist() }
+        viewModelScope.launch { autoSelectAudio() }
         viewModelScope.launch { autoSelectSubtitle() }
     }
 
@@ -211,9 +218,29 @@ class PlayerViewModel(
 
         if (subtitleChosenByUser) return
 
+        val autoDownload = graph.uiPreferences.subtitleAutoDownload.first()
+        if (!autoDownload) return
+
+        val preferredLang = graph.uiPreferences.subtitleLanguage.first()
+
         val playingRelease = playback.activeStream
             ?.let { listOfNotNull(it.title, it.filename).joinToString(" ") }
-        SubtitleMatcher.bestMatch(uiState.subtitles, playingRelease)?.let(::applySubtitle)
+        SubtitleMatcher.bestMatch(uiState.subtitles, playingRelease, preferredLang)?.let(::applySubtitle)
+    }
+
+    private suspend fun autoSelectAudio() {
+        val playback = controller.state
+            .first { playback -> playback.canShowVideo && playback.audioTracks.isNotEmpty() }
+
+        val preferredLang = graph.uiPreferences.audioLanguage.first()
+
+        val trackIndex = playback.audioTracks.indexOfFirst { track ->
+            track.label.lowercase().contains(preferredLang)
+        }
+
+        if (trackIndex >= 0) {
+            controller.selectAudioTrack(trackIndex)
+        }
     }
 
     override fun onCleared() {

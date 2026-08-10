@@ -36,6 +36,9 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -109,11 +112,20 @@ fun LoginScreen(
                                 try {
                                     val googleOption = GetGoogleIdOption.Builder()
                                         .setServerClientId(resources.getString(R.string.default_web_client_id))
+                                        .setNonce(java.util.UUID.randomUUID().toString())
                                         .setFilterByAuthorizedAccounts(false)
                                         .setAutoSelectEnabled(false)
                                         .build()
+
+                                    fun Context.findActivity(): Activity? = when (this) {
+                                        is Activity -> this
+                                        is ContextWrapper -> baseContext.findActivity()
+                                        else -> null
+                                    }
+                                    val activity = context.findActivity() ?: context
+
                                     val result = credentialManager.getCredential(
-                                        context = context,
+                                        context = activity,
                                         request = GetCredentialRequest.Builder()
                                             .addCredentialOption(googleOption)
                                             .build(),

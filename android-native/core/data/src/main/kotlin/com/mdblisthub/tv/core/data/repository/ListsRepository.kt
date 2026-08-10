@@ -70,9 +70,11 @@ class ListsRepository(
             storedCatalogPreferences.filterNot { it.deleted }.mapNotNull { it.position }.maxOrNull() ?: -1,
         ) + 1
 
-        val incomingEntities = incoming.map { dto ->
+        val incomingEntities = incoming.mapNotNull { dto ->
                 val cached = byId[dto.id]
                 val preference = preferencesById[dto.id]
+                if (preference?.deleted == true) return@mapNotNull null
+
                 dto.toEntity(
                     // A null preference explicitly means "follow MDBList".
                     // Reusing the cached name here made an upstream rename

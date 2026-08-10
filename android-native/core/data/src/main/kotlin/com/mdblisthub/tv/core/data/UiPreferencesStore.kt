@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import kotlinx.coroutines.flow.Flow
@@ -42,7 +43,48 @@ class UiPreferencesStore(context: Context) {
         store.edit { it[KEY_THEME] = variant.name }
     }
 
+    val language: Flow<String> = store.data.map { prefs ->
+        prefs[KEY_LANGUAGE] ?: "pt" // Default language
+    }
+    suspend fun saveLanguage(lang: String) {
+        store.edit { it[KEY_LANGUAGE] = lang }
+    }
+
+    val subtitleAutoDownload: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_SUBTITLE_AUTO_DOWNLOAD] ?: true
+    }
+    suspend fun saveSubtitleAutoDownload(enabled: Boolean) {
+        store.edit { it[KEY_SUBTITLE_AUTO_DOWNLOAD] = enabled }
+    }
+
+    val subtitleLanguage: Flow<String> = store.data.map { prefs ->
+        prefs[KEY_SUBTITLE_LANGUAGE] ?: "pt"
+    }
+    suspend fun saveSubtitleLanguage(lang: String) {
+        store.edit { it[KEY_SUBTITLE_LANGUAGE] = lang }
+    }
+
+    val subtitleColor: Flow<String> = store.data.map { prefs ->
+        prefs[KEY_SUBTITLE_COLOR] ?: "white"
+    }
+    suspend fun saveSubtitleColor(color: String) {
+        store.edit { it[KEY_SUBTITLE_COLOR] = color }
+    }
+
+    val audioLanguage: Flow<String> = store.data.map { prefs ->
+        prefs[KEY_AUDIO_LANGUAGE] ?: "en"
+    }
+    suspend fun saveAudioLanguage(lang: String) {
+        store.edit { it[KEY_AUDIO_LANGUAGE] = lang }
+    }
+
     private companion object {
         val KEY_THEME = stringPreferencesKey("theme")
+        val KEY_LANGUAGE = stringPreferencesKey("language")
+        val KEY_SUBTITLE_AUTO_DOWNLOAD = booleanPreferencesKey("subtitle_auto_download")
+        val KEY_SUBTITLE_LANGUAGE = stringPreferencesKey("subtitle_language")
+        val KEY_SUBTITLE_COLOR = stringPreferencesKey("subtitle_color")
+        val KEY_AUDIO_LANGUAGE = stringPreferencesKey("audio_language")
     }
 }
+

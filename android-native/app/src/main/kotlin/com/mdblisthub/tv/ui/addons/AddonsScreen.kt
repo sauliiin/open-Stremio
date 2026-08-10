@@ -40,6 +40,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.Addon
 import com.mdblisthub.tv.core.model.StremioAccount
@@ -225,6 +227,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
     fun pullFirebase() {
         _firebase.update { it.copy(lastDelta = null) }
         viewModelScope.launch {
+            graph.listPreferencesSync.restore()
             graph.firebaseSync.pull().onSuccess { delta -> _firebase.update { it.copy(lastDelta = delta) } }
         }
     }
@@ -416,7 +419,7 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
     ) {
         item(key = "head") {
             Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text("Addons", style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
+                Text(stringResource(R.string.addons_title), style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
                 Text(
                     text = "Cole a URL do manifest de um addon do Stremio. É dele que saem as " +
                         "fontes e as legendas — o app nunca mostra a lista de links, só usa a " +
@@ -469,7 +472,7 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
 
         item(key = "installed-head") {
             Text(
-                text = "Instalados (${addons.size})",
+                text = "${stringResource(R.string.addons_installed)} (${addons.size})",
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
             )
@@ -478,7 +481,7 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
         if (addons.isEmpty()) {
             item(key = "installed-empty") {
                 Text(
-                    text = "Nenhum addon instalado ainda.",
+                    text = stringResource(R.string.addons_none_installed),
                     style = MaterialTheme.typography.titleMedium,
                     color = HubColors.TextFaint,
                 )
@@ -511,7 +514,7 @@ private fun StremioSyncCard(
     SyncCard(accent = HubColors.Accent) {
         if (state.account != null) {
             Text(
-                "Conta Stremio conectada",
+                stringResource(R.string.addons_stremio_connected),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
             )
@@ -522,16 +525,16 @@ private fun StremioSyncCard(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HubButton(
-                    text = if (state.busy) "Sincronizando…" else "Sincronizar agora",
+                    text = if (state.busy) stringResource(R.string.addons_syncing) else stringResource(R.string.addons_sync_now),
                     primary = true,
                     enabled = !state.busy,
                     onClick = onSync,
                 )
-                HubButton(text = "Desconectar", enabled = !state.busy, onClick = onDisconnect)
+                HubButton(text = stringResource(R.string.addons_disconnect), enabled = !state.busy, onClick = onDisconnect)
             }
         } else {
             Text(
-                "Trazer os addons da sua conta Stremio",
+                stringResource(R.string.addons_fetch_stremio),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
             )
@@ -546,14 +549,14 @@ private fun StremioSyncCard(
                 HubTextField(
                     value = state.email,
                     onValueChange = onEmailChange,
-                    placeholder = "e-mail do Stremio",
+                    placeholder = stringResource(R.string.addons_email_placeholder),
                     keyboardType = KeyboardType.Email,
                     modifier = Modifier.weight(1f),
                 )
                 HubTextField(
                     value = state.password,
                     onValueChange = onPasswordChange,
-                    placeholder = "senha",
+                    placeholder = stringResource(R.string.addons_password_placeholder),
                     keyboardType = KeyboardType.Password,
                     obscure = true,
                     imeAction = ImeAction.Done,
@@ -561,7 +564,7 @@ private fun StremioSyncCard(
                     modifier = Modifier.weight(1f),
                 )
                 HubButton(
-                    text = if (state.busy) "Entrando…" else "Entrar",
+                    text = if (state.busy) stringResource(R.string.addons_signing_in) else stringResource(R.string.addons_sign_in),
                     primary = true,
                     enabled = state.email.isNotBlank() && state.password.isNotBlank() && !state.busy,
                     onClick = onSignIn,
@@ -611,7 +614,7 @@ private fun MdblistCatalogCard(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                "Utilizar listas MDBList como addons",
+                stringResource(R.string.addons_use_mdblist),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
             )
@@ -633,7 +636,7 @@ private fun MdblistCatalogCard(
                 HubTextField(
                     value = state.apiKey,
                     onValueChange = onApiKeyChange,
-                    placeholder = "chave da API MDBList",
+                    placeholder = stringResource(R.string.addons_mdblist_key_placeholder),
                     keyboardType = KeyboardType.Password,
                     obscure = true,
                     imeAction = ImeAction.Done,
@@ -641,7 +644,7 @@ private fun MdblistCatalogCard(
                     modifier = Modifier.weight(1f),
                 )
                 HubButton(
-                    text = if (state.busy) "Vinculando…" else "Vincular MDBList",
+                    text = if (state.busy) stringResource(R.string.addons_linking) else stringResource(R.string.addons_link_mdblist),
                     primary = true,
                     enabled = state.apiKey.isNotBlank() && !state.busy,
                     onClick = onLink,
@@ -651,9 +654,9 @@ private fun MdblistCatalogCard(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 HubButton(
                     text = when {
-                        state.busy -> "Aguarde…"
-                        state.enabled -> "Desligar"
-                        else -> "Ligar"
+                        state.busy -> stringResource(R.string.addons_waiting)
+                        state.enabled -> stringResource(R.string.addons_turn_off)
+                        else -> stringResource(R.string.addons_turn_on)
                     },
                     primary = !state.enabled,
                     enabled = !state.busy,
@@ -661,7 +664,7 @@ private fun MdblistCatalogCard(
                 )
                 if (state.enabled) {
                     HubButton(
-                        text = if (state.busy) "Sincronizando…" else "Sincronizar agora",
+                        text = if (state.busy) stringResource(R.string.addons_syncing) else stringResource(R.string.addons_sync_now),
                         enabled = !state.busy,
                         onClick = onExport,
                     )
@@ -690,7 +693,7 @@ private fun FirebaseSyncCard(
     // their labels one letter per line. Stacking removes the contest.
     SyncCard(accent = HubColors.Accent2) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Sincronizar entre aparelhos", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+            Text(stringResource(R.string.addons_sync_between_devices), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
             StatusPill(on = state.enabled)
         }
         Text(
@@ -701,12 +704,12 @@ private fun FirebaseSyncCard(
             color = HubColors.TextDim,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HubButton(text = if (state.enabled) "Desligar" else "Ligar", enabled = !state.busy, onClick = onToggle)
+            HubButton(text = if (state.enabled) stringResource(R.string.addons_turn_off) else stringResource(R.string.addons_turn_on), enabled = !state.busy, onClick = onToggle)
             if (state.enabled) {
-                HubButton(text = "Baixar", enabled = !state.busy, onClick = onPull)
-                HubButton(text = "Enviar", enabled = !state.busy, onClick = onPush)
+                HubButton(text = stringResource(R.string.addons_pull), enabled = !state.busy, onClick = onPull)
+                HubButton(text = stringResource(R.string.addons_push), enabled = !state.busy, onClick = onPush)
             } else if (state.preferencesError != null) {
-                HubButton(text = "Tentar novamente", enabled = !state.busy, onClick = onPush)
+                HubButton(text = stringResource(R.string.addons_retry), enabled = !state.busy, onClick = onPush)
             }
         }
 
@@ -736,7 +739,7 @@ private fun InstallCard(
     onSubmit: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Adicione addons manualmente", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+        Text(stringResource(R.string.addons_add_manually), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             // `weight(1f)`, not a fixed width: the button beside it is
             // measured for its natural size first, and the field takes
@@ -744,14 +747,14 @@ private fun InstallCard(
             HubTextField(
                 value = state.url,
                 onValueChange = onUrlChange,
-                placeholder = "https://exemplo.strem.fun/manifest.json",
+                placeholder = stringResource(R.string.addons_url_placeholder),
                 keyboardType = KeyboardType.Uri,
                 imeAction = ImeAction.Done,
                 onImeAction = onSubmit,
                 modifier = Modifier.weight(1f),
             )
             HubButton(
-                text = if (state.busy) "Lendo…" else "Instalar",
+                text = if (state.busy) stringResource(R.string.addons_reading) else stringResource(R.string.addons_install),
                 primary = true,
                 enabled = state.url.isNotBlank() && !state.busy,
                 onClick = onSubmit,
@@ -770,7 +773,7 @@ private fun GettingStartedSection(busy: Boolean, onInstall: (String) -> Unit) {
     val context = LocalContext.current
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Para começar", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+        Text(stringResource(R.string.addons_getting_started), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             QUICK_ADDONS.forEach { quick ->
                 GettingStartedCard(
@@ -822,14 +825,14 @@ private fun GettingStartedCard(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (quick.url != null) {
                 HubButton(
-                    text = if (busy) "Instalando…" else "Instalar",
+                    text = if (busy) stringResource(R.string.addons_installing) else stringResource(R.string.addons_install),
                     primary = true,
                     enabled = !busy,
                     onClick = onInstall,
                 )
             }
             if (quick.configureUrl != null) {
-                HubButton(text = "Abrir configuração", onClick = onConfigure)
+                HubButton(text = stringResource(R.string.addons_open_config), onClick = onConfigure)
             }
         }
     }
@@ -861,7 +864,7 @@ private fun AddonRow(addon: Addon, onRemove: () -> Unit) {
             Text(addon.name, style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
             Text(
                 text = buildString {
-                    append(addon.resources.joinToString(", ").ifBlank { "sem recursos declarados" })
+                    append(addon.resources.joinToString(", ").ifBlank { stringResource(R.string.addons_no_resources_declared) })
                     if (addon.types.isNotEmpty()) append("  ·  ${addon.types.joinToString(", ")}")
                 },
                 style = MaterialTheme.typography.labelSmall,
@@ -870,7 +873,7 @@ private fun AddonRow(addon: Addon, onRemove: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        HubButton(text = "Remover", onClick = onRemove)
+        HubButton(text = stringResource(R.string.addons_remove), onClick = onRemove)
     }
 }
 
@@ -906,7 +909,7 @@ private fun StatusPill(on: Boolean) {
             .padding(horizontal = 9.dp, vertical = 3.dp),
     ) {
         Text(
-            text = if (on) "ligado" else "desligado",
+            text = if (on) stringResource(R.string.addons_status_on) else stringResource(R.string.addons_status_off),
             style = MaterialTheme.typography.labelSmall,
             color = if (on) HubColors.Accent2 else HubColors.TextFaint,
         )

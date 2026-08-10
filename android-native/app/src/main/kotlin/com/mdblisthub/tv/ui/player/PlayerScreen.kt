@@ -134,6 +134,15 @@ fun PlayerScreen(
 
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val playback by viewModel.controller.state.collectAsStateWithLifecycle()
+    
+    val subtitleColorString by viewModel.subtitleColor.collectAsStateWithLifecycle()
+
+    val parsedSubtitleColor = when (subtitleColorString) {
+        "white" -> Color.White
+        "red" -> Color.Red
+        "blue" -> Color.Blue
+        else -> Color.Yellow
+    }
 
     var osdVisibleUntil by remember { mutableLongStateOf(System.currentTimeMillis() + OSD_TIMEOUT_MS) }
     /**
@@ -332,6 +341,7 @@ fun PlayerScreen(
         ExoVideoSurface(
             controller = viewModel.controller,
             scaleType = playback.scaleType,
+            subtitleColor = parsedSubtitleColor,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -395,6 +405,7 @@ fun PlayerScreen(
             ExternalSubtitleOverlay(
                 text = subtitleCue,
                 liftForOsd = osdVisible,
+                color = parsedSubtitleColor,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -760,6 +771,7 @@ private fun SourceRow(
 private fun ExternalSubtitleOverlay(
     text: String,
     liftForOsd: Boolean,
+    color: Color = Color.Yellow,
     modifier: Modifier = Modifier,
 ) {
     val bottomPadding by animateDpAsState(
@@ -773,7 +785,7 @@ private fun ExternalSubtitleOverlay(
             .padding(horizontal = 32.dp)
             .padding(bottom = bottomPadding)
             .semantics { liveRegion = LiveRegionMode.Polite },
-        color = Color.Yellow,
+        color = color,
         textAlign = TextAlign.Center,
         style = MaterialTheme.typography.bodyLarge.copy(
             fontSize = SUBTITLE_FONT_SIZE,

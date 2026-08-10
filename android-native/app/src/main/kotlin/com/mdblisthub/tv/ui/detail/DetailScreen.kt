@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.R
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.CastMember
@@ -262,7 +264,7 @@ fun DetailScreen(
                             },
                     ) {
                         HubButton(
-                            text = if (type == MediaType.SHOW) "Assistir T${season}E1" else "Assistir",
+                            text = if (type == MediaType.SHOW) stringResource(R.string.detail_watch_episode, season) else stringResource(R.string.detail_watch),
                             primary = true,
                             onClick = {
                                 if (type == MediaType.SHOW) onPlay(season, 1) else onPlay(null, null)
@@ -271,25 +273,25 @@ fun DetailScreen(
                         )
                         if (current.trailerKey != null || current.imdbId != null) {
                             HubButton(
-                                text = "Trailer",
+                                text = stringResource(R.string.detail_trailer),
                                 onClick = { trailerOpen = true },
                                 modifier = Modifier.fillMaxHeight(),
                             )
                         }
                         HubButton(
-                            text = if (library.watchlist) "Na watchlist" else "+ Watchlist",
+                            text = if (library.watchlist) stringResource(R.string.detail_in_watchlist) else stringResource(R.string.detail_add_watchlist),
                             enabled = LibraryBucket.WATCHLIST !in pending,
                             onClick = viewModel::toggleWatchlist,
                             modifier = Modifier.fillMaxHeight(),
                         )
                         HubButton(
-                            text = if (library.collection) "Na coleção" else "+ Coleção",
+                            text = if (library.collection) stringResource(R.string.detail_in_collection) else stringResource(R.string.detail_add_collection),
                             enabled = LibraryBucket.COLLECTION !in pending,
                             onClick = viewModel::toggleCollection,
                             modifier = Modifier.fillMaxHeight(),
                         )
                         HubButton(
-                            text = if (library.watched) "Assistido" else "Marcar assistido",
+                            text = if (library.watched) stringResource(R.string.detail_watched) else stringResource(R.string.detail_mark_watched),
                             enabled = LibraryBucket.WATCHED !in pending,
                             onClick = viewModel::toggleWatched,
                             modifier = Modifier.fillMaxHeight(),
@@ -306,9 +308,9 @@ fun DetailScreen(
                         Text(
                             text = listOfNotNull(
                                 current.directors.takeIf { it.isNotEmpty() }
-                                    ?.joinToString(", ")?.let { "Direção: $it" },
+                                    ?.joinToString(", ")?.let { stringResource(R.string.detail_director, it) },
                                 current.studios.takeIf { it.isNotEmpty() }
-                                    ?.joinToString(", ")?.let { "Estúdio: $it" },
+                                    ?.joinToString(", ")?.let { stringResource(R.string.detail_studio, it) },
                             ).joinToString("   ·   "),
                             style = MaterialTheme.typography.bodyMedium,
                             color = HubColors.TextFaint,
@@ -321,7 +323,7 @@ fun DetailScreen(
                 item(key = "seasons") {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "Temporadas",
+                            text = stringResource(R.string.detail_seasons),
                             style = MaterialTheme.typography.titleLarge,
                             color = HubColors.Text,
                             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
@@ -333,7 +335,7 @@ fun DetailScreen(
                         ) {
                             items(current.seasons, key = { it.seasonNumber }) { entry ->
                                 HubButton(
-                                    text = "T${entry.seasonNumber}",
+                                    text = stringResource(R.string.detail_season_number, entry.seasonNumber),
                                     primary = entry.seasonNumber == season,
                                     onClick = { viewModel.selectSeason(entry.seasonNumber) },
                                 )
@@ -365,7 +367,7 @@ fun DetailScreen(
             if (current.recommendations.isNotEmpty()) {
                 item(key = "recs") {
                     MediaRow(
-                        title = "Parecidos",
+                        title = stringResource(R.string.detail_recommendations),
                         items = current.recommendations,
                         onItemClick = onOpenTitle,
                     )
@@ -405,7 +407,7 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Episódios",
+            text = stringResource(R.string.detail_episodes),
             style = MaterialTheme.typography.titleLarge,
             color = HubColors.Text,
             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
@@ -454,7 +456,7 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
 private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastClick: (CastMember) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Elenco",
+            text = stringResource(R.string.detail_cast),
             style = MaterialTheme.typography.titleLarge,
             color = HubColors.Text,
             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
@@ -597,7 +599,7 @@ private fun CastBioOverlay(
                     HubSpinner(size = 32.dp, modifier = Modifier.align(Alignment.Center))
                 }
                 state.error != null -> Text(
-                    text = state.error,
+                    text = if (state.error == "WIKIPEDIA_NOT_FOUND") stringResource(R.string.detail_wikipedia_error, state.member?.name ?: "") else state.error,
                     style = MaterialTheme.typography.bodyLarge,
                     color = HubColors.TextDim,
                 )
@@ -611,9 +613,9 @@ private fun CastBioOverlay(
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 state.summary?.pageUrl?.let { url ->
-                    HubButton(text = "Ver na Wikipedia", onClick = { openUrl(context, url) })
+                    HubButton(text = stringResource(R.string.detail_wikipedia), onClick = { openUrl(context, url) })
                 }
-                HubButton(text = "Fechar", onClick = onDismiss, modifier = Modifier.focusRequester(closeButtonFocus))
+                HubButton(text = stringResource(R.string.detail_close), onClick = onDismiss, modifier = Modifier.focusRequester(closeButtonFocus))
             }
         }
     }
@@ -634,7 +636,7 @@ private fun ReviewsRow(reviews: List<Review>) {
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-            text = "Reviews",
+            text = stringResource(R.string.detail_reviews),
             style = MaterialTheme.typography.titleLarge,
             color = HubColors.Text,
             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),

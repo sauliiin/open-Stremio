@@ -1,4 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Open Stream</string>
+
+    <!-- Side Menu -->
+    <string name="menu_home">Início</string>
+    <string name="menu_search">Busca</string>
+    <string name="menu_addons">Addons</string>
+    <string name="menu_lists">Listas</string>
+    <string name="menu_lists_done">Concluir</string>
+    <string name="menu_theme_normal">Normal</string>
+    <string name="menu_theme_cyberpunk">Cyberpunk</string>
+    <string name="menu_theme_netflixy">Netflixy</string>
+    <string name="menu_settings">Configurações</string>
+    <string name="menu_exit">Sair</string>
+
+    <!-- Home Screen -->
+    <string name="home_empty_title">Você está conectado ao Google</string>
+    <string name="home_empty_desc">Você pode configurar seus addons agora. A MDBList é opcional e pode ser vinculada depois.</string>
+    <string name="home_empty_button">Abrir Addons</string>
+    <string name="home_syncing">Sincronizando suas listas…</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Configurações</string>
+    
+    <string name="settings_section_interface">Interface</string>
+    <string name="settings_language">Idioma do App</string>
+    
+    <string name="settings_section_subtitles">Legendas</string>
+    <string name="settings_subtitle_auto_download">Download Automático de Legendas</string>
+    <string name="settings_subtitle_default_lang">Idioma Predefinido da Legenda</string>
+    <string name="settings_subtitle_color">Cor da Legenda</string>
+    <string name="color_yellow">Amarelo</string>
+    <string name="color_white">Branco</string>
+    <string name="color_red">Vermelho</string>
+    <string name="color_blue">Azul</string>
+    
+    <string name="settings_section_player">Reprodutor</string>
+    <string name="settings_audio_preferred_lang">Faixa de Áudio Preferida</string>
+
+    <!-- Languages -->
+    <string name="lang_pt">Português</string>
+    <string name="lang_en">Inglês</string>
+    <string name="lang_es">Espanhol</string>
+    <string name="lang_fr">Francês</string>
+    <string name="lang_ja">Japonês</string>
+
+    <!-- Detail Screen -->
+    <string name="detail_watch">Assistir</string>
+    <string name="detail_watch_episode">Assistir T%1$dE1</string>
+    <string name="detail_trailer">Trailer</string>
+    <string name="detail_in_collection">Na coleção</string>
+    <string name="detail_add_collection">+ Coleção</string>
+    <string name="detail_in_watchlist">Na watchlist</string>
+    <string name="detail_add_watchlist">+ Watchlist</string>
+    <string name="detail_director">Direção: %1$s</string>
+    <string name="detail_studio">Estúdio: %1$s</string>
+    <string name="detail_wikipedia">Ver na Wikipedia</string>
+    <string name="detail_close">Fechar</string>
+    <string name="detail_wikipedia_error">Não foi encontrada biografia para %1$s na Wikipedia</string>
+    <string name="detail_seasons">Temporadas</string>
+    <string name="detail_season_number">T%1$d</string>
+    <string name="detail_recommendations">Parecidos</string>
+    <string name="detail_episodes">Episódios</string>
+    <string name="detail_cast">Elenco</string>
+    <string name="detail_watched">Assistido</string>
+    <string name="detail_mark_watched">Marcar assistido</string>
+    <string name="detail_reviews">Reviews</string>
+    <string name="detail_crew_title">Equipe Técnica</string>
+
+    <!-- Search Screen -->
+    <string name="search_title">Buscar no TMDB</string>
+    <string name="search_placeholder">Buscar filmes ou séries…</string>
+
+    <!-- Addons Screen -->
+    <string name="addons_title">Addons</string>
+    <string name="addons_stremio_connected">Conta Stremio conectada</string>
+    <string name="addons_sync_now">Sincronizar agora</string>
+    <string name="addons_syncing">Sincronizando…</string>
+    <string name="addons_disconnect">Desconectar</string>
+    <string name="addons_fetch_stremio">Trazer os addons da sua conta Stremio</string>
+    <string name="addons_email_placeholder">e-mail do Stremio</string>
+    <string name="addons_password_placeholder">senha</string>
+    <string name="addons_signing_in">Entrando…</string>
+    <string name="addons_sign_in">Entrar</string>
+    <string name="addons_use_mdblist">Utilizar listas MDBList como addons</string>
+    <string name="addons_mdblist_key_placeholder">chave da API MDBList</string>
+    <string name="addons_linking">Vinculando…</string>
+    <string name="addons_link_mdblist">Vincular MDBList</string>
+    <string name="addons_turn_off">Desligar</string>
+    <string name="addons_turn_on">Ligar</string>
+    <string name="addons_sync_between_devices">Sincronizar entre aparelhos</string>
+    <string name="addons_pull">Baixar</string>
+    <string name="addons_push">Enviar</string>
+    <string name="addons_retry">Tentar novamente</string>
+    <string name="addons_add_manually">Adicione addons manualmente</string>
+    <string name="addons_url_placeholder">https://exemplo.strem.fun/manifest.json</string>
+    <string name="addons_reading">Lendo…</string>
+    <string name="addons_install">Instalar</string>
+    <string name="addons_getting_started">Para começar</string>
+    <string name="addons_installing">Instalando…</string>
+    <string name="addons_open_config">Abrir configuração</string>
+    <string name="addons_no_resources_declared">sem recursos declarados</string>
+    <string name="addons_remove">Remover</string>
+    <string name="addons_status_on">ligado</string>
+    <string name="addons_status_off">desligado</string>
+    <string name="addons_waiting">Aguarde…</string>
+    <string name="addons_unconfigured_url_only">só funciona pela URL gerada</string>
+    <string name="addons_installed">Instalados</string>
+    <string name="addons_none_installed">Nenhum addon instalado ainda.</string>
 </resources>
