@@ -1,0 +1,57 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+        "profile": {
+          "mdblistApiKey": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 256"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "addons": {
+          ".validate": "newData.hasChild('updatedAt') && (!newData.hasChild('addons') || newData.child('addons').hasChildren())",
+          "$other": {
+            ".validate": "$other == 'updatedAt' || $other == 'addons'"
+          }
+        },
+        "listPreferences": {
+          ".validate": "newData.hasChild('updatedAt') && newData.child('updatedAt').isString() && newData.hasChild('mdblistUserId') && newData.child('mdblistUserId').isNumber() && newData.child('mdblistUserId').val() >= 0",
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "mdblistUserId": {
+            ".validate": "newData.isNumber() && newData.val() >= 0"
+          },
+          "lists": {
+            "$index": {
+              ".validate": "$index.matches(/^[0-9]{1,3}$/) && newData.hasChild('id') && newData.child('id').isNumber() && newData.child('id').val() > 0 && (!newData.hasChild('name') || (newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 200)) && (!newData.hasChild('position') || (newData.child('position').isNumber() && newData.child('position').val() >= 0 && newData.child('position').val() < 10000)) && (!newData.hasChild('hidden') || newData.child('hidden').isBoolean()) && (!newData.hasChild('deleted') || newData.child('deleted').isBoolean())",
+              "$other": {
+                ".validate": "$other == 'id' || $other == 'name' || $other == 'position' || $other == 'hidden' || $other == 'deleted'"
+              }
+            }
+          },
+          "catalogs": {
+            "$index": {
+              ".validate": "$index.matches(/^[0-9]{1,3}$/) && newData.hasChild('key') && newData.child('key').isString() && newData.child('key').val().length > 0 && newData.child('key').val().length <= 500 && (!newData.hasChild('name') || (newData.child('name').isString() && newData.child('name').val().length > 0 && newData.child('name').val().length <= 200)) && (!newData.hasChild('position') || (newData.child('position').isNumber() && newData.child('position').val() >= 0 && newData.child('position').val() < 10000)) && (!newData.hasChild('hidden') || newData.child('hidden').isBoolean()) && (!newData.hasChild('deleted') || newData.child('deleted').isBoolean())",
+              "$other": {
+                ".validate": "$other == 'key' || $other == 'name' || $other == 'position' || $other == 'hidden' || $other == 'deleted'"
+              }
+            }
+          },
+          "$other": {
+            ".validate": "$other == 'updatedAt' || $other == 'mdblistUserId' || $other == 'lists' || $other == 'catalogs'"
+          }
+        },
+        "$other": {
+          ".validate": "$other == 'profile' || $other == 'addons' || $other == 'listPreferences'"
+        }
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}

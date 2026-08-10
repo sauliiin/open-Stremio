@@ -1,0 +1,12 @@
+# Node (Capacitor CLI tooling only — this repo has no app source in JS/TS)
+/node_modules
+npm-debug.log
+
+# IDEs
+.idea/
+.vscode/*
+!.vscode/settings.json
+
+# System files
+.DS_Store
+Thumbs.db

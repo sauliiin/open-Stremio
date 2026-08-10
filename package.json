@@ -1,0 +1,25 @@
+{
+  "name": "mdblist-hub-apk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Empacotamento Android do mdblist hub: wrapper Capacitor (android/) e app nativo nao-WebView (android-native/). O site em si vive no repo irmao ../mdblist-hub.",
+  "scripts": {
+    "android:sync": "npm run build --prefix ../mdblist-hub && npx cap sync android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleMobileDebug assembleTvDebug",
+    "android:apk:mobile": "npm run android:sync && cd android && ./gradlew assembleMobileDebug",
+    "android:apk:tv": "npm run android:sync && cd android && ./gradlew assembleTvDebug"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT"
+}
