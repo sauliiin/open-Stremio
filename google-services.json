@@ -1,10 +1,48 @@
 {
   "project_info": {
     "project_number": "862741916290",
+    "firebase_url": "https://safevault-fcbdc-default-rtdb.firebaseio.com",
     "project_id": "safevault-fcbdc",
     "storage_bucket": "safevault-fcbdc.firebasestorage.app"
   },
   "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:862741916290:android:e341f72520c4a3eed2e29b",
+        "android_client_info": {
+          "package_name": "com.openstream.tv"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "862741916290-jnfiv3kn49b0tg4nnvuec9lstok10i3n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.openstream.tv",
+            "certificate_hash": "9ca426540c38241a78894b834c65281be0130f20"
+          }
+        },
+        {
+          "client_id": "862741916290-5bhenqt1prf98341g2douaedchkqv3nb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJ4LJ7EjqZgp3hif6kp5kjBA5g0oacef4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "862741916290-5bhenqt1prf98341g2douaedchkqv3nb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
     {
       "client_info": {
         "mobilesdk_app_id": "1:862741916290:android:d20ef0e467ecfc90d2e29b",
