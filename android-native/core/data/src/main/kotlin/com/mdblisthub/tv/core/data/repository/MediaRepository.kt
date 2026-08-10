@@ -8,6 +8,7 @@ import com.mdblisthub.tv.core.data.mapper.toEntity
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.MediaDetail
+import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.FanartTvApi
@@ -40,6 +41,22 @@ class MediaRepository(
 
     fun observeDetail(type: MediaType, tmdbId: Int): Flow<MediaDetail?> =
         mediaDao.observeDetail(tmdbId, type.mdblist).map { it?.toDomain() }
+
+    /**
+     * The card row, straight from Room and without ever touching the network.
+     *
+     * This exists so playback does not have to wait on [ensureDetail]. The
+     * addons are indexed by IMDb id and the decoy check needs a runtime —
+     * both of which the list sync already wrote here, for free, while the
+     * detail row costs three API calls. Null simply means the title arrived by
+     * some path that never cached a card, and the caller falls back to detail.
+     */
+    suspend fun cachedCard(type: MediaType, tmdbId: Int): MediaItem? =
+        mediaDao.card(tmdbId, type.mdblist)?.toDomain()
+
+    /** The cached detail row without subscribing, for the same reason. */
+    suspend fun cachedDetail(type: MediaType, tmdbId: Int): MediaDetail? =
+        mediaDao.detail(tmdbId, type.mdblist)?.toDomain()
 
     fun observeEpisodes(showTmdbId: Int, seasonNumber: Int): Flow<List<Episode>> =
         mediaDao.observeEpisodes(showTmdbId, seasonNumber).map { rows -> rows.map { it.toDomain() } }

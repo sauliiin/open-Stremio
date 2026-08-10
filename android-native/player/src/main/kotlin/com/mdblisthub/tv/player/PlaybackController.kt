@@ -10,11 +10,18 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.model.SubtitleTrack
@@ -64,6 +71,17 @@ import kotlinx.coroutines.launch
 class PlaybackController(
     context: Context,
     private val scope: CoroutineScope,
+    /**
+     * The client whose connection pool the mirror probe already warmed.
+     *
+     * When supplied, the player reads over OkHttp instead of the JDK's
+     * `HttpURLConnection`, which is what lets the TCP+TLS handshake
+     * `StreamsRepository.isReachable` just paid for be reused rather than
+     * repeated — typically a few hundred milliseconds off every start on
+     * home Wi-Fi. Null falls back to the built-in stack, so the module still
+     * works standalone.
+     */
+    callFactory: okhttp3.Call.Factory? = null,
 ) : Player.Listener {
 
     /**
@@ -72,21 +90,60 @@ class PlaybackController(
      * factory is re-read on every `prepare`, so mutating it between attempts
      * is what makes the header follow the candidate being tried.
      */
-    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setAllowCrossProtocolRedirects(true)
-        // Generous on purpose. A debrid endpoint answers the redirect
-        // instantly and then leaves the connection open while the file is
-        // prepared upstream, which measurably runs past thirty seconds on a
-        // cold link; the tighter values these replaced turned that ordinary
-        // warm-up into a failed source.
-        .setConnectTimeoutMs(30_000)
-        .setReadTimeoutMs(30_000)
+    private val httpDataSourceFactory: HttpDataSource.Factory = callFactory
+        ?.let {
+            // Timeouts come from the client itself; note that it must not
+            // carry a `callTimeout`, since here a single call is the whole
+            // film rather than a request for a JSON manifest.
+            OkHttpDataSource.Factory(it)
+        }
+        ?: DefaultHttpDataSource.Factory()
+            .setAllowCrossProtocolRedirects(true)
+            // Generous on purpose. A debrid endpoint answers the redirect
+            // instantly and then leaves the connection open while the file is
+            // prepared upstream, which measurably runs past thirty seconds on a
+            // cold link; the tighter values these replaced turned that ordinary
+            // warm-up into a failed source.
+            .setConnectTimeoutMs(30_000)
+            .setReadTimeoutMs(30_000)
 
-    private val mediaSourceFactory = DefaultMediaSourceFactory(
-        DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory),
+    /**
+     * Reads from disk before it reads from the network, when a cache could be
+     * opened at all.
+     *
+     * `FLAG_IGNORE_CACHE_ON_ERROR` matters more here than in most apps: a
+     * partially written span from a mirror that died mid-download must never
+     * become the reason a *working* mirror cannot play.
+     */
+    private val upstreamFactory: DataSource.Factory =
+        DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
+
+    private val dataSourceFactory: DataSource.Factory =
+        MediaCache.get(context)?.let { cache ->
+            CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(upstreamFactory)
+                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        } ?: upstreamFactory
+
+    private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+
+    /**
+     * Owned here rather than left to `DefaultLoadControl` so that
+     * [AdaptiveLoadControl] can read what the buffer is really consuming.
+     */
+    private val allocator = DefaultAllocator(/* trimOnReset = */ true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
+
+    private val targetBufferBytes = HeapBudget.targetBufferBytes()
+
+    val player: ExoPlayer = ExoPlayer.Builder(
+        context.applicationContext,
+        // Without the fallback, a decoder that fails to *initialise* — routine
+        // on cheap boxes for some HEVC and MKV profiles — surfaces as a
+        // playback error, and the cascade throws away a link that the
+        // secondary decoder would have played perfectly.
+        DefaultRenderersFactory(context.applicationContext).setEnableDecoderFallback(true),
     )
-
-    val player: ExoPlayer = ExoPlayer.Builder(context.applicationContext)
         .setMediaSourceFactory(mediaSourceFactory)
         // The whole reason this app moved off mpv. mpv buffers by byte count,
         // which on a mirror that trickles is a fixed and often far-too-small
@@ -94,32 +151,40 @@ class PlaybackController(
         // simply takes longer to fill 30s than a fast one rather than
         // stuttering through playback.
         .setLoadControl(
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    /* minBufferMs = */ 30_000,
-                    /* maxBufferMs = */ 60_000,
-                    // Start playing after 2.5s rather than the default 0.5s:
-                    // starting early is what makes the first ten seconds of a
-                    // stream the stutteriest part of it.
-                    /* bufferForPlaybackMs = */ 2_500,
-                    /* bufferForPlaybackAfterRebufferMs = */ 5_000,
-                )
-                // Left unset, Media3 budgets 125MB for video plus 12.5MB for
-                // audio — and `DefaultAllocator` takes that from the *Java*
-                // heap, not native memory. A set-top box with a 128–256MB
-                // heap cannot pay that alongside Compose and the artwork
-                // cache, so a high-bitrate release would fill the buffer over
-                // a few minutes and then die of an OOM mid-film. The cap in
-                // seconds above only governs sources under ~9Mbps; this is
-                // what governs the ones that actually ran the box out of
-                // memory.
-                .setTargetBufferBytes(TARGET_BUFFER_BYTES)
-                // Keeps half a minute behind the playhead so a small skip back
-                // does not re-download what was just watched. Shorter than it
-                // was, because retained samples are drawn from the same
-                // allocator budget the forward buffer needs.
-                .setBackBuffer(/* backBufferDurationMs = */ 30_000, /* retainBackBufferFromKeyframe = */ true)
-                .build(),
+            AdaptiveLoadControl(
+                delegate = DefaultLoadControl.Builder()
+                    .setAllocator(allocator)
+                    .setBufferDurationsMs(
+                        /* minBufferMs = */ 30_000,
+                        /* maxBufferMs = */ 120_000,
+                        // These two are Media3's own defaults, and that is the
+                        // point. They used to be 2_500/5_000, justified by a
+                        // comment claiming the default was 500ms — it is 1_000
+                        // (`DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS`).
+                        // So the old values were not caution, they were an
+                        // extra 1.5s on every start and 3s on every rebuffer,
+                        // paid for a benefit that was never being missed.
+                        /* bufferForPlaybackMs = */ DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+                        /* bufferForPlaybackAfterRebufferMs = */
+                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                    )
+                    // `DefaultAllocator` takes its `byte[]` from the *Java*
+                    // heap, not native memory, so this is bounded by what the
+                    // process has free rather than by what the device has —
+                    // see `HeapBudget`, which measures instead of assuming.
+                    .setTargetBufferBytes(targetBufferBytes)
+                    // Left at the default of zero here and supplied by the
+                    // wrapper instead: as a constant it cannot stay in
+                    // proportion to the byte budget, and a back buffer out of
+                    // proportion is what starves the forward one.
+                    .setBackBuffer(
+                        /* backBufferDurationMs = */ 0,
+                        /* retainBackBufferFromKeyframe = */ true,
+                    )
+                    .build(),
+                allocator = allocator,
+                targetBufferBytes = targetBufferBytes,
+            ),
         )
         // Without this nothing pauses the film when another app takes the
         // audio, and two things talk over each other until one is closed.
@@ -137,6 +202,12 @@ class PlaybackController(
             // `ExoVideoSurface`); this covers the window between that and the
             // CPU being allowed to suspend.
             setWakeMode(C.WAKE_MODE_NETWORK)
+            // The OSD only ever seeks in ten-second steps, where landing on
+            // the exact frame is worth nothing and the cost is real: an exact
+            // seek in a progressive MKV has to fetch back to the preceding
+            // sync sample before it can show anything, which is what made
+            // every skip feel like the remote had stopped responding.
+            setSeekParameters(SeekParameters.CLOSEST_SYNC)
             addListener(this@PlaybackController)
         }
 
@@ -209,6 +280,9 @@ class PlaybackController(
 
     private var watchdog: Job? = null
     private var ticker: Job? = null
+
+    /** Set by the screen; see [setOsdVisible]. Starts true, since the OSD does. */
+    private var osdVisible = true
 
     /** Position/intention carried while a failed source is replaced. */
     private var failoverPositionMs: Long? = null
@@ -310,12 +384,12 @@ class PlaybackController(
                 return
             }
             if (queue.isEmpty()) {
-                fail("Nenhum addon devolveu um link reproduzível para este título.")
+                fail(PlaybackFailure.NoCandidates)
                 return
             }
             passes++
             if (passes >= MAX_PASSES) {
-                fail("Testei as ${queue.size} fontes disponíveis, duas vezes, e nenhuma abriu.")
+                fail(PlaybackFailure.AllCandidatesFailed(queue.size))
                 return
             }
             queueIndex = -1
@@ -327,7 +401,7 @@ class PlaybackController(
         if (queueIndex in decoyIndices) return tryAdvance()
 
         val candidate = queue[queueIndex]
-        val url = candidate.url ?: return tryAdvance()
+        if (candidate.url == null) return tryAdvance()
 
         _state.update {
             it.copy(
@@ -339,19 +413,60 @@ class PlaybackController(
             )
         }
 
+        open(candidate)
+        watchdog = scope.launch { watchAttempt() }
+    }
+
+    /**
+     * Hands one candidate to the engine, at the position it should start from.
+     *
+     * Starting *at* the resume point rather than seeking to it after the fact
+     * is the difference between one buffering round and two: the old code
+     * prepared at zero, waited for `STATE_READY`, and only then sought — which
+     * threw away every byte it had just buffered and re-opened the connection
+     * at a new offset. The runtime from the metadata is close enough to place
+     * the range request correctly; [onReady] trims the remaining seconds once
+     * the real duration is known.
+     */
+    private fun open(stream: PlayableStream) {
+        val url = stream.url ?: return
+
         // Replaced wholesale rather than merged: the factory is shared across
         // every attempt, so a header the previous mirror needed would
         // otherwise leak into this one's request.
-        httpDataSourceFactory.setDefaultRequestProperties(candidate.headers)
+        httpDataSourceFactory.setDefaultRequestProperties(stream.headers)
 
-        val mediaItem = MediaItem.fromUri(url)
-        failoverPositionMs?.let { position ->
-            player.setMediaItem(mediaItem, position)
-        } ?: player.setMediaItem(mediaItem)
+        val mediaItem = MediaItem.Builder()
+            .setUri(url)
+            // Debrid links are signed and expire, so the URL is useless as a
+            // cache identity — the same file comes back tomorrow under a
+            // different query string and would miss every time. The release
+            // filename is the one stable thing an addon reliably reports.
+            // Without one, the URL remains the key, which still serves a
+            // backward seek inside the current session.
+            .setCustomCacheKey(stream.filename?.takeIf { it.isNotBlank() })
+            .build()
+
+        val startPositionMs = failoverPositionMs ?: estimatedResumePositionMs()
+        if (startPositionMs != null) {
+            player.setMediaItem(mediaItem, startPositionMs)
+        } else {
+            player.setMediaItem(mediaItem)
+        }
         player.prepare()
         player.playWhenReady = failoverPlayWhenReady ?: true
+    }
 
-        watchdog = scope.launch { watchAttempt() }
+    /**
+     * Where to open the file, from the metadata runtime — null when either the
+     * runtime or the resume point is unknown, in which case playback starts at
+     * the beginning and [onReady] does the seek the old way.
+     */
+    private fun estimatedResumePositionMs(): Long? {
+        if (resumeApplied) return null
+        val percent = resumePercent ?: return null
+        val runtimeMs = expectedRuntimeMs ?: return null
+        return (runtimeMs * percent / 100f).toLong().coerceAtLeast(0L)
     }
 
     /**
@@ -372,9 +487,8 @@ class PlaybackController(
         manualMode = true
         decoyStreak = 0
 
-        val url = stream.url
-        if (url == null) {
-            fail("Essa fonte não tem um link reproduzível.")
+        if (stream.url == null) {
+            fail(PlaybackFailure.ManualNoLink)
             return
         }
 
@@ -392,14 +506,7 @@ class PlaybackController(
             )
         }
 
-        httpDataSourceFactory.setDefaultRequestProperties(stream.headers)
-        val mediaItem = MediaItem.fromUri(url)
-        failoverPositionMs?.let { position ->
-            player.setMediaItem(mediaItem, position)
-        } ?: player.setMediaItem(mediaItem)
-        player.prepare()
-        player.playWhenReady = failoverPlayWhenReady ?: true
-
+        open(stream)
         watchdog = scope.launch { watchAttempt() }
     }
 
@@ -448,7 +555,7 @@ class PlaybackController(
             val dead = everDelivered && stalledMs >= ATTEMPT_STALL_MS
             if (dead || waitedMs >= ATTEMPT_HARD_CAP_MS) {
                 if (manualMode) {
-                    fail("Essa fonte não respondeu. Escolha outra na lista.")
+                    fail(PlaybackFailure.ManualUnresponsive)
                 } else {
                     tryAdvance()
                 }
@@ -487,7 +594,7 @@ class PlaybackController(
     override fun onPlayerError(error: PlaybackException) {
         rememberPlaybackForFailover()
         if (manualMode) {
-            fail("Essa fonte não abriu. Escolha outra na lista.")
+            fail(PlaybackFailure.ManualFailed)
         } else {
             tryAdvance()
         }
@@ -523,12 +630,15 @@ class PlaybackController(
                 if (!group.isTrackSupported(i)) continue
                 val format = group.getTrackFormat(i)
                 val index = out.size
-                val label = format.label
-                    ?: format.language?.let { lang -> "Faixa ${lang.uppercase()}" }
-                    ?: "Faixa ${index + 1}"
 
                 out += Triple(
-                    TrackInfo(index, label),
+                    // Only what the container actually declares. Composing a
+                    // display name here would bake a language into the engine
+                    // — the label a file carries is already in whatever
+                    // language its author chose, and the fallback for a track
+                    // that has neither label nor language code is a sentence,
+                    // which belongs in the UI.
+                    TrackInfo(id = index, label = format.label, language = format.language),
                     TrackSelectionOverride(group.mediaTrackGroup, i),
                     group.isTrackSelected(i),
                 )
@@ -547,12 +657,23 @@ class PlaybackController(
         watchdog?.cancel()
         watchdog = null
 
-        if (!resumeApplied) {
-            resumeApplied = true
-            val duration = player.duration
-            resumePercent?.takeIf { duration > 0 }?.let { percent ->
-                player.seekTo((duration * percent / 100f).toLong())
+        // `resumeApplied` is set *inside* the branch, not before it. Setting it
+        // unconditionally meant that a first READY arriving before the
+        // duration was demuxed — which happens — permanently consumed the
+        // resume point without ever using it, and the film silently restarted
+        // from the beginning.
+        val duration = player.duration
+        val percent = resumePercent
+        if (!resumeApplied && percent != null && duration > 0) {
+            val exact = (duration * percent / 100f).toLong().coerceIn(0L, duration)
+            // The metadata runtime already placed the range request close to
+            // here (see `open`), so this is a correction, not a seek. Skipping
+            // it when it would move by less than a few seconds avoids paying
+            // for a rebuffer to fix an error nobody can perceive.
+            if (kotlin.math.abs(exact - player.currentPosition) > RESUME_TOLERANCE_MS) {
+                player.seekTo(exact)
             }
+            resumeApplied = true
         }
 
         _state.update {
@@ -617,10 +738,7 @@ class PlaybackController(
         watchdog = null
 
         if (manualMode) {
-            fail(
-                "Essa fonte devolveu um aviso no lugar do filme, não o filme em si. " +
-                    "Escolha outra na lista.",
-            )
+            fail(PlaybackFailure.ManualDecoy)
             return
         }
 
@@ -628,10 +746,7 @@ class PlaybackController(
         decoyStreak++
 
         if (decoyStreak >= DECOY_STREAK_LIMIT) {
-            fail(
-                "As fontes estão devolvendo um aviso no lugar do filme, o que quase sempre " +
-                    "é o provedor debrid limitando requisições. Espere alguns minutos e tente de novo.",
-            )
+            fail(PlaybackFailure.DecoyStreak)
             return
         }
 
@@ -641,33 +756,58 @@ class PlaybackController(
         tryAdvance()
     }
 
-    private fun fail(message: String) {
+    private fun fail(failure: PlaybackFailure) {
         watchdog?.cancel()
         ticker?.cancel()
         runCatching { player.stop() }
         _state.update {
-            it.copy(phase = PlaybackPhase.FAILED, error = message, availableSources = queue.toList())
+            it.copy(phase = PlaybackPhase.FAILED, error = failure, availableSources = queue.toList())
         }
+    }
+
+    /**
+     * Whether anything on screen is actually reading the position.
+     *
+     * The screen reports this rather than the controller guessing, because
+     * "is the OSD up" is a UI fact. It is the difference between polling twice
+     * a second for two hours and polling only while someone is looking.
+     */
+    fun setOsdVisible(visible: Boolean) {
+        if (osdVisible == visible) return
+        osdVisible = visible
+        // Coming back from the slow cadence, the stored position can be
+        // several seconds stale — refresh before the bar is drawn rather than
+        // letting it appear wrong and correct itself a tick later.
+        if (visible) publishPosition()
     }
 
     /**
      * ExoPlayer has no position callback, so the seek bar is polled. The tick
      * also keeps the play/pause phase honest, since pausing through the
      * engine (rather than through this class) is possible.
+     *
+     * The cadence follows the OSD. Every tick allocates a new
+     * `PlaybackState` and wakes every collector of it, so running at the fast
+     * rate while nothing displays the position is pure cost — and on a set-top
+     * box it is cost paid against the same frame budget the video decode needs.
      */
     private fun startTicker() {
         ticker?.cancel()
         ticker = scope.launch {
             while (isActive) {
-                delay(TICK_MS)
-                _state.update {
-                    it.copy(
-                        positionMs = player.currentPosition.coerceAtLeast(0),
-                        durationMs = player.duration.coerceAtLeast(0),
-                        phase = nextPollPhase(it.phase),
-                    )
-                }
+                delay(if (osdVisible) TICK_MS else IDLE_TICK_MS)
+                publishPosition()
             }
+        }
+    }
+
+    private fun publishPosition() {
+        _state.update {
+            it.copy(
+                positionMs = player.currentPosition.coerceAtLeast(0),
+                durationMs = player.duration.coerceAtLeast(0),
+                phase = nextPollPhase(it.phase),
+            )
         }
     }
 
@@ -892,9 +1032,25 @@ class PlaybackController(
         /** Decoys in a row that mean the provider, not the mirror, is the problem. */
         const val DECOY_STREAK_LIMIT = 3
         const val MAX_PASSES = 2
+
+        /** Position polling while the OSD is up — see [startTicker]. */
         const val TICK_MS = 500L
+
+        /**
+         * Position polling with the OSD hidden, which is most of a film.
+         *
+         * Nothing on screen shows the position then; the tick only has to keep
+         * the phase honest and leave the seek bar roughly right for the moment
+         * it reappears. At the old flat 500ms this emitted ~14,400 states over
+         * a two-hour film, every one of them recomposing the player screen.
+         */
+        const val IDLE_TICK_MS = 4_000L
+
         const val SUBTITLE_TICK_MS = 120L
-        const val TARGET_BUFFER_BYTES = 48 * 1024 * 1024
+
+        /** How far off the runtime estimate may be before a resume is corrected. */
+        const val RESUME_TOLERANCE_MS = 5_000L
+
         const val MAX_SUBTITLE_OFFSET_MS = 10_000L
     }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.dto.TmdbSearchResultDto
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,14 +67,16 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
                 }
 
                 val keywordDeferred = async {
-                    graph.network.tmdb.searchKeyword(
+                    // One request, then two reads of it. This used to call the
+                    // endpoint again — same key, same query — purely to take
+                    // the first result when no keyword matched the search text
+                    // exactly, which is the common case.
+                    val keywords = graph.network.tmdb.searchKeyword(
                         apiKey = ApiConfig.TMDB_KEY,
-                        query = query
-                    ).results.firstOrNull { it.name.equals(query, ignoreCase = true) }
-                        ?: graph.network.tmdb.searchKeyword(
-                            apiKey = ApiConfig.TMDB_KEY,
-                            query = query
-                        ).results.firstOrNull()
+                        query = query,
+                    ).results
+                    keywords.firstOrNull { it.name.equals(query, ignoreCase = true) }
+                        ?: keywords.firstOrNull()
                 }
 
                 val searchResults = searchDeferred.await()
@@ -122,8 +125,11 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
             title = title ?: name ?: "",
             imdbId = null,
             year = (releaseDate ?: firstAirDate)?.take(4)?.toIntOrNull(),
-            posterUrl = posterPath?.let { "https://image.tmdb.org/t/p/w342$it" },
-            backdropUrl = backdropPath?.let { "https://image.tmdb.org/t/p/w1280$it" },
+            // Through `TmdbImages`, not hand-built. Search was the one screen
+            // still asking for w342 — double the pixels a card can paint,
+            // which is precisely the cost the constant exists to avoid.
+            posterUrl = TmdbImages.url(posterPath, TmdbImages.POSTER_CARD),
+            backdropUrl = TmdbImages.url(backdropPath, TmdbImages.BACKDROP_FANART),
             genres = emptyList(),
             runtimeMinutes = null,
             score = (voteAverage * 10).toInt().takeIf { it > 0 }

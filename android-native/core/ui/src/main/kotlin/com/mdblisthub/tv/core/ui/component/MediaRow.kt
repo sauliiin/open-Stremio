@@ -19,7 +19,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.mdblisthub.tv.core.ui.R
 import androidx.tv.material3.IconButton
 import androidx.tv.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -80,6 +82,7 @@ private class SafeHorizontalScroll(private val insetPx: Float) : BringIntoViewSp
 fun MediaRow(
     title: String,
     items: List<MediaItem>,
+    modifier: Modifier = Modifier,
     isEditMode: Boolean = false,
     hidden: Boolean = false,
     onToggleVisibility: () -> Unit = {},
@@ -90,7 +93,6 @@ fun MediaRow(
     onRename: () -> Unit = {},
     onDelete: () -> Unit = {},
     onItemClick: (MediaItem) -> Unit = {},
-    modifier: Modifier = Modifier,
     onItemFocused: (MediaItem) -> Unit = {},
     onReachedEnd: () -> Unit = {},
     /**
@@ -115,6 +117,8 @@ fun MediaRow(
      * every other row's simpler, already-correct `(MediaItem) -> Unit`.
      */
     onItemClickIndexed: ((Int, MediaItem) -> Unit)? = null,
+    /** Held OK on a card — see [PosterCard]. Indexed for the same reason as above. */
+    onItemLongClickIndexed: ((Int, MediaItem) -> Unit)? = null,
     progressPercent: ((Int, MediaItem) -> Float?)? = null,
 ) {
     if (items.isEmpty() && !isEditMode) return
@@ -125,6 +129,17 @@ fun MediaRow(
     val safeHorizontalScroll = remember(horizontalInsetPx) {
         SafeHorizontalScroll(horizontalInsetPx)
     }
+
+    // Hoisted rather than read inline: `stringResource` is only callable from a
+    // composable scope, and the `Icon` calls below sit inside `IconButton`
+    // content lambdas where reading them per icon would also re-resolve on
+    // every recomposition of the row.
+    val moveUpLabel = stringResource(R.string.row_move_up)
+    val moveDownLabel = stringResource(R.string.row_move_down)
+    val renameLabel = stringResource(R.string.row_rename)
+    val showLabel = stringResource(R.string.row_show)
+    val hideLabel = stringResource(R.string.row_hide)
+    val deleteLabel = stringResource(R.string.row_delete)
 
     Column(modifier.fillMaxWidth().alpha(if (isEditMode && hidden) 0.5f else 1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -150,7 +165,7 @@ fun MediaRow(
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowUpward,
-                            contentDescription = "Mover lista para cima",
+                            contentDescription = moveUpLabel,
                             tint = if (canMoveUp) HubColors.Text else HubColors.TextFaint,
                         )
                     }
@@ -161,7 +176,7 @@ fun MediaRow(
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowDownward,
-                            contentDescription = "Mover lista para baixo",
+                            contentDescription = moveDownLabel,
                             tint = if (canMoveDown) HubColors.Text else HubColors.TextFaint,
                         )
                     }
@@ -171,7 +186,7 @@ fun MediaRow(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Edit,
-                            contentDescription = "Renomear lista",
+                            contentDescription = renameLabel,
                             tint = HubColors.Text,
                         )
                     }
@@ -181,7 +196,7 @@ fun MediaRow(
                     ) {
                         Icon(
                             imageVector = if (hidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (hidden) "Mostrar lista" else "Ocultar lista",
+                            contentDescription = if (hidden) showLabel else hideLabel,
                             tint = HubColors.Text
                         )
                     }
@@ -191,7 +206,7 @@ fun MediaRow(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
-                            contentDescription = "Excluir lista",
+                            contentDescription = deleteLabel,
                             tint = HubColors.Rotten,
                         )
                     }
@@ -221,6 +236,9 @@ fun MediaRow(
                             if (focused.key == items.lastOrNull()?.key) onReachedEnd()
                         },
                         progressPercent = progressPercent?.invoke(index, item),
+                        onLongClick = onItemLongClickIndexed?.let { handler ->
+                            { handler(index, item) }
+                        },
                         modifier = Modifier.focusProperties { canFocus = !isEditMode },
                     )
                 }

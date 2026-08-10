@@ -368,6 +368,18 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         }
     }
 
+    /**
+     * Drops a title from "Continuar assistindo", here and on the account.
+     *
+     * `PlaybackRepository.clear` has existed since the row did — it posts
+     * `scrobble/clear` and deletes the Room row — but nothing ever called it,
+     * so a half-watched title someone had abandoned stayed on the home screen
+     * with no way to remove it short of finishing it.
+     */
+    fun removeResumePoint(point: ResumePoint) {
+        viewModelScope.launch { graph.playback.clear(point.toTarget()) }
+    }
+
     fun signOut(onDone: () -> Unit) {
         viewModelScope.launch {
             graph.scheduler.onSignedOut()

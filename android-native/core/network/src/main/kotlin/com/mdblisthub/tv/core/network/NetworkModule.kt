@@ -28,6 +28,9 @@ class NetworkModule(context: Context) {
     /** The same hosts, but for the one-off install, which may cold-start slowly. */
     val addonInstallClient: OkHttpClient = HttpClients.addonInstall(metadataClient)
 
+    /** What the player reads the film over — see [HttpClients.playback]. */
+    val playbackClient: OkHttpClient = HttpClients.playback(metadataClient)
+
     private val converter = json.asConverterFactory("application/json".toMediaType())
 
     val mdblist: MdblistApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()

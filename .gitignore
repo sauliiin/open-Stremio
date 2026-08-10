@@ -2,10 +2,37 @@
 /node_modules
 npm-debug.log
 
+# Build output
+build/
+.gradle/
+*.apk
+*.aab
+captures/
+
+# Local machine configuration — SDK paths differ per checkout, and a committed
+# one breaks the build for everyone else.
+local.properties
+
+# Tool logs. These were tracked once; `firebase-debug.log` alone was 33 KB of
+# output from a single deploy, and none of it means anything on another
+# machine.
+*-debug.log
+firebase-debug.log
+database-debug.log
+ui-debug.log
+firestore-debug.log
+.firebase/
+
+# Signing material. Nothing here should ever reach a remote.
+*.jks
+*.keystore
+keystore.properties
+
 # IDEs
 .idea/
 .vscode/*
 !.vscode/settings.json
+*.iml
 
 # System files
 .DS_Store

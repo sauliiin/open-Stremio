@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +66,13 @@ fun PosterCard(
     modifier: Modifier = Modifier,
     onFocused: (MediaItem) -> Unit = {},
     progressPercent: Float? = null,
+    /**
+     * Held OK, the one secondary gesture a remote has. Null leaves the card
+     * with a plain click, which is what every row but "continue watching"
+     * wants — a card that reacts to being held without doing anything is
+     * worse than one that does not react at all.
+     */
+    onLongClick: (() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -115,7 +123,22 @@ fun PosterCard(
                 // `clickable` is what makes it focusable *and* what turns the
                 // remote's centre key into a click; adding `focusable` beside
                 // it would register two focus targets for one card.
-                .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+                .let { base ->
+                    if (onLongClick == null) {
+                        base.clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            onClick = onClick,
+                        )
+                    } else {
+                        base.combinedClickable(
+                            interactionSource = interaction,
+                            indication = null,
+                            onClick = onClick,
+                            onLongClick = onLongClick,
+                        )
+                    }
+                },
         ) {
             if (item.posterUrl != null) {
                 AsyncImage(

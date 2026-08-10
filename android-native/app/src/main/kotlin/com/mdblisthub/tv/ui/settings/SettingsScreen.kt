@@ -147,7 +147,9 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
             SettingsCard(title = stringResource(R.string.settings_section_subtitles)) {
                 SettingsRow(label = stringResource(R.string.settings_subtitle_auto_download)) {
                     HubButton(
-                        text = if (state.subtitleAutoDownload) "Ligado" else "Desligado",
+                        text = stringResource(
+                            if (state.subtitleAutoDownload) R.string.settings_on else R.string.settings_off,
+                        ),
                         primary = state.subtitleAutoDownload,
                         onClick = viewModel::toggleSubtitleAutoDownload
                     )

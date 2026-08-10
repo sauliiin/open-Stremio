@@ -31,8 +31,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 fun ExoVideoSurface(
     controller: PlaybackController,
     scaleType: VideoScaleType,
-    subtitleColor: ComposeColor = ComposeColor.Yellow,
     modifier: Modifier = Modifier,
+    subtitleColor: ComposeColor = ComposeColor.Yellow,
 ) {
     AndroidView(
         modifier = modifier,
@@ -50,23 +50,12 @@ fun ExoVideoSurface(
                 keepScreenOn = true
 
                 subtitleView?.apply {
-                    // Bigger and yellow — legible from a couch over any
-                    // backdrop, and the classic choice for exactly that
-                    // reason. `setApplyEmbeddedStyles(false)` is what makes
-                    // this stick even on a subtitle that ships its own ASS
-                    // styling, not just a plain SRT.
+                    // Bigger than default — legible from a couch over any
+                    // backdrop. `setApplyEmbeddedStyles(false)` is what makes
+                    // the app's own styling stick even on a subtitle that
+                    // ships its own ASS styling, not just a plain SRT.
                     setApplyEmbeddedStyles(false)
                     setApplyEmbeddedFontSizes(false)
-                    setStyle(
-                        CaptionStyleCompat(
-                            subtitleColor.toArgb(),
-                            Color.TRANSPARENT,
-                            Color.TRANSPARENT,
-                            CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
-                            Color.BLACK,
-                            Typeface.DEFAULT,
-                        ),
-                    )
                     setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 26f)
                 }
             }
@@ -77,6 +66,21 @@ fun ExoVideoSurface(
                 VideoScaleType.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
                 VideoScaleType.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
             }
+            // Applied here rather than in `factory`, which runs exactly once:
+            // set there, the caption colour was frozen at whatever it was the
+            // first time this composed, so changing the setting moved the
+            // app-drawn overlay and left container subtitles on the old
+            // colour — the same feature rendering two different ways.
+            view.subtitleView?.setStyle(
+                CaptionStyleCompat(
+                    subtitleColor.toArgb(),
+                    Color.TRANSPARENT,
+                    Color.TRANSPARENT,
+                    CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW,
+                    Color.BLACK,
+                    Typeface.DEFAULT,
+                ),
+            )
         },
         onRelease = { view ->
             // Leaving a destroyed view attached to a live player is how a back

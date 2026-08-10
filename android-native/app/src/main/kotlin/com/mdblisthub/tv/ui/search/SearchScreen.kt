@@ -82,11 +82,11 @@ fun SearchScreen(
 
         if (isLoading && results.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Buscando...", color = HubColors.TextDim)
+                Text(stringResource(R.string.search_searching), color = HubColors.TextDim)
             }
         } else if (results.isEmpty() && query.isNotBlank() && !isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Nenhum resultado encontrado.", color = HubColors.TextDim)
+                Text(stringResource(R.string.search_no_results), color = HubColors.TextDim)
             }
         } else {
             LazyVerticalGrid(

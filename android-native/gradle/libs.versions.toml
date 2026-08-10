@@ -101,6 +101,12 @@ media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 # neither plays without its own extractor module.
 media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
 media3-exoplayer-dash = { module = "androidx.media3:media3-exoplayer-dash", version.ref = "media3" }
+# Puts the player on the same OkHttp stack as the mirror probe, so the TLS
+# connection the probe just established is reused instead of re-handshaked.
+media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
+# `StandaloneDatabaseProvider`, which is what lets `SimpleCache` keep its index
+# across process restarts rather than rescanning the whole cache directory.
+media3-database = { module = "androidx.media3:media3-database", version.ref = "media3" }
 
 # Ships in the *app*, not the test module: this is the half that reads the
 # baked-in profile at install time and hands it to the runtime. Without it the

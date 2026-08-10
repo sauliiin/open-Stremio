@@ -25,12 +25,10 @@ val SCALE_CYCLE = listOf(
     VideoScaleType.STRETCH,
 )
 
-/** A label worth showing for a couple of seconds after the button is pressed. */
-fun VideoScaleType.label(): String = when (this) {
-    VideoScaleType.FIT -> "Ajustar à tela"
-    VideoScaleType.ZOOM -> "Preencher"
-    VideoScaleType.STRETCH -> "Esticar"
-}
+// The human-readable name for each mode lives in the app's string resources,
+// not here: this module has no business knowing which language the box is set
+// to, and hard-coded labels were exactly why the player screen stayed
+// Portuguese after the interface gained an English option.
 
 /** Where playback is, as one value the UI can render without branching twice. */
 enum class PlaybackPhase {
@@ -59,8 +57,17 @@ enum class PlaybackPhase {
  * anything ExoPlayer assigns — ExoPlayer identifies tracks by
  * (group, index) pairs, which do not survive being flattened into the Int
  * the pickers are built around.
+ *
+ * [label] and [language] are whatever the container declared, both nullable
+ * and neither invented here. A track with no label and no language code needs
+ * a name like "Track 2", and inventing that in this module would mean writing
+ * it in one fixed language — so the UI composes it instead.
  */
-data class TrackInfo(val id: Int, val label: String)
+data class TrackInfo(
+    val id: Int,
+    val label: String? = null,
+    val language: String? = null,
+)
 
 data class PlaybackState(
     val phase: PlaybackPhase = PlaybackPhase.IDLE,
@@ -79,7 +86,8 @@ data class PlaybackState(
     /** The line an external subtitle is showing right now, or null for a gap. */
     val activeSubtitleCue: String? = null,
     val scaleType: VideoScaleType = VideoScaleType.FIT,
-    val error: String? = null,
+    /** Why it stopped, as a value the UI renders — see [PlaybackFailure]. */
+    val error: PlaybackFailure? = null,
     /**
      * Every candidate the cascade collected, offered up once [PlaybackPhase.FAILED]
      * is reached so the user can pick one by hand instead of being stuck on the

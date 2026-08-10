@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="row_move_up">Move list up</string>
+    <string name="row_move_down">Move list down</string>
+    <string name="row_rename">Rename list</string>
+    <string name="row_show">Show list</string>
+    <string name="row_hide">Hide list</string>
+    <string name="row_delete">Delete list</string>
+</resources>

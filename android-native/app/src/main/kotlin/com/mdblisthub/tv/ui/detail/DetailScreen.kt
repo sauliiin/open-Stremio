@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -173,7 +174,7 @@ fun DetailScreen(
 
     val current = detail
     if (current == null) {
-        LoadingScreen(message = "Carregando ficha…")
+        LoadingScreen(message = stringResource(R.string.loading_fetching))
         return
     }
 
@@ -298,9 +299,13 @@ fun DetailScreen(
                         )
                     }
 
-                    libraryError?.let {
+                    libraryError?.let { failure ->
+                        val text = when (failure) {
+                            is LibraryError.Message -> failure.text
+                            LibraryError.SaveFailed -> stringResource(R.string.detail_save_failed)
+                        }
                         Spacer(Modifier.height(10.dp))
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = HubColors.Rotten)
+                        Text(text, style = MaterialTheme.typography.bodyMedium, color = HubColors.Rotten)
                     }
 
                     if (current.directors.isNotEmpty() || current.studios.isNotEmpty()) {
@@ -623,7 +628,7 @@ private fun CastBioOverlay(
 
 private fun openUrl(context: Context, url: String) {
     try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
         // No browser to hand it to — nothing left to do.
     }
@@ -728,10 +733,10 @@ private fun ReviewProvider.color(): Color = when (this) {
  * reimplementing a video platform.
  */
 private fun openTrailer(context: Context, youtubeKey: String) {
-    val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("vnd.youtube:$youtubeKey"))
+    val appIntent = Intent(Intent.ACTION_VIEW, "vnd.youtube:$youtubeKey".toUri())
     val webIntent = Intent(
         Intent.ACTION_VIEW,
-        Uri.parse("https://www.youtube.com/watch?v=$youtubeKey"),
+        "https://www.youtube.com/watch?v=$youtubeKey".toUri(),
     ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     try {

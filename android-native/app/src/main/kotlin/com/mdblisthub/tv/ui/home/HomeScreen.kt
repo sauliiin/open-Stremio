@@ -4,10 +4,7 @@ import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.isActive
 import androidx.compose.foundation.verticalScroll
 
-import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -54,7 +51,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -169,9 +165,11 @@ fun HomeScreen(
     val addonCatalogs by viewModel.addonCatalogs.collectAsStateWithLifecycle()
     val allAddonCatalogs by viewModel.allAddonCatalogs.collectAsStateWithLifecycle()
     val resumePoints by viewModel.resumePoints.collectAsStateWithLifecycle()
-    val focused by viewModel.focused.collectAsStateWithLifecycle()
-    val focusedBackdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
-    val focusedDetail by viewModel.focusedDetail.collectAsStateWithLifecycle()
+    // `focused`, `focusedBackdropUrl` and `focusedDetail` are deliberately NOT
+    // collected here. Reading them at this level made this ~500-line composable
+    // the recomposition scope for every single card the D-pad passes over.
+    // `HeroPanel` and the backdrop collect them themselves, so the scope that
+    // invalidates is the one that actually displays the value.
     val becauseYouWatched by viewModel.becauseYouWatched.collectAsStateWithLifecycle()
     val isEditMode by viewModel.isEditMode.collectAsStateWithLifecycle()
     val initialSyncComplete by viewModel.initialSyncComplete.collectAsStateWithLifecycle()
@@ -246,7 +244,42 @@ fun HomeScreen(
     var renameTarget by remember { mutableStateOf<EditableListTarget?>(null) }
     var renameValue by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<EditableListTarget?>(null) }
+    var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
+
+    resumeRemovalTarget?.let { point ->
+        Dialog(onDismissRequest = { resumeRemovalTarget = null }) {
+            Column(
+                modifier = Modifier
+                    .width(560.dp)
+                    .background(HubColors.Surface, RoundedCornerShape(16.dp))
+                    .padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text(
+                    stringResource(R.string.home_resume_remove_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = HubColors.Text,
+                )
+                Text(
+                    stringResource(R.string.home_resume_remove_body, point.title),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            viewModel.removeResumePoint(point)
+                            resumeRemovalTarget = null
+                        },
+                    ) { Text(stringResource(R.string.home_delete)) }
+                    Button(onClick = { resumeRemovalTarget = null }) {
+                        Text(stringResource(R.string.home_cancel))
+                    }
+                }
+            }
+        }
+    }
 
     if (showExitDialog) {
         Dialog(onDismissRequest = { showExitDialog = false }) {
@@ -263,7 +296,7 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Text(
-                        "Deseja realmente sair?", 
+                        stringResource(R.string.home_exit_question),
                         style = MaterialTheme.typography.titleLarge, 
                         color = HubColors.Text
                     )
@@ -274,10 +307,10 @@ fun HomeScreen(
                                 viewModel.signOut(onSignOut) 
                             }
                         ) {
-                            Text("Sim")
+                            Text(stringResource(R.string.home_yes))
                         }
                         Button(onClick = { showExitDialog = false }) {
-                            Text("Não")
+                            Text(stringResource(R.string.home_no))
                         }
                     }
                 }
@@ -294,7 +327,7 @@ fun HomeScreen(
                     .padding(28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("Renomear lista", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+                Text(stringResource(R.string.home_rename_list), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
                 BasicTextField(
                     value = renameValue,
                     onValueChange = { renameValue = it },
@@ -320,8 +353,8 @@ fun HomeScreen(
                             }
                             renameTarget = null
                         },
-                    ) { Text("Salvar") }
-                    Button(onClick = { renameTarget = null }) { Text("Cancelar") }
+                    ) { Text(stringResource(R.string.home_save)) }
+                    Button(onClick = { renameTarget = null }) { Text(stringResource(R.string.home_cancel)) }
                 }
             }
         }
@@ -336,15 +369,15 @@ fun HomeScreen(
                     .padding(28.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("Excluir lista?", style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+                Text(stringResource(R.string.home_delete_list_question), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
                 Text(
                     when (target) {
                         is EditableListTarget.Mdblist ->
-                            "\"${target.displayName}\" será removida do Open Stream, mas continuará existindo na sua conta MDBList."
+                            stringResource(R.string.home_delete_mdblist_body, target.displayName)
                         is EditableListTarget.Stremio ->
-                            "\"${target.displayName}\" será removida do Open Stream, mas o addon continuará instalado."
+                            stringResource(R.string.home_delete_addon_body, target.displayName)
                         is EditableListTarget.Feed ->
-                            "\"${target.displayName}\" será removida do Open Stream, sem alterar os dados da sua conta MDBList."
+                            stringResource(R.string.home_delete_feed_body, target.displayName)
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = HubColors.TextDim,
@@ -359,8 +392,8 @@ fun HomeScreen(
                             }
                             deleteTarget = null
                         },
-                    ) { Text("Excluir") }
-                    Button(onClick = { deleteTarget = null }) { Text("Cancelar") }
+                    ) { Text(stringResource(R.string.home_delete)) }
+                    Button(onClick = { deleteTarget = null }) { Text(stringResource(R.string.home_cancel)) }
                 }
             }
         }
@@ -398,7 +431,7 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
         // The fanart follows focus, the way Estuary does it: whatever the
         // remote is pointing at fills the screen behind the rows.
-        FanartBackdrop(url = focusedBackdropUrl)
+        FocusedBackdrop(viewModel)
 
         Row(Modifier.fillMaxSize()) {
             SideRail(
@@ -447,7 +480,12 @@ fun HomeScreen(
                 return@Row
             }
 
-            if (lists.isNotEmpty() && allLists.isEmpty()) {
+            // Gated on the sync flag, not on the row lists. The old condition
+            // was `lists.isNotEmpty() && allLists.isEmpty()`, and `lists` is
+            // `allLists` with the hidden ones filtered out — a subset can
+            // never be non-empty while its superset is empty, so this branch
+            // was unreachable and the message never appeared once.
+            if (!initialSyncComplete && allLists.isEmpty()) {
                 LoadingScreen(message = stringResource(R.string.home_syncing))
             }
 
@@ -460,21 +498,27 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
                 ) {
                     Text(
-                        if (hasHiddenRows) "Nenhuma fileira está visível" else "Nenhuma lista disponível",
+                        stringResource(
+                            if (hasHiddenRows) R.string.home_no_visible_rows else R.string.home_no_lists,
+                        ),
                         style = MaterialTheme.typography.headlineSmall,
                         color = HubColors.Text,
                     )
                     Text(
-                        if (hasHiddenRows) {
-                            "Abra a edição para restaurar uma fileira oculta ou reorganizar suas listas."
-                        } else {
-                            "Crie uma lista na MDBList ou adicione um catálogo na tela de Addons."
-                        },
+                        stringResource(
+                            if (hasHiddenRows) {
+                                R.string.home_no_visible_rows_desc
+                            } else {
+                                R.string.home_no_lists_desc
+                            },
+                        ),
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.TextDim,
                     )
                     HubButton(
-                        text = if (hasHiddenRows) "Editar listas" else "Abrir Addons",
+                        text = stringResource(
+                            if (hasHiddenRows) R.string.home_edit_lists else R.string.home_empty_button,
+                        ),
                         primary = true,
                         onClick = if (hasHiddenRows) viewModel::toggleEditMode else onOpenAddons,
                         modifier = Modifier.focusRequester(emptyStateFocusRequester),
@@ -486,7 +530,7 @@ fun HomeScreen(
             Column(Modifier.fillMaxSize()) {
                 if (HubColors.isNetflixy) {
                     Box(Modifier.weight(1f)) {
-                        HeroPanel(focused, focusedDetail)
+                        HeroPanel(viewModel)
                     }
                 }
 
@@ -509,14 +553,14 @@ fun HomeScreen(
                     ) {
                         if (!HubColors.isNetflixy) {
                             item(key = "hero") {
-                                HeroPanel(focused, focusedDetail)
+                                HeroPanel(viewModel)
                             }
                         }
 
                 if (resumePoints.isNotEmpty() && !isEditMode) {
                     item(key = "resume") {
                         MediaRow(
-                            title = "Continuar assistindo",
+                            title = stringResource(R.string.home_resume_row),
                             items = resumeCards,
                             // `card` alone cannot say which episode this is —
                             // `toCardItem()` drops season/episode, so two
@@ -532,6 +576,9 @@ fun HomeScreen(
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
                             onItemClickIndexed = { index, _ ->
                                 resumePoints.getOrNull(index)?.let(onResume)
+                            },
+                            onItemLongClickIndexed = { index, _ ->
+                                resumeRemovalTarget = resumePoints.getOrNull(index)
                             },
                             progressPercent = { index, _ -> resumePoints.getOrNull(index)?.progress },
                         )
@@ -647,7 +694,7 @@ fun HomeScreen(
                 if (!isEditMode) {
                     items(becauseYouWatched, key = { "byw-${it.seedTitle}" }) { row ->
                         MediaRow(
-                            title = "Porque você assistiu ${row.seedTitle}",
+                            title = stringResource(R.string.home_because_you_watched, row.seedTitle),
                             items = row.items,
                             onItemClick = onOpenTitle,
                             onItemFocused = viewModel::onFocused,
@@ -792,8 +839,29 @@ private fun AutoScrollText(
     )
 }
 
+/**
+ * The full-bleed artwork, collecting the focused item's backdrop itself.
+ *
+ * Split out for the recomposition scope, not for tidiness: the URL changes
+ * every time focus settles on a different card, and read from `HomeScreen` it
+ * invalidated the whole screen for what is one `AsyncImage`.
+ */
 @Composable
-private fun HeroPanel(item: MediaItem?, itemDetail: MediaDetail?) {
+private fun FocusedBackdrop(viewModel: HomeViewModel) {
+    val url by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
+    FanartBackdrop(url = url)
+}
+
+/** Same reasoning as [FocusedBackdrop] — see the note in `HomeScreen`. */
+@Composable
+private fun HeroPanel(viewModel: HomeViewModel) {
+    val item by viewModel.focused.collectAsStateWithLifecycle()
+    val itemDetail by viewModel.focusedDetail.collectAsStateWithLifecycle()
+    HeroPanelContent(item, itemDetail)
+}
+
+@Composable
+private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
     if (HubColors.isNetflixy) {
         Column(
             modifier = Modifier
@@ -832,8 +900,10 @@ private fun HeroPanel(item: MediaItem?, itemDetail: MediaDetail?) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 12.dp)) {
                 listOfNotNull(
                     item.year?.toString(),
-                    if (item.type == MediaType.SHOW) "Série" else "Filme",
-                    item.runtimeMinutes?.let { "$it min" },
+                    stringResource(
+                        if (item.type == MediaType.SHOW) R.string.home_type_show else R.string.home_type_movie,
+                    ),
+                    item.runtimeMinutes?.let { stringResource(R.string.home_minutes, it) },
                     item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
                 ).forEach {
                     Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
@@ -876,8 +946,10 @@ private fun HeroPanel(item: MediaItem?, itemDetail: MediaDetail?) {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 listOfNotNull(
                     item.year?.toString(),
-                    if (item.type == MediaType.SHOW) "Série" else "Filme",
-                    item.runtimeMinutes?.let { "$it min" },
+                    stringResource(
+                        if (item.type == MediaType.SHOW) R.string.home_type_show else R.string.home_type_movie,
+                    ),
+                    item.runtimeMinutes?.let { stringResource(R.string.home_minutes, it) },
                     item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
                 ).forEach {
                     Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)

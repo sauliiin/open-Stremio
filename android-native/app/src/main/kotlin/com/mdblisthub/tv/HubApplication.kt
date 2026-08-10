@@ -11,12 +11,15 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import coil3.PlatformContext as CoilPlatformContext
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
+import com.mdblisthub.tv.core.data.work.ImageMemoryTrimmer
 import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.model.HubThemeVariant
+import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.ui.theme.HubColors
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 
 class HubApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
@@ -30,13 +33,16 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
 
         // Read before the first frame rather than collected into composition.
         // The palette is global state that composition reads on its very first
-        // pass, so letting DataStore deliver it asynchronously means every
-        // cold start paints one frame in the default theme and then flips —
-        // a visible flash on every launch, for someone who is not on Normal.
-        // One small preferences file is the cheaper side of that trade, and
-        // failing to read it is never worth blocking a start over.
+        // pass, so letting it arrive asynchronously means every cold start
+        // paints one frame in the default theme and then flips — a visible
+        // flash on every launch, for someone who is not on Normal.
+        //
+        // Synchronous, but no longer blocking: this reads a one-key
+        // SharedPreferences mirror instead of awaiting DataStore, so the main
+        // thread is not parked on file I/O and protobuf parsing at the most
+        // latency-sensitive point in the lifecycle. See `UiPreferencesStore`.
         HubColors.apply(
-            runCatching { runBlocking { graph.uiPreferences.currentTheme() } }
+            runCatching { graph.uiPreferences.startupTheme() }
                 .getOrDefault(HubThemeVariant.NORMAL),
         )
 
@@ -46,6 +52,18 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
             val loader = SingletonImageLoader.get(this)
             urls.forEach { url ->
                 loader.execute(ImageRequest.Builder(this).data(url).build())
+            }
+        }
+
+        graph.imageMemoryTrimmer = CoilMemoryTrimmer(this)
+
+        // Keeps TMDB in step with the interface language. Without it the
+        // English option produced an English interface wrapped around
+        // Portuguese synopses, titles and certifications — the metadata layer
+        // never heard about the setting at all.
+        graph.scope.launch {
+            graph.uiPreferences.language.collect { tag ->
+                ApiConfig.LANGUAGE = ApiConfig.metadataLanguageFor(tag)
             }
         }
     }
@@ -80,4 +98,39 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
             }
             .crossfade(true)
             .build()
+}
+
+/**
+ * Lends the video buffer the heap the poster cache is holding.
+ *
+ * The image cache is budgeted at 25% of the heap and the player's allocator at
+ * a share of what is free — but a film playing and a wall of posters on screen
+ * never happen at the same time, so during playback that quarter of the heap
+ * is doing nothing except making the buffer smaller. Coil keeps
+ * `initialMaxSize` precisely so a caller can hand the budget back afterwards.
+ *
+ * Nothing is lost by trimming: every entry is still on Coil's 512MB disk
+ * cache, so returning to the home screen re-decodes rather than re-downloads.
+ */
+@OptIn(coil3.annotation.ExperimentalCoilApi::class)
+private class CoilMemoryTrimmer(
+    private val context: CoilPlatformContext,
+) : ImageMemoryTrimmer {
+
+    override fun trimForPlayback() {
+        val cache = SingletonImageLoader.get(context).memoryCache ?: return
+        cache.maxSize = (cache.initialMaxSize / PLAYBACK_DIVISOR).coerceAtLeast(MIN_BYTES)
+    }
+
+    override fun restore() {
+        val cache = SingletonImageLoader.get(context).memoryCache ?: return
+        cache.maxSize = cache.initialMaxSize
+    }
+
+    private companion object {
+        const val PLAYBACK_DIVISOR = 8L
+
+        /** Enough for the artwork the player's own veil draws, and no more. */
+        const val MIN_BYTES = 8L * 1024 * 1024
+    }
 }

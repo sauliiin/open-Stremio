@@ -4,12 +4,14 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.mdblisthub.tv.core.data.CachePolicy
+import com.mdblisthub.tv.core.data.repository.AddonsRepository
 import com.mdblisthub.tv.core.data.repository.ListsRepository
 import com.mdblisthub.tv.core.data.repository.MediaRepository
 import com.mdblisthub.tv.core.data.repository.PlaybackRepository
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.model.MediaType
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 /**
  * Walks the account's lists and writes them into Room.
@@ -105,6 +107,7 @@ class ArtworkWorker(
     context: Context,
     params: WorkerParameters,
     private val database: HubDatabase,
+    private val addons: AddonsRepository,
     private val warmer: ImageWarmer,
 ) : CoroutineWorker(context, params) {
 
@@ -116,6 +119,28 @@ class ArtworkWorker(
             val urls = mediaDao.posterUrls(list.id, VISIBLE_PER_ROW)
             if (urls.isNotEmpty()) warmer.warm(urls)
         }
+
+        // Catalogue rows used to be skipped entirely, because this only ever
+        // walked `lists()` — which holds MDBList rows and nothing else. A home
+        // screen made mostly of addon catalogues therefore got none of the
+        // pre-warming this worker exists to provide, and filled in card by
+        // card on every visit. Their posters do not live in Room (the
+        // catalogue is fetched per session), so they are read from the addon
+        // rather than the database.
+        runCatching {
+            addons.observeCatalogs().first()
+                .filterNot { it.hidden }
+                .forEach { catalog ->
+                    val urls = addons.catalogItems(catalog).getOrDefault(emptyList())
+                        .asSequence()
+                        .mapNotNull { it.posterUrl }
+                        .take(VISIBLE_PER_ROW)
+                        .toList()
+                    if (urls.isNotEmpty()) warmer.warm(urls)
+                    delay(SPACING_MS)
+                }
+        }
+
         return Result.success()
     }
 
@@ -124,6 +149,9 @@ class ArtworkWorker(
 
         /** Roughly what fits on a 1080p row, plus one card of lead-in. */
         private const val VISIBLE_PER_ROW = 8
+
+        /** Same courtesy the other workers extend to the APIs they walk. */
+        private const val SPACING_MS = 120L
     }
 }
 

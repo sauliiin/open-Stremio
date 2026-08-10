@@ -33,6 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -161,7 +163,7 @@ fun TrailerOverlay(
                     }
 
                     is TrailerStage.Failed -> Text(
-                        text = "Não consegui carregar o trailer aqui.",
+                        text = stringResource(R.string.trailer_failed),
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.TextDim,
                         textAlign = TextAlign.Center,
@@ -175,12 +177,12 @@ fun TrailerOverlay(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 HubButton(
-                    text = "Fechar",
+                    text = stringResource(R.string.detail_close),
                     onClick = onDismiss,
                     modifier = Modifier.focusRequester(closeFocus),
                 )
                 if (youtubeKey != null) {
-                    HubButton(text = "Abrir no YouTube", onClick = onOpenExternally)
+                    HubButton(text = stringResource(R.string.trailer_open_youtube), onClick = onOpenExternally)
                 }
             }
         }

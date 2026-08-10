@@ -35,7 +35,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.delay
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Audiotrack
@@ -70,7 +69,6 @@ import androidx.compose.animation.core.animateFloat
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -79,6 +77,8 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -89,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PlayableStream
@@ -97,9 +98,10 @@ import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.player.ExoVideoSurface
+import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.TrackInfo
-import com.mdblisthub.tv.player.label
+import com.mdblisthub.tv.player.VideoScaleType
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
@@ -169,9 +171,9 @@ fun PlayerScreen(
     // frame the key press arrives in.
     var wantsPlayFocus by remember { mutableStateOf(false) }
 
-    // Paused, or nothing decoding yet: the OSD has nothing to hide behind, so
-    // it simply stays up rather than counting down to invisible controls.
-    val osdVisible = !osdExpired || !playback.isPlaying
+    // Paused: the OSD has nothing to hide behind, so it stays up.
+    // Buffering no longer forces the OSD visible to prevent flashing during micro-stutters.
+    val osdVisible = !osdExpired || playback.phase == PlaybackPhase.PAUSED
 
     LaunchedEffect(osdVisibleUntil) {
         osdExpired = false
@@ -182,6 +184,11 @@ fun PlayerScreen(
 
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    // Tells the controller whether anything is reading the position, so it can
+    // drop from polling twice a second to once every four while the OSD is
+    // away — which is most of a film.
+    LaunchedEffect(osdVisible) { viewModel.controller.setOsdVisible(osdVisible) }
 
     // Closing a picker and re-composing the OSD happen in the same snapshot.
     // Wait a frame so the picker's disappearing focus target cannot clear the
@@ -369,12 +376,12 @@ fun PlayerScreen(
         if (playback.phase == PlaybackPhase.FAILED || ui.noAddons || ui.missingImdbId) {
             FailureVeil(
                 backdropUrl = ui.backdropUrl,
-                title = "Não deu para reproduzir",
+                title = stringResource(R.string.player_failed_title),
                 message = when {
-                    ui.noAddons -> "Nenhum addon instalado. É de um addon que saem as fontes."
-                    ui.missingImdbId ->
-                        "Este título não tem IMDb ID, e os addons são indexados por ele."
-                    else -> playback.error ?: "Não consegui reproduzir este título."
+                    ui.noAddons -> stringResource(R.string.player_no_addons)
+                    ui.missingImdbId -> stringResource(R.string.player_no_imdb)
+                    else -> playback.error?.message()
+                        ?: stringResource(R.string.player_generic_error)
                 },
                 showAddons = ui.noAddons || playback.phase == PlaybackPhase.FAILED,
                 onOpenAddons = onOpenAddons,
@@ -390,7 +397,7 @@ fun PlayerScreen(
         if (playback.phase == PlaybackPhase.ENDED) {
             FailureVeil(
                 backdropUrl = ui.backdropUrl,
-                title = "Fim",
+                title = stringResource(R.string.player_ended_title),
                 message = ui.title,
                 showAddons = false,
                 onOpenAddons = onOpenAddons,
@@ -572,7 +579,7 @@ private fun ResolvingVeil(
                 )
             } else {
                 Text(
-                    text = title.ifBlank { "Preparando…" },
+                    text = title.ifBlank { stringResource(R.string.player_preparing_short) },
                     style = MaterialTheme.typography.headlineLarge,
                     color = HubColors.Text,
                     textAlign = TextAlign.Center,
@@ -596,7 +603,7 @@ private fun ResolvingVeil(
 
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "Preparando a reprodução…",
+                text = stringResource(R.string.player_preparing),
                 style = MaterialTheme.typography.bodyLarge,
                 color = HubColors.TextDim,
             )
@@ -605,7 +612,7 @@ private fun ResolvingVeil(
             if (total > 1 && attempt > 0) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "$attempt de $total",
+                    text = stringResource(R.string.player_attempt, attempt, total),
                     style = MaterialTheme.typography.labelSmall,
                     color = HubColors.TextFaint,
                 )
@@ -676,7 +683,7 @@ private fun FailureVeil(
             if (sources.isNotEmpty()) {
                 Spacer(Modifier.height(22.dp))
                 Text(
-                    text = "Ou escolha uma fonte manualmente",
+                    text = stringResource(R.string.player_pick_source),
                     style = MaterialTheme.typography.titleMedium,
                     color = HubColors.Text,
                 )
@@ -703,15 +710,15 @@ private fun FailureVeil(
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (showAddons) {
                     HubButton(
-                        "Ver addons",
+                        stringResource(R.string.player_open_addons),
                         onOpenAddons,
                         modifier = if (sources.isEmpty()) Modifier.focusRequester(primaryFocus) else Modifier,
                         primary = true,
                     )
-                    HubButton("Voltar", onBack)
+                    HubButton(stringResource(R.string.player_back), onBack)
                 } else {
                     HubButton(
-                        "Voltar",
+                        stringResource(R.string.player_back),
                         onBack,
                         modifier = if (sources.isEmpty()) Modifier.focusRequester(primaryFocus) else Modifier,
                     )
@@ -771,8 +778,8 @@ private fun SourceRow(
 private fun ExternalSubtitleOverlay(
     text: String,
     liftForOsd: Boolean,
-    color: Color = Color.Yellow,
     modifier: Modifier = Modifier,
+    color: Color = Color.Yellow,
 ) {
     val bottomPadding by animateDpAsState(
         if (liftForOsd) 168.dp else 40.dp,
@@ -867,24 +874,24 @@ private fun PlayerOsd(
             ) {
                 OsdIconButton(
                     icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (playing) "Pausar" else "Tocar",
+                    contentDescription = stringResource(if (playing) R.string.player_pause else R.string.player_play),
                     onClick = onTogglePlay,
                     modifier = Modifier.focusRequester(playButtonFocusRequester),
                 )
                 OsdIconButton(
                     icon = Icons.Filled.Subtitles,
-                    contentDescription = "Legenda",
+                    contentDescription = stringResource(R.string.player_subtitles),
                     onClick = onOpenSubtitles,
                     active = subtitleActive,
                 )
                 OsdIconButton(
                     icon = Icons.Filled.Audiotrack,
-                    contentDescription = "Faixa de áudio",
+                    contentDescription = stringResource(R.string.player_audio),
                     onClick = onOpenAudio,
                 )
                 OsdIconButton(
                     icon = Icons.Filled.AspectRatio,
-                    contentDescription = "Esticar: $scaleLabel",
+                    contentDescription = stringResource(R.string.player_scale, scaleLabel),
                     onClick = onCycleScale,
                 )
             }
@@ -1071,7 +1078,7 @@ private fun SubtitlePickerOverlay(
                 .padding(vertical = 12.dp),
         ) {
             Text(
-                text = "Legenda",
+                text = stringResource(R.string.player_subtitles),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -1081,9 +1088,12 @@ private fun SubtitlePickerOverlay(
                 item(key = "sync") {
                     SubtitleRow(
                         label = if (active == null) {
-                            "Sincronizar legenda — selecione uma legenda"
+                            stringResource(R.string.player_subtitle_sync_disabled)
                         } else {
-                            "Sincronizar legenda  ${formatSubtitleOffset(offsetMs)}"
+                            stringResource(
+                                R.string.player_subtitle_sync_value,
+                                formatSubtitleOffset(offsetMs),
+                            )
                         },
                         selected = offsetMs != 0L,
                         enabled = active != null,
@@ -1097,7 +1107,7 @@ private fun SubtitlePickerOverlay(
                 }
                 item(key = "none") {
                     SubtitleRow(
-                        label = "Sem legenda",
+                        label = stringResource(R.string.player_no_subtitle),
                         selected = active == null,
                         modifier = if (active == null) {
                             Modifier.focusRequester(firstRowFocus)
@@ -1109,7 +1119,7 @@ private fun SubtitlePickerOverlay(
                 }
                 items(options, key = { it.key }) { option ->
                     SubtitleRow(
-                        label = "${option.label} — ${option.addon}",
+                        label = stringResource(R.string.player_subtitle_option, option.label, option.addon),
                         selected = active?.key == option.key,
                         onClick = { onSelect(option) },
                     )
@@ -1196,7 +1206,7 @@ private fun SubtitleSyncOverlay(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Sincronizar legenda",
+                text = stringResource(R.string.player_subtitle_sync),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
             )
@@ -1208,7 +1218,7 @@ private fun SubtitleSyncOverlay(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
             Text(
-                text = "Negativo adianta  •  positivo atrasa",
+                text = stringResource(R.string.player_subtitle_sync_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = HubColors.TextDim,
             )
@@ -1224,7 +1234,7 @@ private fun SubtitleSyncOverlay(
                 },
             ) {
                 HubButton(
-                    text = "−0,1 s",
+                    text = stringResource(R.string.player_offset_minus),
                     onClick = { onAdjust(-SUBTITLE_OFFSET_STEP_MS) },
                     modifier = Modifier
                         .focusRequester(firstButtonFocus)
@@ -1235,10 +1245,13 @@ private fun SubtitleSyncOverlay(
                 // Keep this focusable at zero: disabling the currently
                 // focused button after a reset leaves a TV remote with no
                 // focus anchor for the next left/right press.
-                HubButton(text = "Zerar", onClick = onReset)
-                HubButton(text = "+0,1 s", onClick = { onAdjust(SUBTITLE_OFFSET_STEP_MS) })
+                HubButton(text = stringResource(R.string.player_offset_reset), onClick = onReset)
                 HubButton(
-                    text = "Concluir",
+                    text = stringResource(R.string.player_offset_plus),
+                    onClick = { onAdjust(SUBTITLE_OFFSET_STEP_MS) },
+                )
+                HubButton(
+                    text = stringResource(R.string.player_done),
                     onClick = onDismiss,
                     modifier = Modifier.onPreviewKeyEvent { event ->
                         event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight
@@ -1284,7 +1297,7 @@ private fun AudioPickerOverlay(
                 .padding(vertical = 12.dp),
         ) {
             Text(
-                text = "Faixa de áudio",
+                text = stringResource(R.string.player_audio),
                 style = MaterialTheme.typography.titleLarge,
                 color = HubColors.Text,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -1293,7 +1306,7 @@ private fun AudioPickerOverlay(
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                 itemsIndexed(options, key = { _, option -> option.id }) { index, option ->
                     SubtitleRow(
-                        label = option.label,
+                        label = option.displayLabel(),
                         selected = option.id == activeId,
                         modifier = if (index == 0) Modifier.focusRequester(firstRowFocus) else Modifier,
                         onClick = { onSelect(option.id) },
@@ -1317,9 +1330,63 @@ private fun formatTime(ms: Long): String {
     }
 }
 
+/**
+ * Decimal separator from the locale, not from a hard-coded comma. The number
+ * sits beside "+0.1 s"/"−0,1 s" buttons that come from the string resources,
+ * so it has to agree with whichever language is selected.
+ */
+@Composable
 private fun formatSubtitleOffset(ms: Long): String {
-    if (ms == 0L) return "0,0 s"
-    val sign = if (ms < 0L) "−" else "+"
-    val tenths = (kotlin.math.abs(ms) + 50L) / 100L
-    return "$sign${tenths / 10L},${tenths % 10L} s"
+    val locale = androidx.compose.ui.text.intl.Locale.current
+    val javaLocale = remember(locale.toLanguageTag()) {
+        java.util.Locale.forLanguageTag(locale.toLanguageTag())
+    }
+    val seconds = ((kotlin.math.abs(ms) + 50L) / 100L) / 10.0
+    val magnitude = String.format(javaLocale, "%.1f s", seconds)
+    return when {
+        ms == 0L -> magnitude
+        ms < 0L -> "−$magnitude"
+        else -> "+$magnitude"
+    }
+}
+
+/** The human name for a scale mode — see the note in `PlaybackState`. */
+@Composable
+private fun VideoScaleType.label(): String = stringResource(
+    when (this) {
+        VideoScaleType.FIT -> R.string.player_scale_fit
+        VideoScaleType.ZOOM -> R.string.player_scale_zoom
+        VideoScaleType.STRETCH -> R.string.player_scale_stretch
+    },
+)
+
+/**
+ * What a track is called, from what the container declared — its own label
+ * first, then its language code, and only then a positional fallback.
+ */
+@Composable
+private fun TrackInfo.displayLabel(): String {
+    val declared = label?.takeIf { it.isNotBlank() }
+    if (declared != null) return declared
+
+    val code = language?.takeIf { it.isNotBlank() }
+    return if (code != null) {
+        stringResource(R.string.player_track_language, code.uppercase())
+    } else {
+        stringResource(R.string.player_track_index, id + 1)
+    }
+}
+
+/** Turns the engine's typed failure into a sentence in the selected language. */
+@Composable
+private fun PlaybackFailure.message(): String = when (this) {
+    PlaybackFailure.NoCandidates -> stringResource(R.string.player_error_no_candidates)
+    is PlaybackFailure.AllCandidatesFailed ->
+        pluralStringResource(R.plurals.player_error_all_failed, count, count)
+    PlaybackFailure.DecoyStreak -> stringResource(R.string.player_error_decoy_streak)
+    PlaybackFailure.ManualNoLink -> stringResource(R.string.player_error_manual_no_link)
+    PlaybackFailure.ManualUnresponsive ->
+        stringResource(R.string.player_error_manual_unresponsive)
+    PlaybackFailure.ManualFailed -> stringResource(R.string.player_error_manual_failed)
+    PlaybackFailure.ManualDecoy -> stringResource(R.string.player_error_manual_decoy)
 }

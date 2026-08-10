@@ -1,7 +1,9 @@
 package com.mdblisthub.tv.ui.login
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.repository.GoogleAccountInfo
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +17,20 @@ data class LoginState(
     val google: GoogleAccountInfo? = null,
     val busy: Boolean = false,
     val checkingSavedKey: Boolean = false,
+    /**
+     * Free text reported by the screen, which already resolved it against the
+     * locale-wrapped context.
+     */
     val error: String? = null,
+    /**
+     * A message this ViewModel raised itself, as a resource id.
+     *
+     * Not resolved here. `graph.appContext` is the *application* context, and
+     * it never sees the locale override the interface runs under — resolving
+     * through it produced errors in the system language while everything
+     * around them followed the in-app setting.
+     */
+    @StringRes val errorRes: Int? = null,
     val signedIn: Boolean = false,
 )
 
@@ -38,33 +53,32 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
     }
 
     fun onKeyChange(value: String) {
-        _state.update { it.copy(key = value, error = null) }
+        _state.update { it.copy(key = value, error = null, errorRes = null) }
     }
 
     fun beginGoogleSignIn() {
         if (_state.value.busy) return
-        _state.update { it.copy(busy = true, checkingSavedKey = false, error = null) }
+        _state.update { it.copy(busy = true, checkingSavedKey = false, error = null, errorRes = null) }
     }
 
     fun reportGoogleError(message: String) {
-        _state.update { it.copy(busy = false, checkingSavedKey = false, error = message) }
+        _state.update { it.copy(busy = false, checkingSavedKey = false, error = message, errorRes = null) }
     }
 
     fun signInWithGoogle(idToken: String) {
-        _state.update { it.copy(checkingSavedKey = true, error = null) }
+        _state.update { it.copy(checkingSavedKey = true, error = null, errorRes = null) }
         viewModelScope.launch {
             graph.auth.signInWithGoogleIdToken(idToken).fold(
                 onSuccess = {
                     graph.listPreferencesSync.restore()
-                    _state.update { it.copy(busy = false, checkingSavedKey = false, error = null) }
+                    _state.update { it.copy(busy = false, checkingSavedKey = false, error = null, errorRes = null) }
                 },
                 onFailure = { error ->
                     _state.update {
                         it.copy(
                             busy = false,
                             checkingSavedKey = false,
-                            error = "Não consegui entrar com o Google. " +
-                                "(${error.message ?: "sem detalhe"})",
+                            errorRes = R.string.login_error_google,
                         )
                     }
                 },
@@ -76,7 +90,7 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
         val key = _state.value.key.trim()
         if (key.isEmpty() || _state.value.busy || _state.value.google == null) return
 
-        _state.update { it.copy(busy = true, error = null) }
+        _state.update { it.copy(busy = true, error = null, errorRes = null) }
         viewModelScope.launch {
             graph.auth.linkMdblist(key).fold(
                 onSuccess = {
@@ -88,8 +102,7 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
                     _state.update {
                         it.copy(
                             busy = false,
-                            error = "Não consegui vincular a MDBList. Confira a chave e tente de novo. " +
-                                "(${error.message ?: "sem detalhe"})",
+                            errorRes = R.string.login_error_mdblist_link,
                         )
                     }
                 },
@@ -99,7 +112,7 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
 
     fun continueWithoutMdblist() {
         if (_state.value.busy || _state.value.google == null) return
-        _state.update { it.copy(busy = true, error = null) }
+        _state.update { it.copy(busy = true, error = null, errorRes = null) }
         viewModelScope.launch {
             graph.auth.continueWithoutMdblist().fold(
                 onSuccess = {
@@ -110,8 +123,7 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
                     _state.update {
                         it.copy(
                             busy = false,
-                            error = "Não foi possível prosseguir sem MDBList. " +
-                                "(${error.message ?: "sem detalhe"})",
+                            errorRes = R.string.login_error_mdblist_required,
                         )
                     }
                 },

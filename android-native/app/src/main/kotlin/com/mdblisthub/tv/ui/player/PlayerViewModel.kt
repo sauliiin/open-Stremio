@@ -6,13 +6,14 @@ import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
 import com.mdblisthub.tv.core.model.MediaDetail
+import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
-import com.mdblisthub.tv.player.label
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +56,19 @@ class PlayerViewModel(
     private val episode: Int?,
 ) : ViewModel() {
 
-    val controller = PlaybackController(context, viewModelScope)
+    val controller = PlaybackController(
+        context = context,
+        scope = viewModelScope,
+        // Same connection pool the mirror probe used, so the handshake it paid
+        // for is reused rather than repeated — see `HttpClients.playback`.
+        callFactory = graph.network.playbackClient,
+    )
+
+    init {
+        // The home screen's posters are worth ~25% of the heap and are not on
+        // screen for the next two hours; the buffer is. See `ImageMemoryTrimmer`.
+        graph.imageMemoryTrimmer.trimForPlayback()
+    }
 
     private val _ui = MutableStateFlow(PlayerUiState())
     val ui: StateFlow<PlayerUiState> = _ui.asStateFlow()
@@ -73,25 +86,40 @@ class PlayerViewModel(
         viewModelScope.launch { autoSelectSubtitle() }
     }
 
+    /**
+     * Everything needed to *start* comes from Room; everything else catches up.
+     *
+     * The order here is the whole point. Asking the addons needs an IMDb id and
+     * nothing else, and the card row — which a list sync wrote for free —
+     * already has one. Waiting for `ensureDetail` first, as this used to,
+     * meant that a cold or week-stale cache put a TMDB call plus mdblist plus
+     * OMDb in front of the first addon request, on the one screen where
+     * latency is the entire experience. Now the fan-out starts from the cached
+     * id and hydration runs beside it, only feeding the artwork on the veil.
+     */
     private suspend fun start() {
-        graph.media.ensureDetail(type, tmdbId)
-        val detail = graph.media.observeDetail(type, tmdbId).first()
+        // Nothing here touches the network.
+        val card = graph.media.cachedCard(type, tmdbId)
+        val cachedDetail = graph.media.cachedDetail(type, tmdbId)
+        publishArtwork(cachedDetail, card)
 
-        _ui.update {
-            it.copy(
-                title = detail?.title.orEmpty(),
-                backdropUrl = detail?.backdropUrl,
-                episodeLabel = if (type == MediaType.SHOW && season != null && episode != null) {
-                    "T${season}E$episode"
-                } else {
-                    detail?.year?.toString()
-                },
-                logoUrl = detail?.logoUrl,
-                overview = detail?.overview,
-            )
+        // Kept running past the cascade below — it is what upgrades the veil
+        // from the card's poster to a real backdrop and clearlogo.
+        val hydration = viewModelScope.async {
+            graph.media.ensureDetail(type, tmdbId)
+            graph.media.cachedDetail(type, tmdbId)
         }
 
-        val imdbId = detail?.imdbId
+        // Only awaited when Room genuinely had nothing, which is the rare path
+        // (a deep link into a title that was never in a list).
+        val imdbId = card?.imdbId?.takeIf { it.isNotBlank() }
+            ?: cachedDetail?.imdbId?.takeIf { it.isNotBlank() }
+            ?: hydration.await()?.imdbId
+
+        viewModelScope.launch {
+            hydration.await()?.let { publishArtwork(it, card) }
+        }
+
         if (imdbId.isNullOrBlank()) {
             // Addons are indexed by IMDb id; without one there is nothing to
             // ask, and no cascade to run.
@@ -112,13 +140,34 @@ class PlayerViewModel(
         val resumeAt = graph.playback.resumeFor(scrobbleTarget)
 
         _ui.update { it.copy(searching = false) }
-        controller.play(candidates, resumeAt, expectedRuntimeMinutes(detail))
+        controller.play(candidates, resumeAt, expectedRuntimeMinutes(cachedDetail, card))
 
         // Subtitles are fetched after playback has been handed off: they take
         // as long as the streams did, and nothing should wait on them.
         viewModelScope.launch {
             val options = graph.streams.subtitles(type, stremioId)
             _ui.update { it.copy(subtitles = options) }
+        }
+    }
+
+    /**
+     * Whatever is known about how the title looks, from whichever source has
+     * it. Called twice — once from cache, once when hydration lands — so a
+     * later, richer answer never blanks out an earlier one.
+     */
+    private fun publishArtwork(detail: MediaDetail?, card: MediaItem?) {
+        _ui.update {
+            it.copy(
+                title = detail?.title ?: card?.title ?: it.title,
+                backdropUrl = detail?.backdropUrl ?: card?.backdropUrl ?: it.backdropUrl,
+                episodeLabel = if (type == MediaType.SHOW && season != null && episode != null) {
+                    "T${season}E$episode"
+                } else {
+                    (detail?.year ?: card?.year)?.toString() ?: it.episodeLabel
+                },
+                logoUrl = detail?.logoUrl ?: it.logoUrl,
+                overview = detail?.overview ?: it.overview,
+            )
         }
     }
 
@@ -132,7 +181,7 @@ class PlayerViewModel(
      * series average is only the fallback. Returning null where nothing is
      * known disables the check rather than letting it guess.
      */
-    private suspend fun expectedRuntimeMinutes(detail: MediaDetail?): Int? {
+    private suspend fun expectedRuntimeMinutes(detail: MediaDetail?, card: MediaItem?): Int? {
         val seasonNumber = season
         val episodeNumber = episode
 
@@ -147,7 +196,12 @@ class PlayerViewModel(
                 ?.takeIf { it > 0 }
                 ?.let { return it }
         }
+        // The card is the fallback rather than nothing, now that playback no
+        // longer waits for the detail row to exist: `MdbItemDto` carries a
+        // runtime, and a rough one still tells a two-minute removal notice
+        // apart from a feature.
         return detail?.runtimeMinutes?.takeIf { it > 0 }
+            ?: card?.runtimeMinutes?.takeIf { it > 0 }
     }
 
     /**
@@ -234,8 +288,12 @@ class PlayerViewModel(
 
         val preferredLang = graph.uiPreferences.audioLanguage.first()
 
+        // Both the container's own label and its language code are candidates,
+        // and both are optional — a track that declares neither cannot be
+        // matched against a language preference at all.
         val trackIndex = playback.audioTracks.indexOfFirst { track ->
-            track.label.lowercase().contains(preferredLang)
+            listOfNotNull(track.label, track.language)
+                .any { it.lowercase().contains(preferredLang) }
         }
 
         if (trackIndex >= 0) {
@@ -254,6 +312,7 @@ class PlayerViewModel(
             graph.scope.launch { graph.playback.stop(current, progress) }
         }
         controller.release()
+        graph.imageMemoryTrimmer.restore()
         super.onCleared()
     }
 }

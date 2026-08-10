@@ -1,8 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">Open Stream</string>
-
-    <!-- Side Menu -->
     <string name="menu_home">Início</string>
     <string name="menu_search">Busca</string>
     <string name="menu_addons">Addons</string>
@@ -13,19 +11,13 @@
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_settings">Configurações</string>
     <string name="menu_exit">Sair</string>
-
-    <!-- Home Screen -->
     <string name="home_empty_title">Você está conectado ao Google</string>
     <string name="home_empty_desc">Você pode configurar seus addons agora. A MDBList é opcional e pode ser vinculada depois.</string>
     <string name="home_empty_button">Abrir Addons</string>
     <string name="home_syncing">Sincronizando suas listas…</string>
-
-    <!-- Settings Screen -->
     <string name="settings_title">Configurações</string>
-    
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">Idioma do App</string>
-    
     <string name="settings_section_subtitles">Legendas</string>
     <string name="settings_subtitle_auto_download">Download Automático de Legendas</string>
     <string name="settings_subtitle_default_lang">Idioma Predefinido da Legenda</string>
@@ -34,20 +26,12 @@
     <string name="color_white">Branco</string>
     <string name="color_red">Vermelho</string>
     <string name="color_blue">Azul</string>
-    
     <string name="settings_section_player">Reprodutor</string>
     <string name="settings_audio_preferred_lang">Faixa de Áudio Preferida</string>
-
-    <!-- Languages -->
     <string name="lang_pt">Português</string>
     <string name="lang_en">Inglês</string>
-    <string name="lang_es">Espanhol</string>
-    <string name="lang_fr">Francês</string>
-    <string name="lang_ja">Japonês</string>
-
-    <!-- Detail Screen -->
     <string name="detail_watch">Assistir</string>
-    <string name="detail_watch_episode">Assistir T%1$dE1</string>
+    <string name="detail_watch_episode">Assistir T%1$dE%2$d</string>
     <string name="detail_trailer">Trailer</string>
     <string name="detail_in_collection">Na coleção</string>
     <string name="detail_add_collection">+ Coleção</string>
@@ -66,13 +50,8 @@
     <string name="detail_watched">Assistido</string>
     <string name="detail_mark_watched">Marcar assistido</string>
     <string name="detail_reviews">Reviews</string>
-    <string name="detail_crew_title">Equipe Técnica</string>
-
-    <!-- Search Screen -->
     <string name="search_title">Buscar no TMDB</string>
     <string name="search_placeholder">Buscar filmes ou séries…</string>
-
-    <!-- Addons Screen -->
     <string name="addons_title">Addons</string>
     <string name="addons_stremio_connected">Conta Stremio conectada</string>
     <string name="addons_sync_now">Sincronizar agora</string>
@@ -105,7 +84,133 @@
     <string name="addons_status_on">ligado</string>
     <string name="addons_status_off">desligado</string>
     <string name="addons_waiting">Aguarde…</string>
-    <string name="addons_unconfigured_url_only">só funciona pela URL gerada</string>
     <string name="addons_installed">Instalados</string>
     <string name="addons_none_installed">Nenhum addon instalado ainda.</string>
+    <string name="home_yes">Sim</string>
+    <string name="home_no">Não</string>
+    <string name="home_rename_list">Renomear lista</string>
+    <string name="home_save">Salvar</string>
+    <string name="home_cancel">Cancelar</string>
+    <string name="home_delete_list_question">Excluir lista?</string>
+    <string name="home_delete">Excluir</string>
+    <string name="search_searching">Buscando…</string>
+    <string name="search_no_results">Nenhum resultado encontrado.</string>
+    <string name="loading_opening">Abrindo…</string>
+    <string name="loading_fetching">Carregando ficha…</string>
+    <string name="login_error_google">Não consegui entrar com o Google.</string>
+    <string name="login_error_mdblist_link">Não consegui vincular a MDBList. Confira a chave e tente de novo.</string>
+    <string name="login_error_mdblist_required">Não foi possível prosseguir sem MDBList.</string>
+    <string name="addons_mdblist_linked">MDBList vinculada. Ative os addons de listas somente se quiser usá-los no Stremio.</string>
+    <string name="addons_mdblist_link_error">Não consegui vincular a MDBList. %1$s</string>
+    <string name="addons_mdblist_disabled">Uso das listas MDBList como addons desligado.</string>
+
+    <plurals name="addons_mdblist_removed">
+        <item quantity="one">%1$d addon de listas MDBList removido do Open Stream.</item>
+        <item quantity="other">%1$d addons de listas MDBList removidos do Open Stream.</item>
+    </plurals>
+    <plurals name="addons_mdblist_enabled">
+        <item quantity="one">Listas MDBList ligadas: %1$d addon adicionado.</item>
+        <item quantity="other">Listas MDBList ligadas: %1$d addons adicionados.</item>
+    </plurals>
+    <plurals name="addons_mdblist_updated">
+        <item quantity="one">%1$d lista MDBList atualizada no Open Stream.</item>
+        <item quantity="other">%1$d listas MDBList atualizadas no Open Stream.</item>
+    </plurals>
+
+    <string name="addons_not_imported">Não importados: </string>
+    <string name="detail_save_failed">Não consegui salvar essa mudança.</string>
+    <plurals name="addons_mdblist_failed_suffix">
+        <item quantity="one"> %1$d falhou: %2$s.</item>
+        <item quantity="other"> %1$d falharam: %2$s.</item>
+    </plurals>
+
+    <!-- Home: continuar assistindo -->
+    <string name="home_resume_row">Continuar assistindo</string>
+    <string name="home_resume_remove_title">Remover de continuar assistindo?</string>
+    <string name="home_resume_remove_body">"%1$s" sai da fileira e a posição salva é apagada na sua conta MDBList.</string>
+    <string name="home_because_you_watched">Porque você assistiu %1$s</string>
+    <string name="home_type_show">Série</string>
+    <string name="home_type_movie">Filme</string>
+    <string name="home_minutes">%1$d min</string>
+    <string name="home_exit_question">Deseja realmente sair?</string>
+    <string name="home_no_visible_rows">Nenhuma fileira está visível</string>
+    <string name="home_no_lists">Nenhuma lista disponível</string>
+    <string name="home_no_visible_rows_desc">Abra a edição para restaurar uma fileira oculta ou reorganizar suas listas.</string>
+    <string name="home_no_lists_desc">Crie uma lista na MDBList ou adicione um catálogo na tela de Addons.</string>
+    <string name="home_edit_lists">Editar listas</string>
+    <string name="home_delete_mdblist_body">"%1$s" será removida do Open Stream, mas continuará existindo na sua conta MDBList.</string>
+    <string name="home_delete_addon_body">"%1$s" será removida do Open Stream, mas o addon continuará instalado.</string>
+    <string name="home_delete_feed_body">"%1$s" será removida do Open Stream, sem alterar os dados da sua conta MDBList.</string>
+
+<!-- Player -->
+    <string name="player_preparing">Preparando a reprodução…</string>
+    <string name="player_preparing_short">Preparando…</string>
+    <string name="player_attempt">%1$d de %2$d</string>
+    <string name="player_failed_title">Não deu para reproduzir</string>
+    <string name="player_ended_title">Fim</string>
+    <string name="player_no_addons">Nenhum addon instalado. É de um addon que saem as fontes.</string>
+    <string name="player_no_imdb">Este título não tem IMDb ID, e os addons são indexados por ele.</string>
+    <string name="player_generic_error">Não consegui reproduzir este título.</string>
+    <string name="player_pick_source">Ou escolha uma fonte manualmente</string>
+    <string name="player_open_addons">Ver addons</string>
+    <string name="player_back">Voltar</string>
+    <string name="player_play">Tocar</string>
+    <string name="player_pause">Pausar</string>
+    <string name="player_subtitles">Legenda</string>
+    <string name="player_audio">Faixa de áudio</string>
+    <string name="player_no_subtitle">Sem legenda</string>
+    <string name="player_subtitle_sync">Sincronizar legenda</string>
+    <string name="player_subtitle_sync_disabled">Sincronizar legenda — selecione uma legenda</string>
+    <string name="player_subtitle_sync_value">Sincronizar legenda  %1$s</string>
+    <string name="player_subtitle_sync_hint">Negativo adianta  •  positivo atrasa</string>
+    <string name="player_subtitle_option">%1$s — %2$s</string>
+    <string name="player_offset_minus">−0,1 s</string>
+    <string name="player_offset_plus">+0,1 s</string>
+    <string name="player_offset_reset">Zerar</string>
+    <string name="player_done">Concluir</string>
+    <string name="player_scale">Esticar: %1$s</string>
+    <string name="player_scale_fit">Ajustar à tela</string>
+    <string name="player_scale_zoom">Preencher</string>
+    <string name="player_scale_stretch">Esticar</string>
+    <string name="player_track_language">Faixa %1$s</string>
+    <string name="player_track_index">Faixa %1$d</string>
+
+    <!-- Player: motivos de falha -->
+    <string name="player_error_no_candidates">Nenhum addon devolveu um link reproduzível para este título.</string>
+    <plurals name="player_error_all_failed">
+        <item quantity="one">Testei a única fonte disponível, duas vezes, e ela não abriu.</item>
+        <item quantity="other">Testei as %1$d fontes disponíveis, duas vezes, e nenhuma abriu.</item>
+    </plurals>
+    <string name="player_error_decoy_streak">As fontes estão devolvendo um aviso no lugar do filme, o que quase sempre é o provedor debrid limitando requisições. Espere alguns minutos e tente de novo.</string>
+    <string name="player_error_manual_no_link">Essa fonte não tem um link reproduzível.</string>
+    <string name="player_error_manual_unresponsive">Essa fonte não respondeu. Escolha outra na lista.</string>
+    <string name="player_error_manual_failed">Essa fonte não abriu. Escolha outra na lista.</string>
+    <string name="player_error_manual_decoy">Essa fonte devolveu um aviso no lugar do filme, não o filme em si. Escolha outra na lista.</string>
+
+    <!-- Trailer -->
+    <string name="trailer_failed">Não consegui carregar o trailer aqui.</string>
+    <string name="trailer_open_youtube">Abrir no YouTube</string>
+
+    <!-- Login -->
+    <string name="login_google_intro">Entre com sua conta Google. Ela protege seus dados no Firebase e identifica a mesma conta em todos os aparelhos.</string>
+    <string name="login_google_button">Entrar com o Google</string>
+    <string name="login_google_connected">Google conectado: %1$s</string>
+    <string name="login_checking_key">Verificando se já existe uma chave MDBList salva…</string>
+    <string name="login_mdblist_intro">Insira uma chave API MDBList para avaliações, trailers, listas e sincronização.</string>
+    <string name="login_mdblist_signup">Não possui conta? Entre em https://mdblist.com/ e crie uma conta gratuita para obter sua chave.</string>
+    <string name="login_error_no_credential">A conta escolhida não devolveu uma credencial Google.</string>
+    <string name="login_error_cancelled">Login com o Google cancelado.</string>
+    <string name="login_error_no_accounts">Nenhuma conta Google está disponível neste aparelho.</string>
+    <string name="login_error_open_failed">Não consegui abrir o login do Google. (%1$s)</string>
+    <string name="login_error_no_detail">sem detalhe</string>
+    <string name="login_error_no_activity">Não consegui abrir a janela de login do Google neste aparelho.</string>
+    <string name="login_key_placeholder">Chave API MDBList</string>
+    <string name="login_link_mdblist">Vincular MDBList</string>
+    <string name="login_continue_without">Prosseguir sem MDBList</string>
+    <string name="login_create_account">Criar conta gratuita</string>
+    <string name="login_error_no_browser">Nenhum navegador disponível. Abra https://mdblist.com/ em outro aparelho.</string>
+
+    <!-- Configurações -->
+    <string name="settings_on">Ligado</string>
+    <string name="settings_off">Desligado</string>
 </resources>

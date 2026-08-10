@@ -18,9 +18,13 @@ import com.mdblisthub.tv.core.network.dto.OpenSubtitlesDownloadRequestDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -91,42 +95,123 @@ class StreamsRepository(
 
         val encoded = URLEncoder.encode(id, "UTF-8")
 
-        val ranked = providers
-            .map { addon ->
-                async {
-                    runCatching {
-                        api.streams("${addon.base}/stream/${type.stremio}/$encoded.json")
-                            .streams
-                            .mapIndexed { index, dto -> dto.toPlayable(addon, index) }
-                    }.getOrDefault(emptyList())
+        // Each addon reports into here the moment it answers. This used to be
+        // an `awaitAll()`, which meant the *first* playable candidate could
+        // not be handed over until the *slowest* addon had finished — and with
+        // a dozen installed, one being down is the normal case, so the common
+        // outcome was the player waiting out a twelve-second call timeout on a
+        // dead host before opening a link that had been ready in 200ms.
+        //
+        // A null is the settle window closing; see below.
+        val inbox = Channel<List<PlayableStream>?>(Channel.UNLIMITED)
+
+        // `Dispatchers.Default`, and that is the second half of the fix. The
+        // network call already runs off the main thread, but the work after it
+        // did not: `toPlayable` applies three regexes per stream, and a dozen
+        // addons returning forty streams each put roughly fifteen hundred
+        // regex matches on the main thread — while the loading veil is
+        // supposed to be animating.
+        launch(Dispatchers.Default) {
+            // `finally`, not a plain trailing statement. The gather loops below
+            // block on this channel until it closes, so anything that escapes
+            // the fan-out — a cancellation, or a failure `runCatching` does not
+            // cover — would otherwise leave them waiting forever with the veil
+            // up and no way out.
+            try {
+                coroutineScope {
+                    providers.forEach { addon ->
+                        launch {
+                            val streams = runCatching {
+                                api.streams("${addon.base}/stream/${type.stremio}/$encoded.json")
+                                    .streams
+                                    .mapIndexed { index, dto -> dto.toPlayable(addon, index) }
+                            }.getOrDefault(emptyList())
+                            inbox.send(streams)
+                        }
+                    }
                 }
+            } finally {
+                inbox.close()
             }
-            .awaitAll()
-            .flatten()
-            .rankForPlayback()
+        }
 
-        if (ranked.isEmpty()) return@channelFlow
+        launch {
+            delay(SETTLE_WINDOW_MS)
+            inbox.trySend(null)
+        }
 
-        // The best-ranked candidate goes out unprobed, immediately. Actually
-        // opening it in the player is a stricter test than a range request
-        // anyway, so making it wait behind a probe only adds that probe's
-        // timeout to the one case that matters most — and debrid endpoints in
-        // particular routinely refuse a two-byte request, then stream fine.
-        send(ranked.first())
+        val firstWave = mutableListOf<PlayableStream>()
+        var answered = 0
 
-        val rest = ranked.drop(1)
-        if (rest.isEmpty()) return@channelFlow
+        // Gather whatever has arrived by the end of the window. Ranking across
+        // a few addons rather than emitting whoever answered first still
+        // matters — otherwise a 480p mirror wins simply for being closer — but
+        // the window bounds how long that costs.
+        while (answered < providers.size) {
+            val result = inbox.receiveCatching()
+            if (result.isClosed) break
+            // A null element is the settle timer, not the end of the addons.
+            val batch = result.getOrNull() ?: break
+            answered++
+            firstWave += batch
+        }
+
+        // The window expired with nothing usable in hand. Starting is not an
+        // option, so wait for whoever answers first, however long that takes;
+        // the addon client's own timeouts bound it.
+        while (firstWave.none { it.playable } && answered < providers.size) {
+            val result = inbox.receiveCatching()
+            if (result.isClosed) break
+            val batch = result.getOrNull() ?: continue
+            answered++
+            firstWave += batch
+        }
+
+        val ranked = withContext(Dispatchers.Default) { firstWave.rankForPlayback() }
+        val seen = ranked.mapNotNullTo(mutableSetOf()) { it.url }
+
+        if (ranked.isNotEmpty()) {
+            // The best-ranked candidate goes out unprobed, immediately.
+            // Actually opening it in the player is a stricter test than a range
+            // request anyway, so making it wait behind a probe only adds that
+            // probe's timeout to the one case that matters most — and debrid
+            // endpoints in particular routinely refuse a two-byte request,
+            // then stream fine.
+            send(ranked.first())
+            sendProbed(ranked.drop(1))
+        }
+
+        // Everything that arrived after the window closed, appended behind the
+        // first wave rather than dropped. The controller's queue is
+        // append-only for exactly this reason, so a late addon is still usable
+        // as fallback material without disturbing a cascade already running.
+        while (true) {
+            val result = inbox.receiveCatching()
+            if (result.isClosed) break
+            val batch = result.getOrNull()
+            if (batch.isNullOrEmpty()) continue
+            val late = withContext(Dispatchers.Default) {
+                batch.rankForPlayback().filter { it.url != null && seen.add(it.url!!) }
+            }
+            sendProbed(late)
+        }
+    }
+
+    /**
+     * Probes a group in parallel and emits it best-first, deprioritising —
+     * never dropping — whatever flunks: a failed probe is weak evidence, for
+     * the same reason the top candidate skips the probe entirely.
+     */
+    private suspend fun ProducerScope<PlayableStream>.sendProbed(streams: List<PlayableStream>) {
+        if (streams.isEmpty()) return
 
         // Bounded so a title with forty mirrors does not open forty sockets at
-        // once on a set-top box; six is enough to keep the queue moving.
+        // once on a set-top box; eight is enough to keep the queue moving.
         val gate = Semaphore(PROBE_CONCURRENCY)
-        val probes = rest.map { stream ->
+        val probes = streams.map { stream ->
             async { stream to gate.withPermit { isReachable(stream) } }
         }
 
-        // A mirror that flunks the probe is deprioritized, never dropped, for
-        // the same reason the first one skips it: a failed probe is weak
-        // evidence. They stay at the back as fallback material.
         val unverified = mutableListOf<PlayableStream>()
         for (probe in probes) {
             val (stream, reachable) = probe.await()
@@ -276,6 +361,17 @@ class StreamsRepository(
          */
         const val PROBE_TIMEOUT_MS = 3_500L
         const val SUBTITLE_TIMEOUT_MS = 15_000L
-        const val PROBE_CONCURRENCY = 6
+        const val PROBE_CONCURRENCY = 8
+
+        /**
+         * How long the first wave is allowed to gather before the best of it
+         * is handed over.
+         *
+         * Long enough that a healthy addon set is almost always complete —
+         * they answer in a few hundred milliseconds — and short enough that a
+         * single hung host cannot hold the film hostage. Whatever misses the
+         * window is not lost, only queued behind.
+         */
+        const val SETTLE_WINDOW_MS = 900L
     }
 }

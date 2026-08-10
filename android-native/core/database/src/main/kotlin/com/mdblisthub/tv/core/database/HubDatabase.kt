@@ -30,7 +30,11 @@ import com.mdblisthub.tv.core.database.entity.ResumeEntity
         ResumeEntity::class,
         LibraryEntity::class,
     ],
-    version = 7,
+    // 8 adds the `imdbId` and `fetchedAt` indices on `media`. Destructive
+    // migration is correct here for the same reason as always — every table is
+    // a cache with an upstream source of truth — and re-syncing is cheaper
+    // than the two full table scans the missing indices cost.
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

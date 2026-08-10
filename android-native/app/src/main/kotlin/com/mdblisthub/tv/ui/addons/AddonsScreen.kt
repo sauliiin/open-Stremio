@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
@@ -126,9 +128,26 @@ data class MdblistCatalogUi(
     val enabled: Boolean = false,
     val apiKey: String = "",
     val busy: Boolean = false,
+    /** Raw text from the repository; the UI wraps it in a localised template. */
     val error: String? = null,
-    val message: String? = null,
+    val message: MdblistCatalogMessage? = null,
 )
+
+/**
+ * The outcome of a catalogue action, as facts rather than as a sentence.
+ *
+ * These used to be built here with `appContext.getString`, which resolved
+ * against the *system* locale rather than the in-app language setting — the
+ * application context never sees the locale override the UI runs under. Types
+ * push the wording to the one place that does.
+ */
+sealed interface MdblistCatalogMessage {
+    data object Linked : MdblistCatalogMessage
+    data object Disabled : MdblistCatalogMessage
+    data class Removed(val count: Int) : MdblistCatalogMessage
+    data class Enabled(val count: Int, val failed: List<String>) : MdblistCatalogMessage
+    data class Updated(val count: Int, val failed: List<String>) : MdblistCatalogMessage
+}
 
 class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
 
@@ -311,7 +330,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                             linked = true,
                             apiKey = "",
                             busy = false,
-                            message = "MDBList vinculada. Ative os addons de listas somente se quiser usá-los no Stremio.",
+                            message = MdblistCatalogMessage.Linked,
                         )
                     }
                 },
@@ -319,7 +338,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     _mdblistCatalog.update {
                         it.copy(
                             busy = false,
-                            error = "Não consegui vincular a MDBList. ${error.message ?: "Confira a chave da API."}",
+                            error = error.message.orEmpty(),
                         )
                     }
                 },
@@ -341,9 +360,9 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                                 enabled = false,
                                 busy = false,
                                 message = if (removed > 0) {
-                                    "$removed addon(s) de listas MDBList removido(s) do Open Stream."
+                                    MdblistCatalogMessage.Removed(removed)
                                 } else {
-                                    "Uso das listas MDBList como addons desligado."
+                                    MdblistCatalogMessage.Disabled
                                 },
                             )
                         }
@@ -355,13 +374,14 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
             } else {
                 graph.addons.exportAllMdblistLists().fold(
                     onSuccess = { report ->
-                        val suffix = if (report.failed.isEmpty()) "" else
-                            " ${report.failed.size} falharam: ${report.failed.joinToString(", ")}."
                         _mdblistCatalog.update {
                             it.copy(
                                 enabled = true,
                                 busy = false,
-                                message = "Listas MDBList ligadas: ${report.exported.size} addon(s) adicionado(s).$suffix",
+                                message = MdblistCatalogMessage.Enabled(
+                                    count = report.exported.size,
+                                    failed = report.failed,
+                                ),
                             )
                         }
                     },
@@ -379,12 +399,13 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch {
             graph.addons.exportAllMdblistLists().fold(
                 onSuccess = { report ->
-                    val suffix = if (report.failed.isEmpty()) "" else
-                        " ${report.failed.size} falharam: ${report.failed.joinToString(", ")}."
                     _mdblistCatalog.update {
                         it.copy(
                             busy = false,
-                            message = "${report.exported.size} lista(s) MDBList atualizada(s) no Open Stream.$suffix",
+                            message = MdblistCatalogMessage.Updated(
+                                count = report.exported.size,
+                                failed = report.failed,
+                            ),
                         )
                     }
                 },
@@ -587,7 +608,10 @@ private fun StremioSyncCard(
             }
             if (report.skipped.isNotEmpty()) {
                 Text(
-                    text = report.skipped.joinToString(", ", prefix = "Não importados: ") {
+                    text = report.skipped.joinToString(
+                        ", ",
+                        prefix = stringResource(R.string.addons_not_imported),
+                    ) {
                         "${it.name} (${it.reason})"
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -672,8 +696,10 @@ private fun MdblistCatalogCard(
             }
         }
 
-        state.error?.let { InlineMessage(it, isError = true) }
-        state.message?.let { InlineMessage(it, isError = false) }
+        state.error?.let {
+            InlineMessage(stringResource(R.string.addons_mdblist_link_error, it), isError = true)
+        }
+        state.message?.let { InlineMessage(it.text(), isError = false) }
     }
 }
 
@@ -840,7 +866,7 @@ private fun GettingStartedCard(
 
 private fun openUrl(context: Context, url: String) {
     try {
-        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     } catch (_: ActivityNotFoundException) {
         // Most set-top boxes have no browser at all; the configure page is
         // meant to be visited from a phone or PC in that case anyway.
@@ -960,3 +986,30 @@ private fun HubTextField(
         )
     }
 }
+
+/** Renders a catalogue outcome in the language the interface is set to. */
+@Composable
+private fun MdblistCatalogMessage.text(): String = when (this) {
+    MdblistCatalogMessage.Linked -> stringResource(R.string.addons_mdblist_linked)
+    MdblistCatalogMessage.Disabled -> stringResource(R.string.addons_mdblist_disabled)
+    is MdblistCatalogMessage.Removed ->
+        pluralStringResource(R.plurals.addons_mdblist_removed, count, count)
+    is MdblistCatalogMessage.Enabled ->
+        pluralStringResource(R.plurals.addons_mdblist_enabled, count, count) + failedSuffix(failed)
+    is MdblistCatalogMessage.Updated ->
+        pluralStringResource(R.plurals.addons_mdblist_updated, count, count) + failedSuffix(failed)
+}
+
+/** Empty when nothing failed, so the caller can always concatenate it. */
+@Composable
+private fun failedSuffix(failed: List<String>): String =
+    if (failed.isEmpty()) {
+        ""
+    } else {
+        pluralStringResource(
+            R.plurals.addons_mdblist_failed_suffix,
+            failed.size,
+            failed.size,
+            failed.joinToString(", "),
+        )
+    }

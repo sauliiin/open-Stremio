@@ -26,6 +26,13 @@ dependencies {
     api(libs.media3.ui)
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.datasource.okhttp)
+    implementation(libs.media3.database)
+
+    // `api`, not `implementation`: `PlaybackController` takes a `Call.Factory`
+    // so the app can hand it the client whose connection pool the mirror probe
+    // already warmed — that type has to be visible to whoever constructs it.
+    api(libs.okhttp)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.foundation)

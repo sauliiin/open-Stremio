@@ -3,6 +3,7 @@ package com.mdblisthub.tv.ui.login
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -33,12 +34,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
@@ -47,6 +46,7 @@ import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import com.mdblisthub.tv.LocalHostActivity
 import com.mdblisthub.tv.R
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -68,6 +68,10 @@ fun LoginScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
+    // Read from the composition local rather than unwrapped from the context:
+    // `MainActivity` replaces `LocalContext` with a locale-wrapped
+    // `ContextImpl`, which has no Activity anywhere in its chain.
+    val hostActivity = LocalHostActivity.current
     val credentialManager = remember(context) { CredentialManager.create(context) }
     val focusRequester = remember { FocusRequester() }
 
@@ -93,8 +97,7 @@ fun LoginScreen(
 
             if (state.google == null) {
                 Text(
-                    text = "Entre com sua conta Google. Ela protege seus dados no Firebase e " +
-                        "identifica a mesma conta em todos os aparelhos.",
+                    text = stringResource(R.string.login_google_intro),
                     style = MaterialTheme.typography.bodyLarge,
                     color = HubColors.TextDim,
                 )
@@ -103,7 +106,7 @@ fun LoginScreen(
                     HubSpinner()
                 } else {
                     HubButton(
-                        text = "Entrar com o Google",
+                        text = stringResource(R.string.login_google_button),
                         primary = true,
                         modifier = Modifier.focusRequester(focusRequester),
                         onClick = {
@@ -117,12 +120,18 @@ fun LoginScreen(
                                         .setAutoSelectEnabled(false)
                                         .build()
 
-                                    fun Context.findActivity(): Activity? = when (this) {
-                                        is Activity -> this
-                                        is ContextWrapper -> baseContext.findActivity()
-                                        else -> null
+                                    // Must be an Activity: the provider starts
+                                    // its picker with `startActivity`, and from
+                                    // a non-Activity context that throws for
+                                    // want of FLAG_ACTIVITY_NEW_TASK — which
+                                    // surfaced only as the generic "could not
+                                    // open Google sign-in" below.
+                                    val activity = hostActivity ?: run {
+                                        viewModel.reportGoogleError(
+                                            resources.getString(R.string.login_error_no_activity),
+                                        )
+                                        return@launch
                                     }
-                                    val activity = context.findActivity() ?: context
 
                                     val result = credentialManager.getCredential(
                                         context = activity,
@@ -137,18 +146,25 @@ fun LoginScreen(
                                         val google = GoogleIdTokenCredential.createFrom(credential.data)
                                         viewModel.signInWithGoogle(google.idToken)
                                     } else {
-                                        viewModel.reportGoogleError("A conta escolhida não devolveu uma credencial Google.")
+                                        viewModel.reportGoogleError(
+                                            resources.getString(R.string.login_error_no_credential),
+                                        )
                                     }
                                 } catch (_: GetCredentialCancellationException) {
-                                    viewModel.reportGoogleError("Login com o Google cancelado.")
+                                    viewModel.reportGoogleError(
+                                        resources.getString(R.string.login_error_cancelled),
+                                    )
                                 } catch (_: NoCredentialException) {
                                     viewModel.reportGoogleError(
-                                        "Nenhuma conta Google está disponível neste aparelho.",
+                                        resources.getString(R.string.login_error_no_accounts),
                                     )
                                 } catch (error: Exception) {
                                     viewModel.reportGoogleError(
-                                        "Não consegui abrir o login do Google. " +
-                                            "(${error.message ?: "sem detalhe"})",
+                                        resources.getString(
+                                            R.string.login_error_open_failed,
+                                            error.message
+                                                ?: resources.getString(R.string.login_error_no_detail),
+                                        ),
                                     )
                                 }
                             }
@@ -157,28 +173,26 @@ fun LoginScreen(
                 }
             } else {
                 Text(
-                    text = "Google conectado: ${state.google?.email.orEmpty()}",
+                    text = stringResource(R.string.login_google_connected, state.google?.email.orEmpty()),
                     style = MaterialTheme.typography.titleMedium,
                     color = HubColors.Accent2,
                 )
 
                 if (state.checkingSavedKey) {
                     Text(
-                        text = "Verificando se já existe uma chave MDBList salva…",
+                        text = stringResource(R.string.login_checking_key),
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.TextDim,
                     )
                     HubSpinner()
                 } else {
                     Text(
-                        text = "Insira uma chave API MDBList para avaliações, trailers, " +
-                            "buscas e para trazer suas listas.",
+                        text = stringResource(R.string.login_mdblist_intro),
                         style = MaterialTheme.typography.titleLarge,
                         color = HubColors.Text,
                     )
                     Text(
-                        text = "Não possui conta? Entre em https://mdblist.com/ e crie uma " +
-                            "conta gratuita.",
+                        text = stringResource(R.string.login_mdblist_signup),
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.TextDim,
                     )
@@ -193,7 +207,7 @@ fun LoginScreen(
                     ) {
                         if (state.key.isEmpty()) {
                             Text(
-                                "Chave API MDBList",
+                                stringResource(R.string.login_key_placeholder),
                                 style = MaterialTheme.typography.titleLarge,
                                 color = HubColors.TextFaint,
                             )
@@ -215,7 +229,7 @@ fun LoginScreen(
                         HubSpinner()
                     } else {
                         HubButton(
-                            text = "Vincular MDBList",
+                            text = stringResource(R.string.login_link_mdblist),
                             primary = true,
                             enabled = state.key.isNotBlank(),
                             onClick = viewModel::linkMdblist,
@@ -225,21 +239,20 @@ fun LoginScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             HubButton(
-                                text = "Prosseguir sem MDBList",
+                                text = stringResource(R.string.login_continue_without),
                                 onClick = viewModel::continueWithoutMdblist,
                             )
                             HubButton(
-                                text = "Criar conta gratuita",
+                                text = stringResource(R.string.login_create_account),
                                 onClick = {
                                     try {
                                         context.startActivity(
-                                            Intent(Intent.ACTION_VIEW, Uri.parse("https://mdblist.com/"))
+                                            Intent(Intent.ACTION_VIEW, "https://mdblist.com/".toUri())
                                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                                         )
                                     } catch (_: ActivityNotFoundException) {
                                         viewModel.reportGoogleError(
-                                            "Nenhum navegador disponível. Abra https://mdblist.com/ " +
-                                                "em outro aparelho.",
+                                            resources.getString(R.string.login_error_no_browser),
                                         )
                                     }
                                 },
@@ -250,7 +263,12 @@ fun LoginScreen(
                 }
             }
 
-            state.error?.let {
+            // Two sources, one line: free text the screen already resolved, and
+            // a resource id the ViewModel raised without a locale to resolve it
+            // against. Resolving here is what keeps both in the selected
+            // language.
+            val error = state.error ?: state.errorRes?.let { stringResource(it) }
+            error?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = HubColors.Rotten)
             }
         }

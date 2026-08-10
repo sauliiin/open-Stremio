@@ -1,4 +1,6 @@
 package com.mdblisthub.tv.navigation
+import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.R
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,7 +56,7 @@ fun HubNavHost(graph: DataGraph) {
     }
 
     if (!restored || signedIn == null) {
-        LoadingScreen(message = "Abrindo…")
+        LoadingScreen(message = stringResource(R.string.loading_opening))
         return
     }
 

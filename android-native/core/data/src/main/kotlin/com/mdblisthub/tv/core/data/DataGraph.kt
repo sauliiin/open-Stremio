@@ -15,6 +15,7 @@ import com.mdblisthub.tv.core.data.repository.StreamsRepository
 import com.mdblisthub.tv.core.data.repository.StremioAccountRepository
 import com.mdblisthub.tv.core.data.repository.TrailerRepository
 import com.mdblisthub.tv.core.data.repository.WikipediaRepository
+import com.mdblisthub.tv.core.data.work.ImageMemoryTrimmer
 import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.data.work.MetadataScheduler
 import com.mdblisthub.tv.core.database.HubDatabase
@@ -33,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
  */
 class DataGraph(context: Context) {
 
-    private val appContext = context.applicationContext
+    val appContext = context.applicationContext
 
     /** Survives every screen; the prefetcher and one-off writes live on it. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -91,4 +92,11 @@ class DataGraph(context: Context) {
      * no-op default means a worker that runs in between simply warms nothing.
      */
     var imageWarmer: ImageWarmer = ImageWarmer { }
+
+    /**
+     * Attached by the app alongside [imageWarmer], and for the same reason:
+     * the image cache belongs to the Coil loader, which cannot exist before
+     * this graph. See [ImageMemoryTrimmer] for why the player wants it.
+     */
+    var imageMemoryTrimmer: ImageMemoryTrimmer = ImageMemoryTrimmer.NoOp
 }

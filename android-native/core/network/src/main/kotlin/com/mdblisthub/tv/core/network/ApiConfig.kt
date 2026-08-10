@@ -55,8 +55,36 @@ object ApiConfig {
     const val WYZIE_BASE = "https://sub.wyzie.io/"
     const val WYZIE_API_KEY = "wyzie-s9qb8pabb1bllkptwqe0z19ufdnpa5sa"
 
-    /** Metadata language, with an English fallback wherever TMDB supports one. */
-    const val LANGUAGE = "pt-BR"
+    /**
+     * Metadata language, with an English fallback wherever TMDB supports one.
+     *
+     * A `var`, deliberately, and the one piece of mutable state in this file.
+     * Interface strings following the language setting is only half of the job:
+     * overviews, titles, certifications and taglines all come from TMDB, and
+     * with this pinned to `pt-BR` an English interface still described every
+     * film in Portuguese. Set once at startup and on each change from
+     * `UiPreferencesStore.language` — see `HubApplication`.
+     *
+     * Not a `Flow` because every reader is a Retrofit query parameter deep in
+     * a suspend call; threading a locale through all of them to change a
+     * default nobody overrides would be ceremony for its own sake.
+     */
+    @Volatile
+    var LANGUAGE: String = DEFAULT_LANGUAGE
+
+    const val DEFAULT_LANGUAGE = "pt-BR"
+
+    /**
+     * Turns an interface language tag into the region-qualified one TMDB
+     * expects. `pt` alone returns European Portuguese metadata, which is not
+     * what a `pt` interface setting means for this app's audience.
+     */
+    fun metadataLanguageFor(tag: String): String = when (tag.lowercase()) {
+        "pt", "pt-br" -> "pt-BR"
+        "pt-pt" -> "pt-PT"
+        "en" -> "en-US"
+        else -> tag
+    }
 
     const val USER_AGENT = "mdblist-hub-tv/0.1 (Android TV)"
 }

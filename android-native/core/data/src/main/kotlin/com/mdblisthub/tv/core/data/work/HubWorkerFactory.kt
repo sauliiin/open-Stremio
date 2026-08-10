@@ -34,7 +34,13 @@ class HubWorkerFactory(private val graphProvider: () -> DataGraph) : WorkerFacto
                 MetadataWorker(appContext, workerParameters, graph.media, graph.database)
 
             ArtworkWorker::class.java.name ->
-                ArtworkWorker(appContext, workerParameters, graph.database, graph.imageWarmer)
+                ArtworkWorker(
+                    appContext,
+                    workerParameters,
+                    graph.database,
+                    graph.addons,
+                    graph.imageWarmer,
+                )
 
             ResumeSyncWorker::class.java.name ->
                 ResumeSyncWorker(appContext, workerParameters, graph.playback)

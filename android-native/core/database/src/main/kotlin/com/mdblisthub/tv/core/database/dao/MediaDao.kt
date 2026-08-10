@@ -25,8 +25,16 @@ interface MediaDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEpisodes(episodes: List<EpisodeEntity>)
 
+    /**
+     * The cheap half of the cache — the card, which a list sync already wrote.
+     *
+     * This is what lets the player ask the addons for streams without first
+     * waiting on the expensive three-API detail hydration: the IMDb id the
+     * addons are indexed by, and a runtime good enough to recognise a decoy,
+     * are both already here.
+     */
     @Query("SELECT * FROM media WHERE tmdbId = :tmdbId AND type = :type")
-    fun observeMedia(tmdbId: Int, type: String): Flow<MediaEntity?>
+    suspend fun card(tmdbId: Int, type: String): MediaEntity?
 
     @Query("SELECT * FROM media_detail WHERE tmdbId = :tmdbId AND type = :type")
     fun observeDetail(tmdbId: Int, type: String): Flow<MediaDetailEntity?>
@@ -103,9 +111,6 @@ interface MediaDao {
 
     @Query("DELETE FROM episodes WHERE fetchedAt < :cutoff")
     suspend fun pruneEpisodes(cutoff: Long): Int
-
-    @Query("SELECT COUNT(*) FROM media_detail")
-    suspend fun detailCount(): Int
 
     @Query("DELETE FROM episodes")
     suspend fun clearEpisodes()

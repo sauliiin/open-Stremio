@@ -83,6 +83,32 @@ object HttpClients {
         .build()
 
     /**
+     * The client the video itself is read over.
+     *
+     * Derived from [metadata] so it shares that connection pool — which is the
+     * entire point. `StreamsRepository` probes each mirror with a two-byte
+     * range request over a client from the same pool, so by the time the
+     * player opens the winning candidate the TCP and TLS handshake is already
+     * done and can simply be reused, instead of being paid for twice.
+     *
+     * **`callTimeout` must stay off.** It bounds the whole call including the
+     * body, and here the body is a two-hour film — the addon client's twelve
+     * seconds would cut playback off mid-scene. The read timeout is what
+     * catches a host that goes quiet, and that is the correct tool.
+     */
+    fun playback(base: OkHttpClient): OkHttpClient = base.newBuilder()
+        .cache(null)
+        // Generous for the same reason the data source used to be: a debrid
+        // endpoint redirects instantly and then holds the connection open
+        // while the file is prepared upstream, well past thirty seconds on a
+        // cold link.
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .callTimeout(0, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    /**
      * OpenSubtitles.com's own API. Its own client, not [addons], because the
      * headers [OpenSubtitlesHeadersInterceptor] attaches carry a personal
      * API key that must never ride along on a request to a third-party

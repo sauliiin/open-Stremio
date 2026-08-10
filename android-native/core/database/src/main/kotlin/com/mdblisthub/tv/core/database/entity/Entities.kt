@@ -25,6 +25,16 @@ import com.mdblisthub.tv.core.model.SeasonSummary
 @Entity(
     tableName = "media",
     primaryKeys = ["tmdbId", "type"],
+    indices = [
+        // Stremio catalogues identify a title only by IMDb id, so resolving
+        // one to a TMDB id is on the path of opening any addon-sourced card.
+        // Without this the lookup scans a table that holds every title in
+        // every list the account has.
+        Index(value = ["imdbId"]),
+        // What the hydration worker orders by. Same story: a `LEFT JOIN` plus
+        // a sort over the whole table, every four hours.
+        Index(value = ["fetchedAt"]),
+    ],
 )
 data class MediaEntity(
     val tmdbId: Int,

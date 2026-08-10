@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+    Owned by the component, not by the app.
+
+    `MediaRow` draws its own edit controls, so the words for them belong in the
+    same module — passing five content descriptions down from every caller
+    would be ceremony, and leaving them hard-coded is what kept these strings
+    Portuguese after the interface gained an English option.
+-->
+<resources>
+    <string name="row_move_up">Mover lista para cima</string>
+    <string name="row_move_down">Mover lista para baixo</string>
+    <string name="row_rename">Renomear lista</string>
+    <string name="row_show">Mostrar lista</string>
+    <string name="row_hide">Ocultar lista</string>
+    <string name="row_delete">Excluir lista</string>
+</resources>

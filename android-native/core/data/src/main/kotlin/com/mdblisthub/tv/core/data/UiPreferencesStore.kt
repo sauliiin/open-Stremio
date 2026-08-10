@@ -27,6 +27,24 @@ class UiPreferencesStore(context: Context) {
     private val store = context.applicationContext.uiPreferencesDataStore
 
     /**
+     * A one-key mirror of the theme, kept only so the cold start can read it
+     * without blocking.
+     *
+     * The palette is global state that the very first composition reads, so it
+     * has to be known before the first frame — but resolving it from DataStore
+     * meant `runBlocking` on the main thread during `Application.onCreate`:
+     * file I/O plus protobuf parsing at the most latency-sensitive moment of
+     * the whole lifecycle. `SharedPreferences` is the one storage API on
+     * Android designed to be read synchronously, and its backing file is
+     * loaded on a background thread the moment it is opened.
+     *
+     * DataStore stays the source of truth — this is written alongside it and
+     * only ever read at startup, so the two cannot meaningfully diverge.
+     */
+    private val startupMirror =
+        context.applicationContext.getSharedPreferences(STARTUP_MIRROR, Context.MODE_PRIVATE)
+
+    /**
      * An unreadable or unrecognised value resolves to [HubThemeVariant.NORMAL]
      * rather than throwing — a preference is never worth failing a start over,
      * and a renamed enum constant would otherwise do exactly that.
@@ -39,7 +57,21 @@ class UiPreferencesStore(context: Context) {
 
     suspend fun currentTheme(): HubThemeVariant = theme.first()
 
+    /**
+     * The persisted palette, readable synchronously — what
+     * `Application.onCreate` uses so the first frame is painted in the right
+     * theme without a blocking read. Same tolerance for a bad value as
+     * [theme]: a preference is never worth failing a start over.
+     */
+    fun startupTheme(): HubThemeVariant =
+        startupMirror.getString(KEY_THEME.name, null)
+            ?.let { name -> runCatching { HubThemeVariant.valueOf(name) }.getOrNull() }
+            ?: HubThemeVariant.NORMAL
+
     suspend fun saveTheme(variant: HubThemeVariant) {
+        // `apply`, not `commit`: nothing this launch depends on it having
+        // landed, and the next cold start is far away.
+        startupMirror.edit().putString(KEY_THEME.name, variant.name).apply()
         store.edit { it[KEY_THEME] = variant.name }
     }
 
@@ -79,6 +111,7 @@ class UiPreferencesStore(context: Context) {
     }
 
     private companion object {
+        const val STARTUP_MIRROR = "ui-preferences-startup"
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_LANGUAGE = stringPreferencesKey("language")
         val KEY_SUBTITLE_AUTO_DOWNLOAD = booleanPreferencesKey("subtitle_auto_download")
