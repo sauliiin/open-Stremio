@@ -44,6 +44,19 @@ class SessionStore(context: Context) {
     /** True when Google is signed in but MDBList was intentionally skipped. */
     val mdblistSkipped: Flow<Boolean> = store.data.map { it[KEY_MDBLIST_SKIPPED] == true }
 
+    /**
+     * True for a session that was never authenticated with Google at all —
+     * the MDBList key itself is the identity.
+     *
+     * Exists for boxes that have no Google account to offer, Fire TV chief
+     * among them: Amazon's own account is what is signed in there, and
+     * Credential Manager has nothing to show. Everything anchored to a
+     * Firebase UID — addon sync, list-order sync — has no identity to anchor
+     * to in this mode and simply stays off; see `AuthRepository.signedIn` and
+     * the two sync repositories, which already no-op without a Google UID.
+     */
+    val mdblistOnly: Flow<Boolean> = store.data.map { it[KEY_MDBLIST_ONLY] == true }
+
     /** All row customizations, including deletion tombstones, owned by this Google session. */
     val listPreferences: Flow<List<FirebaseListPreferenceDto>> = store.data.map(::decodeListPreferences)
 
@@ -67,6 +80,8 @@ class SessionStore(context: Context) {
     suspend fun currentFirebaseUid(): String = firebaseUid.first()
 
     suspend fun isMdblistSkipped(): Boolean = mdblistSkipped.first()
+
+    suspend fun isMdblistOnly(): Boolean = mdblistOnly.first()
 
     suspend fun currentListPreferences(): List<FirebaseListPreferenceDto> = listPreferences.first()
 
@@ -152,6 +167,23 @@ class SessionStore(context: Context) {
             it[KEY_USER] = json.encodeToString(user)
             it[KEY_FIREBASE_UID] = firebaseUid
             it[KEY_MDBLIST_SKIPPED] = false
+            it[KEY_MDBLIST_ONLY] = false
+        }
+    }
+
+    /**
+     * Signs in with nothing but the MDBList key — no Google, no Firebase UID.
+     * `firebaseUid` is cleared rather than left stale, since a leftover value
+     * from a previous Google session would otherwise satisfy the ownership
+     * check other code paths run against it.
+     */
+    suspend fun saveMdblistOnly(key: String, user: HubUser) {
+        store.edit {
+            it[KEY_API] = key
+            it[KEY_USER] = json.encodeToString(user)
+            it.remove(KEY_FIREBASE_UID)
+            it[KEY_MDBLIST_SKIPPED] = false
+            it[KEY_MDBLIST_ONLY] = true
         }
     }
 
@@ -176,6 +208,7 @@ class SessionStore(context: Context) {
         val KEY_USER = stringPreferencesKey("user")
         val KEY_FIREBASE_UID = stringPreferencesKey("firebase_uid")
         val KEY_MDBLIST_SKIPPED = booleanPreferencesKey("mdblist_skipped")
+        val KEY_MDBLIST_ONLY = booleanPreferencesKey("mdblist_only")
         val KEY_DELETED_LIST_IDS = stringSetPreferencesKey("deleted_list_ids")
         val KEY_LIST_PREFERENCES = stringPreferencesKey("list_preferences")
         val KEY_CATALOG_PREFERENCES = stringPreferencesKey("catalog_preferences")

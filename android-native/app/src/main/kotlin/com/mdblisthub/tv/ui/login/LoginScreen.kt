@@ -24,8 +24,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,10 +77,15 @@ fun LoginScreen(
     val credentialManager = remember(context) { CredentialManager.create(context) }
     val focusRequester = remember { FocusRequester() }
 
+    // Local and never persisted: it only decides which *form* this screen
+    // shows before any account exists. Once a credential is actually saved,
+    // `AuthRepository` is what remembers which mode the session is in.
+    var mdblistOnlyMode by remember { mutableStateOf(false) }
+
     LaunchedEffect(state.signedIn) {
         if (state.signedIn) onSignedIn()
     }
-    LaunchedEffect(state.google, state.busy) {
+    LaunchedEffect(state.google, state.busy, mdblistOnlyMode) {
         if (!state.busy) focusRequester.requestFocus()
     }
 
@@ -95,7 +102,7 @@ fun LoginScreen(
         ) {
             AnimatedOpenStreamTitle(style = MaterialTheme.typography.displayLarge)
 
-            if (state.google == null) {
+            if (state.google == null && !mdblistOnlyMode) {
                 Text(
                     text = stringResource(R.string.login_google_intro),
                     style = MaterialTheme.typography.bodyLarge,
@@ -169,6 +176,64 @@ fun LoginScreen(
                                 }
                             }
                         },
+                    )
+                    // The Fire-TV door: no Credential Manager call happens on
+                    // this path at all, because there is usually no Google
+                    // account on the box to offer it one.
+                    HubButton(
+                        text = stringResource(R.string.login_mdblist_only_button),
+                        onClick = { mdblistOnlyMode = true },
+                    )
+                }
+            } else if (mdblistOnlyMode) {
+                Text(
+                    text = stringResource(R.string.login_mdblist_only_intro),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = HubColors.TextDim,
+                )
+
+                if (state.busy) {
+                    HubSpinner()
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(HubColors.Surface)
+                            .border(1.dp, HubColors.Border, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                    ) {
+                        if (state.key.isEmpty()) {
+                            Text(
+                                stringResource(R.string.login_key_placeholder),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = HubColors.TextFaint,
+                            )
+                        }
+                        BasicTextField(
+                            value = state.key,
+                            onValueChange = viewModel::onKeyChange,
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.titleLarge.copy(color = HubColors.Text),
+                            cursorBrush = SolidColor(HubColors.Accent2),
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(
+                                onDone = { viewModel.signInWithMdblistOnly() },
+                            ),
+                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+                        )
+                    }
+
+                    HubButton(
+                        text = stringResource(R.string.login_mdblist_only_submit),
+                        primary = true,
+                        enabled = state.key.isNotBlank(),
+                        onClick = viewModel::signInWithMdblistOnly,
+                    )
+                    HubButton(
+                        text = stringResource(R.string.login_mdblist_only_back),
+                        onClick = { mdblistOnlyMode = false },
                     )
                 }
             } else {
@@ -258,7 +323,10 @@ fun LoginScreen(
                                 },
                             )
                         }
-                        HubButton(text = "Trocar conta Google", onClick = viewModel::changeGoogleAccount)
+                        HubButton(
+                            text = stringResource(R.string.login_change_google_account),
+                            onClick = viewModel::changeGoogleAccount,
+                        )
                     }
                 }
             }

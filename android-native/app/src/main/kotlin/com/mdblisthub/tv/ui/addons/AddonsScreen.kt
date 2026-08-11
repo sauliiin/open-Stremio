@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -165,6 +166,15 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
 
     private val _mdblistCatalog = MutableStateFlow(MdblistCatalogUi())
     val mdblistCatalog: StateFlow<MdblistCatalogUi> = _mdblistCatalog.asStateFlow()
+
+    /**
+     * Hides the cloud sync card entirely for an MDBList-only session: there is
+     * no Firebase UID for it to sync under, so `graph.firebaseSync.enable()`
+     * would only ever fail with "sign in with Google first".
+     */
+    val hasGoogleAccount: StateFlow<Boolean> = graph.auth.googleAccount
+        .map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), graph.auth.googleAccount.value != null)
 
     init {
         viewModelScope.launch {
@@ -427,32 +437,45 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
     val firebase by viewModel.firebase.collectAsStateWithLifecycle()
     val stremio by viewModel.stremio.collectAsStateWithLifecycle()
     val mdblistCatalog by viewModel.mdblistCatalog.collectAsStateWithLifecycle()
+    val hasGoogleAccount by viewModel.hasGoogleAccount.collectAsStateWithLifecycle()
 
     BackHandler { onBack() }
 
-    LazyColumn(
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Pinned outside the LazyColumn on purpose: the list's initial focus
+        // lands on the first focusable card below, and Compose's focus-driven
+        // scroll-into-view then shifts the whole list up to seat that card
+        // near the top — taking this non-focusable title with it, off the
+        // top of the screen, before the user ever presses a key. A fixed
+        // header can't be scrolled away by a focus change it isn't part of.
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
+                .padding(top = HubDimens.ScreenPaddingVertical * 2, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Text(stringResource(R.string.addons_title), style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
+            Text(
+                text = "Cole a URL do manifest de um addon do Stremio. É dele que saem as " +
+                    "fontes e as legendas — o app nunca mostra a lista de links, só usa a " +
+                    "melhor que abrir.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = HubColors.TextDim,
+                modifier = Modifier.widthIn(max = 940.dp).fillMaxWidth(),
+            )
+        }
+
+        LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            horizontal = HubDimens.ScreenPaddingHorizontal,
-            vertical = HubDimens.ScreenPaddingVertical,
+            start = HubDimens.ScreenPaddingHorizontal,
+            end = HubDimens.ScreenPaddingHorizontal,
+            bottom = HubDimens.ScreenPaddingVertical,
         ),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        item(key = "head") {
-            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Text(stringResource(R.string.addons_title), style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
-                Text(
-                    text = "Cole a URL do manifest de um addon do Stremio. É dele que saem as " +
-                        "fontes e as legendas — o app nunca mostra a lista de links, só usa a " +
-                        "melhor que abrir.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = HubColors.TextDim,
-                    modifier = Modifier.widthIn(max = 940.dp).fillMaxWidth(),
-                )
-            }
-        }
-
-        item(key = "firebase") {
+        if (hasGoogleAccount) item(key = "firebase") {
             FirebaseSyncCard(
                 state = firebase,
                 onToggle = viewModel::toggleFirebaseSync,
@@ -518,6 +541,7 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
         }
 
         item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
+        }
     }
 }
 

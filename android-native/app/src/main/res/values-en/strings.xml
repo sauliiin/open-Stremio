@@ -208,6 +208,11 @@
     <string name="login_link_mdblist">Link MDBList</string>
     <string name="login_continue_without">Continue without MDBList</string>
     <string name="login_create_account">Create a free account</string>
+    <string name="login_mdblist_only_button">Sign in with MDBList only</string>
+    <string name="login_mdblist_only_intro">Without a Google account, addons and list order stay on this device only — they will not sync with your other TVs or phone. Lists, watchlist and continue watching keep working normally, through your MDBList account itself.</string>
+    <string name="login_mdblist_only_submit">Sign in</string>
+    <string name="login_mdblist_only_back">Back</string>
+    <string name="login_change_google_account">Switch Google account</string>
     <string name="login_error_no_browser">No browser available. Open https://mdblist.com/ on another device.</string>
 
     <!-- Settings -->

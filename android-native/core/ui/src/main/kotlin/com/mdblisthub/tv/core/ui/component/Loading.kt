@@ -36,7 +36,16 @@ fun HubSpinner(modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp 
         val stroke = Stroke(width = 3.dp.toPx())
         val inset = stroke.width / 2
         drawArc(
-            color = HubColors.Border,
+            // Dimmed rather than the theme's raw border colour. In Normal
+            // that colour is already a near-black blue-grey, so full opacity
+            // against the near-black background read as a faint track — but
+            // Cyberpunk's border is a saturated pink at full brightness,
+            // nearly as loud as the accent arc drawn on top of it, and the
+            // two blended into what looked like a single solid disc rather
+            // than a track with a moving indicator. Dimming it is what keeps
+            // the track subordinate to the indicator in every palette,
+            // instead of relying on each theme's border happening to be dark.
+            color = HubColors.Border.copy(alpha = 0.35f),
             startAngle = 0f,
             sweepAngle = 360f,
             useCenter = false,

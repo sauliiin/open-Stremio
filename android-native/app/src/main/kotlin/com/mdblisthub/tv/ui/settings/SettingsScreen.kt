@@ -116,18 +116,31 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+        // Pinned outside the LazyColumn on purpose: the list's initial focus
+        // lands on the first focusable card below, and Compose's focus-driven
+        // scroll-into-view then shifts the whole list up to seat that card
+        // near the top — taking this non-focusable title with it, off the
+        // top of the screen, before the user ever presses a key. A fixed
+        // header can't be scrolled away by a focus change it isn't part of.
+        Text(
+            stringResource(R.string.settings_title),
+            style = MaterialTheme.typography.displayLarge,
+            color = HubColors.Text,
+            modifier = Modifier
+                .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
+                .padding(top = HubDimens.ScreenPaddingVertical * 2, bottom = 18.dp),
+        )
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(
-                horizontal = HubDimens.ScreenPaddingHorizontal,
-                vertical = HubDimens.ScreenPaddingVertical,
+                start = HubDimens.ScreenPaddingHorizontal,
+                end = HubDimens.ScreenPaddingHorizontal,
+                bottom = HubDimens.ScreenPaddingVertical,
             ),
             verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            item(key = "head") {
-                Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
-            }
-
         item(key = "interface") {
             SettingsCard(title = stringResource(R.string.settings_section_interface)) {
                 SettingsRow(label = stringResource(R.string.settings_language)) {
@@ -196,6 +209,7 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
         }
 
         item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
+        }
     }
 
     if (subtitlePickerOpen) {

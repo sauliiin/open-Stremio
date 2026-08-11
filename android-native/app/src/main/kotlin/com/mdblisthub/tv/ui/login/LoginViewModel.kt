@@ -86,6 +86,31 @@ class LoginViewModel(private val graph: DataGraph) : ViewModel() {
         }
     }
 
+    /**
+     * The Fire-TV path: no Google account is ever touched. Reuses the same
+     * `key` field as [linkMdblist] — the two forms are never shown at once,
+     * so there is nothing for them to collide over.
+     */
+    fun signInWithMdblistOnly() {
+        val key = _state.value.key.trim()
+        if (key.isEmpty() || _state.value.busy) return
+
+        _state.update { it.copy(busy = true, error = null, errorRes = null) }
+        viewModelScope.launch {
+            graph.auth.signInWithMdblistOnly(key).fold(
+                onSuccess = {
+                    graph.scheduler.onSignedIn()
+                    _state.update { it.copy(busy = false, signedIn = true, key = "") }
+                },
+                onFailure = {
+                    _state.update {
+                        it.copy(busy = false, errorRes = R.string.login_error_mdblist_link)
+                    }
+                },
+            )
+        }
+    }
+
     fun linkMdblist() {
         val key = _state.value.key.trim()
         if (key.isEmpty() || _state.value.busy || _state.value.google == null) return

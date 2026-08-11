@@ -55,13 +55,28 @@ class AuthRepository(
     val user: Flow<HubUser?> = session.user
     val mdblistLinked: Flow<Boolean> = session.apiKey.map { it.isNotBlank() }
 
+    /**
+     * True for a session with no Google account behind it — see
+     * `SessionStore.mdblistOnly`. Read by the UI to hide the two things that
+     * have nothing to sync to in this mode: the addon cloud-sync card and the
+     * account-switch action.
+     */
+    val isMdblistOnly: Flow<Boolean> = session.mdblistOnly
+
     val signedIn: Flow<Boolean> = combine(
         googleAccount,
         session.apiKey,
         session.firebaseUid,
         session.mdblistSkipped,
-    ) { google, key, ownerUid, skipped ->
-        google != null && ownerUid == google.uid && (key.isNotBlank() || skipped)
+        session.mdblistOnly,
+    ) { google, key, ownerUid, skipped, mdblistOnly ->
+        when {
+            // The key alone is the whole session in this mode — there is no
+            // UID to check it against.
+            mdblistOnly -> key.isNotBlank()
+            google != null -> ownerUid == google.uid && (key.isNotBlank() || skipped)
+            else -> false
+        }
     }
 
     init {
@@ -107,6 +122,26 @@ class AuthRepository(
         user
     }
 
+    /**
+     * Enters with nothing but a validated MDBList key — no Google account
+     * involved at any point.
+     *
+     * For a box with no Google account to offer: everything this app can do
+     * *without* a Firebase UID still works — lists, watchlist and resume all
+     * live on the MDBList account itself and already cross devices through
+     * it. What is lost is addon and list-order sync, which the two sync
+     * repositories key by Firebase UID; with none here, they simply see no
+     * account and stay idle rather than failing.
+     */
+    suspend fun signInWithMdblistOnly(rawKey: String): Result<HubUser> = runCatching {
+        val key = rawKey.trim()
+        require(key.isNotEmpty()) { "Informe a chave da API da MDBList." }
+
+        val user = api.user(key).toDomain()
+        session.saveMdblistOnly(key, user)
+        user
+    }
+
     /** Enters with Google only, leaving MDBList-dependent rows disabled. */
     suspend fun continueWithoutMdblist(): Result<Unit> = runCatching {
         val firebaseUser = requireNotNull(firebase.currentUser) { "Entre com o Google primeiro." }
@@ -136,6 +171,31 @@ class AuthRepository(
      * key usable, while a definitive MDBList rejection unlinks it.
      */
     suspend fun restore(): Boolean {
+        // Checked before touching Firebase at all: this session was never
+        // signed into it, so `firebase.currentUser` is always null here and
+        // would otherwise read as "nothing to restore".
+        if (session.isMdblistOnly()) {
+            val key = session.currentKey()
+            if (key.isBlank()) return false
+
+            val validation = runCatching { api.user(key).toDomain() }
+            validation.getOrNull()?.let {
+                session.saveMdblistOnly(key, it)
+                return true
+            }
+
+            val error = validation.exceptionOrNull()
+            if (error is retrofit2.HttpException && error.code() in 401..403) {
+                session.clear()
+                clearMdblistData()
+                return false
+            }
+            // Same reasoning as the Google path below: a TV box routinely
+            // boots before Wi-Fi is up, and a transient failure must not sign
+            // out a credential that was valid a moment ago.
+            return true
+        }
+
         val firebaseUser = firebase.currentUser ?: return false
         googleState.value = firebaseUser.toAccount()
 

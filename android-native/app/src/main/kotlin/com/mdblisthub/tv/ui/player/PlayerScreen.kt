@@ -541,11 +541,19 @@ private fun ResolvingVeil(
     attempt: Int,
     total: Int,
 ) {
+    // Height reserved for the status footer below, so the centred block above
+    // can never grow into it — see the comment on that footer for why this
+    // used to be one unbroken column instead of two.
+    val footerHeight = 96.dp
+
     Box(Modifier.fillMaxSize()) {
         FanartBackdrop(url = backdropUrl, scrim = 0.9f)
 
         Column(
-            modifier = Modifier.fillMaxSize().padding(64.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 64.dp)
+                .padding(top = 64.dp, bottom = 64.dp + footerHeight),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -606,8 +614,25 @@ private fun ResolvingVeil(
                         .height(140.dp)
                 )
             }
+        }
 
-            Spacer(Modifier.height(24.dp))
+        // Pinned to the bottom edge on its own, independent of the block
+        // above. This used to be the last child of that same Column, arranged
+        // with `Center` and no scroll — so on a title with a long synopsis or
+        // a title that wrapped to two lines, the whole stack grew taller than
+        // the screen and `Center` overflowed it symmetrically: the spinner
+        // clipped against the top edge while this text was pushed past the
+        // bottom one. Anchoring it here with its own fixed margin is what
+        // guarantees it stays a safe distance from the edge no matter how
+        // tall the content above happens to be.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp)
+                .height(footerHeight),
+            verticalArrangement = Arrangement.Bottom,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 text = stringResource(R.string.player_preparing),
                 style = MaterialTheme.typography.bodyLarge,
