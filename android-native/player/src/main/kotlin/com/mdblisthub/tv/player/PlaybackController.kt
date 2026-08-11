@@ -21,6 +21,8 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.DefaultAllocator
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
@@ -126,7 +128,30 @@ class PlaybackController(
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         } ?: upstreamFactory
 
+    /**
+     * The first line of defence against a source going quiet, and the one that
+     * matters most.
+     *
+     * A read timing out mid-film is a *load* error, and Media3 retries load
+     * errors a few times before giving up and escalating to a fatal
+     * `PlaybackException`. Retrying far more, with a longer backoff, keeps a
+     * mirror that pauses for half a minute from ever becoming "this source is
+     * dead" — the buffer drains, the picture waits, and playback resumes on
+     * the same link once bytes flow again. Without this, the escalation is
+     * what triggered a source switch mid-playback.
+     */
+    private val loadErrorPolicy = object : DefaultLoadErrorHandlingPolicy(LOAD_RETRY_COUNT) {
+        override fun getRetryDelayMsFor(info: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+            // Ramps 1s, 2s, 3s… to a ceiling, instead of the default's much
+            // shorter schedule. A stalled CDN is usually back within a minute,
+            // and waiting costs nothing but a paused picture.
+            val attempt = info.errorCount.coerceAtLeast(1)
+            return (attempt * LOAD_RETRY_STEP_MS).coerceAtMost(LOAD_RETRY_MAX_MS)
+        }
+    }
+
     private val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        .setLoadErrorHandlingPolicy(loadErrorPolicy)
 
     /**
      * Owned here rather than left to `DefaultLoadControl` so that
@@ -134,7 +159,7 @@ class PlaybackController(
      */
     private val allocator = DefaultAllocator(/* trimOnReset = */ true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
 
-    private val targetBufferBytes = HeapBudget.targetBufferBytes()
+    private val targetBufferBytes = HeapBudget.targetBufferBytes(context.applicationContext)
 
     val player: ExoPlayer = ExoPlayer.Builder(
         context.applicationContext,
@@ -155,8 +180,13 @@ class PlaybackController(
                 delegate = DefaultLoadControl.Builder()
                     .setAllocator(allocator)
                     .setBufferDurationsMs(
-                        /* minBufferMs = */ 30_000,
-                        /* maxBufferMs = */ 120_000,
+                        // Both raised a lot. These are the numbers that decide
+                        // how long a source may go quiet before the picture
+                        // stops, and the old 30s/120s left almost no cushion on
+                        // a mirror that trickles — which is the normal case
+                        // here, not the exceptional one.
+                        /* minBufferMs = */ 120_000,
+                        /* maxBufferMs = */ 600_000,
                         // These two are Media3's own defaults, and that is the
                         // point. They used to be 2_500/5_000, justified by a
                         // comment claiming the default was 500ms — it is 1_000
@@ -165,8 +195,12 @@ class PlaybackController(
                         // extra 1.5s on every start and 3s on every rebuffer,
                         // paid for a benefit that was never being missed.
                         /* bufferForPlaybackMs = */ DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                        /* bufferForPlaybackAfterRebufferMs = */
-                        DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
+                        // Deliberately above the 2s default: resuming from a
+                        // rebuffer with almost nothing in hand is what turns
+                        // one stall into a run of them. Only this one is
+                        // raised — `bufferForPlaybackMs` stays at the default
+                        // so the *first* frame is still fast.
+                        /* bufferForPlaybackAfterRebufferMs = */ 8_000,
                     )
                     // `DefaultAllocator` takes its `byte[]` from the *Java*
                     // heap, not native memory, so this is bounded by what the
@@ -284,6 +318,17 @@ class PlaybackController(
     /** Set by the screen; see [setOsdVisible]. Starts true, since the OSD does. */
     private var osdVisible = true
 
+    /**
+     * The source that has actually produced a picture, if any.
+     *
+     * Non-null means the cascade is over and this link is the one being
+     * watched — see [onPlayerError], which reconnects to it rather than
+     * moving on. Cleared whenever a new playback starts, so it can never leak
+     * across titles.
+     */
+    private var committedStream: PlayableStream? = null
+    private var committedRetries = 0
+
     /** Position/intention carried while a failed source is replaced. */
     private var failoverPositionMs: Long? = null
     private var failoverPlayWhenReady: Boolean? = null
@@ -330,6 +375,8 @@ class PlaybackController(
         decoyIndices.clear()
         decoyStreak = 0
         manualMode = false
+        committedStream = null
+        committedRetries = 0
         expectedRuntimeMs = expectedRuntimeMinutes
             ?.takeIf { it > 0 }
             ?.let { it * 60_000L }
@@ -486,6 +533,8 @@ class PlaybackController(
         awaitingCandidate = false
         manualMode = true
         decoyStreak = 0
+        committedStream = null
+        committedRetries = 0
 
         if (stream.url == null) {
             fail(PlaybackFailure.ManualNoLink)
@@ -593,11 +642,54 @@ class PlaybackController(
      */
     override fun onPlayerError(error: PlaybackException) {
         rememberPlaybackForFailover()
+
+        // A source that has already produced a picture is never swapped out.
+        //
+        // This is the rule that was missing. The cascade exists to find *a*
+        // working link, and once one is playing its job is done — but this
+        // handler kept treating every error the same, so a mirror that went
+        // quiet for a moment mid-film was abandoned and the next candidate
+        // opened in its place. From the sofa that is the film restarting on a
+        // different-quality source for no visible reason.
+        //
+        // Committed sources are reopened at the same position instead, as many
+        // times as it takes, because the overwhelmingly likely cause is a
+        // network hiccup that will pass.
+        if (committedStream != null) {
+            reopenCommitted()
+            return
+        }
+
         if (manualMode) {
             fail(PlaybackFailure.ManualFailed)
         } else {
             tryAdvance()
         }
+    }
+
+    /**
+     * Re-prepares the source that was already playing, where it left off.
+     *
+     * Deliberately generous: [COMMITTED_RETRY_LIMIT] attempts with the load
+     * policy's own backoff underneath means minutes of tolerance before this
+     * concedes. Falling back to the cascade at all is a last resort, and only
+     * happens when the same link has failed repeatedly rather than once.
+     */
+    private fun reopenCommitted() {
+        val stream = committedStream ?: return
+
+        if (committedRetries >= COMMITTED_RETRY_LIMIT) {
+            // The link really is gone, not merely slow. Release the commitment
+            // so the cascade can do its job again.
+            committedStream = null
+            committedRetries = 0
+            if (manualMode) fail(PlaybackFailure.ManualFailed) else tryAdvance()
+            return
+        }
+
+        committedRetries++
+        _state.update { it.copy(phase = PlaybackPhase.BUFFERING, error = null) }
+        open(stream)
     }
 
     override fun onTracksChanged(tracks: Tracks) {
@@ -656,6 +748,13 @@ class PlaybackController(
         decoyStreak = 0
         watchdog?.cancel()
         watchdog = null
+
+        // Reaching READY is what commits the app to this link: from here on an
+        // error means "reconnect to this", never "try a different one". The
+        // retry counter resets on every successful ready, so a film that
+        // hiccups once an hour never exhausts its allowance.
+        committedStream = _state.value.activeStream
+        committedRetries = 0
 
         // `resumeApplied` is set *inside* the branch, not before it. Setting it
         // unconditionally meant that a first READY arriving before the
@@ -983,6 +1082,8 @@ class PlaybackController(
         subtitleTicker = null
         candidatesCollecting = false
         awaitingCandidate = false
+        committedStream = null
+        committedRetries = 0
         failoverPositionMs = null
         failoverPlayWhenReady = null
         runCatching { player.stop() }
@@ -1050,6 +1151,24 @@ class PlaybackController(
 
         /** How far off the runtime estimate may be before a resume is corrected. */
         const val RESUME_TOLERANCE_MS = 5_000L
+
+        /**
+         * Load-level retries before an error is allowed to become fatal.
+         *
+         * Media3's default is three, sized for a well-behaved CDN. The hosts
+         * here are neither, and the cost of waiting is a paused picture where
+         * the cost of giving up is the film restarting somewhere else.
+         */
+        const val LOAD_RETRY_COUNT = 12
+        const val LOAD_RETRY_STEP_MS = 1_000L
+        const val LOAD_RETRY_MAX_MS = 10_000L
+
+        /**
+         * Full re-prepares of an already-playing link before the cascade is
+         * allowed to take over again. With the load retries above underneath
+         * each one, this is several minutes of patience.
+         */
+        const val COMMITTED_RETRY_LIMIT = 6
 
         const val MAX_SUBTITLE_OFFSET_MS = 10_000L
     }

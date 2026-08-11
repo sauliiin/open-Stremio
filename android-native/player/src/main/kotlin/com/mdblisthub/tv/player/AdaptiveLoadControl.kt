@@ -60,9 +60,6 @@ class AdaptiveLoadControl(
     @Volatile
     private var backBufferUs: Long = HeapBudget.MAX_BACK_BUFFER_MS * 1_000L
 
-    @Volatile
-    private var memoryCritical = false
-
     private var lastSampleMs = 0L
 
     // ------------------------------------------------- forwarded, unchanged
@@ -104,13 +101,21 @@ class AdaptiveLoadControl(
 
     override fun getBackBufferDurationUs(playerId: PlayerId): Long = backBufferUs
 
+    /**
+     * Loading is never vetoed here — the delegate alone decides.
+     *
+     * There used to be a heap-pressure veto: when free memory looked low this
+     * returned false, stopping the buffer from growing. That was wrong, and
+     * badly so. `totalMemory() - freeMemory()` counts garbage that has not been
+     * collected yet, so free heap dips below any fixed threshold routinely and
+     * transiently — and each dip stopped loading entirely, drained the buffer,
+     * and stalled playback mid-film for a reason that had nothing to do with
+     * the source. The byte budget passed to `setTargetBufferBytes` already
+     * bounds what the allocator may take; a second, noisier limiter on top of
+     * it only ever subtracted from playback.
+     */
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         sampleIfDue(parameters.bufferedDurationUs)
-        // The delegate still owns the normal decision — this only ever
-        // subtracts from it. Growing the buffer is what allocates, so refusing
-        // here is the one lever that reliably stops heap pressure getting
-        // worse, and it costs nothing when memory is fine.
-        if (memoryCritical) return false
         return delegate.shouldContinueLoading(parameters)
     }
 
@@ -131,8 +136,6 @@ class AdaptiveLoadControl(
         // stutter it exists to prevent.
         if (now - lastSampleMs < SAMPLE_INTERVAL_MS) return
         lastSampleMs = now
-
-        memoryCritical = HeapBudget.isCritical()
 
         val allocated = allocator.totalBytesAllocated.toLong()
         val bytesPerSecond = if (bufferedDurationUs > MIN_MEASURABLE_BUFFER_US && allocated > 0) {

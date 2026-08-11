@@ -6,6 +6,11 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -264,11 +269,26 @@ fun DetailScreen(
                                 buttonRowHasFocus = state.hasFocus
                             },
                     ) {
+                        // Named once so the label and the action cannot disagree
+                        // about which episode this plays. They already did: the
+                        // label was formatted with only the season, against a
+                        // string that takes season *and* episode, so opening any
+                        // series threw `MissingFormatArgumentException` the
+                        // moment the button drew.
+                        val firstEpisode = 1
                         HubButton(
-                            text = if (type == MediaType.SHOW) stringResource(R.string.detail_watch_episode, season) else stringResource(R.string.detail_watch),
+                            text = if (type == MediaType.SHOW) {
+                                stringResource(R.string.detail_watch_episode, season, firstEpisode)
+                            } else {
+                                stringResource(R.string.detail_watch)
+                            },
                             primary = true,
                             onClick = {
-                                if (type == MediaType.SHOW) onPlay(season, 1) else onPlay(null, null)
+                                if (type == MediaType.SHOW) {
+                                    onPlay(season, firstEpisode)
+                                } else {
+                                    onPlay(null, null)
+                                }
                             },
                             modifier = Modifier.fillMaxHeight(),
                         )
@@ -423,12 +443,48 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
             modifier = Modifier.focusRestorer(),
         ) {
             items(episodes, key = { it.id }) { episode ->
+                // These cards carried no focus treatment at all: `clickable`
+                // made them focusable, but nothing on screen changed, so
+                // walking the row with a remote gave no clue where you were.
+                // Every other focusable in the app tracks focus explicitly —
+                // the cast row directly below this one included.
+                val interaction = remember { MutableInteractionSource() }
+                val focused by interaction.collectIsFocusedAsState()
+
+                val borderWidth by animateDpAsState(
+                    if (focused) 3.dp else 0.dp,
+                    episodeFocusTween(),
+                    label = "episode-border-width",
+                )
+                val borderColor by animateColorAsState(
+                    if (focused) HubColors.Accent else HubColors.Border,
+                    episodeFocusTween(),
+                    label = "episode-border-color",
+                )
+                // The still image occupies most of the card, so a border alone
+                // reads weakly against bright artwork from three metres away.
+                // Lifting the surface behind it too is what makes the focused
+                // card obvious at a glance rather than on inspection.
+                val background by animateColorAsState(
+                    if (focused) {
+                        HubColors.Accent.copy(alpha = 0.32f)
+                    } else {
+                        HubColors.Surface.copy(alpha = 0.7f)
+                    },
+                    episodeFocusTween(),
+                    label = "episode-background",
+                )
+
                 Column(
                     modifier = Modifier
                         .width(260.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(HubColors.Surface.copy(alpha = 0.7f))
-                        .clickable { onPlay(episode) }
+                        .background(background)
+                        .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
+                        .clickable(
+                            interactionSource = interaction,
+                            indication = null,
+                        ) { onPlay(episode) }
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -446,7 +502,7 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
                     Text(
                         text = "${episode.episodeNumber}. ${episode.name}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = HubColors.Text,
+                        color = if (focused) HubColors.AccentSoft else HubColors.Text,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -455,6 +511,10 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
         }
     }
 }
+
+/** Shared by every focus-driven property on an episode card, so they move as one. */
+private fun <T> episodeFocusTween(): FiniteAnimationSpec<T> =
+    tween(durationMillis = 200, easing = FastOutSlowInEasing)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

@@ -521,6 +521,12 @@ private fun AutoScrollText(
         text = text,
         style = style,
         color = color,
+        // The veil is a centred column, which centres this text's *box* but
+        // says nothing about the lines inside it — without this the synopsis
+        // sat ragged-right against a centred title and spinner. The home
+        // screen's own copy of this helper deliberately stays left-aligned,
+        // since its hero panel is a left-aligned layout.
+        textAlign = TextAlign.Center,
         modifier = modifier.verticalScroll(scrollState)
     )
 }
