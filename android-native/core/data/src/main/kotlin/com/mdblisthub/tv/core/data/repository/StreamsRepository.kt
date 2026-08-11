@@ -361,7 +361,7 @@ class StreamsRepository(
          */
         const val PROBE_TIMEOUT_MS = 3_500L
         const val SUBTITLE_TIMEOUT_MS = 15_000L
-        const val PROBE_CONCURRENCY = 8
+        const val PROBE_CONCURRENCY = 16
 
         /**
          * How long the first wave is allowed to gather before the best of it

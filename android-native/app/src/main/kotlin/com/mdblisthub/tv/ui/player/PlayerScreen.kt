@@ -554,9 +554,23 @@ private fun ResolvingVeil(
                 .fillMaxSize()
                 .padding(horizontal = 64.dp)
                 .padding(top = 64.dp, bottom = 64.dp + footerHeight),
-            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // Weighted rather than a plain Center-arranged sibling of the
+            // synopsis below: spinner + clearlogo + both spacers can add up
+            // to more height than a shorter TV screen has to give — with
+            // both in one Center-arranged column, that overflow ate
+            // straight into the synopsis's own fixed-height box, since
+            // Center distributes the overflow across every child in the
+            // block equally rather than sparing any one of them. Giving
+            // this block the weight instead means it is the one that
+            // yields when space is tight, and the synopsis below always
+            // gets its full, undiminished height.
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             HubSpinner(size = 44.dp)
             Spacer(Modifier.height(32.dp))
 
@@ -602,6 +616,7 @@ private fun ResolvingVeil(
                         .alpha(alpha)
                 )
             }
+            }
 
             if (!overview.isNullOrBlank()) {
                 Spacer(Modifier.height(48.dp))
@@ -611,7 +626,19 @@ private fun ResolvingVeil(
                     color = HubColors.TextDim,
                     modifier = Modifier
                         .widthIn(max = 700.dp)
-                        .height(140.dp)
+                        // Exactly 5 lines, guaranteed: this box is a fixed
+                        // sibling of the weighted spinner/logo block above,
+                        // not sharing a Center arrangement with it, so it is
+                        // never squeezed by that block overflowing on a
+                        // shorter screen. Not simply 5 * bodyMedium's nominal
+                        // 21.sp line height (105dp) — measured on device that
+                        // undershoots by roughly a fifth of a line, almost
+                        // certainly Android's default font padding/leading
+                        // that the nominal lineHeight doesn't account for.
+                        // 126dp is the value that actually renders 5 full
+                        // lines; text past that scrolls via AutoScrollText
+                        // rather than being cut off blind.
+                        .height(126.dp)
                 )
             }
         }
