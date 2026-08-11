@@ -42,13 +42,59 @@ interface MediaDao {
     @Query("SELECT * FROM media_detail WHERE tmdbId = :tmdbId AND type = :type")
     suspend fun detail(tmdbId: Int, type: String): MediaDetailEntity?
 
+    /** Paints list cards as soon as the lightweight artwork request completes. */
+    @Query(
+        """
+        UPDATE media SET
+            landscapeUrl = COALESCE(:landscapeUrl, landscapeUrl),
+            backdropUrl = COALESCE(:backdropUrl, backdropUrl)
+        WHERE tmdbId = :tmdbId AND type = :type
+        """
+    )
+    suspend fun updateArtwork(
+        tmdbId: Int,
+        type: String,
+        landscapeUrl: String?,
+        backdropUrl: String?,
+    )
+
+    /** Keeps an already-hydrated detail row in sync without replacing its metadata. */
+    @Query(
+        """
+        UPDATE media_detail SET
+            landscapeUrl = COALESCE(:landscapeUrl, landscapeUrl),
+            backdropUrl = COALESCE(backdropUrl, :backdropUrl)
+        WHERE tmdbId = :tmdbId AND type = :type
+        """
+    )
+    suspend fun updateDetailArtwork(
+        tmdbId: Int,
+        type: String,
+        landscapeUrl: String?,
+        backdropUrl: String?,
+    )
+
     @Query("SELECT tmdbId FROM media WHERE imdbId = :imdbId AND type = :type LIMIT 1")
     suspend fun tmdbIdForImdb(imdbId: String, type: String): Int?
 
     @Query(
         """
-        SELECT m.* FROM media m
+        SELECT
+            m.tmdbId,
+            m.type,
+            m.imdbId,
+            m.title,
+            m.year,
+            m.posterUrl,
+            COALESCE(d.landscapeUrl, m.landscapeUrl) AS landscapeUrl,
+            COALESCE(m.backdropUrl, d.backdropUrl) AS backdropUrl,
+            m.genres,
+            m.runtimeMinutes,
+            m.score,
+            m.fetchedAt
+        FROM media m
         INNER JOIN list_items li ON li.tmdbId = m.tmdbId AND li.type = m.type
+        LEFT JOIN media_detail d ON d.tmdbId = m.tmdbId AND d.type = m.type
         WHERE li.listId = :listId
         ORDER BY li.position ASC
         """

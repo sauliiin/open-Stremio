@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -94,8 +95,26 @@ fun PosterCard(
         animationSpec = posterFocusTween(),
         label = "poster-title-color",
     )
+    val displayTitle = if (HubColors.isPrimefly && item.year != null &&
+        !item.title.endsWith("(${item.year})")
+    ) {
+        "${item.title} (${item.year})"
+    } else {
+        item.title
+    }
+    val landscapeArtworkLoader = LocalLandscapeArtworkLoader.current
+    val resolvedArtwork = landscapeArtworkLoader.artworkFor(item)
 
-    androidx.compose.runtime.LaunchedEffect(focused) {
+    // LazyRow only composes the visible cards (plus its small layout buffer),
+    // so composition is the precise signal to start every image on screen.
+    // Focus remains a navigation concern and no longer gates artwork.
+    LaunchedEffect(HubColors.isPrimefly, item.key, item.landscapeUrl) {
+        if (HubColors.isPrimefly && item.landscapeUrl == null && resolvedArtwork == null) {
+            landscapeArtworkLoader.request(item)
+        }
+    }
+
+    LaunchedEffect(focused) {
         if (focused) onFocused(item)
     }
 
@@ -140,10 +159,19 @@ fun PosterCard(
                     }
                 },
         ) {
-            if (item.posterUrl != null) {
+            val artworkUrl = if (HubColors.isPrimefly) {
+                // Never crop a portrait poster into a landscape card.
+                resolvedArtwork?.landscapeUrl
+                    ?: item.landscapeUrl
+                    ?: resolvedArtwork?.backdropUrl
+                    ?: item.backdropUrl
+            } else {
+                item.posterUrl
+            }
+            if (artworkUrl != null) {
                 AsyncImage(
-                    model = item.posterUrl,
-                    contentDescription = item.title,
+                    model = artworkUrl,
+                    contentDescription = displayTitle,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -151,7 +179,7 @@ fun PosterCard(
                 // No poster is common on obscure titles; a readable fallback
                 // beats an empty rectangle the eye reads as a loading error.
                 Text(
-                    text = item.title,
+                    text = displayTitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = HubColors.TextFaint,
                     textAlign = TextAlign.Center,
@@ -194,7 +222,7 @@ fun PosterCard(
         }
 
         Text(
-            text = item.title,
+            text = displayTitle,
             style = MaterialTheme.typography.labelLarge,
             color = titleColor,
             minLines = 2,

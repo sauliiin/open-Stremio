@@ -76,6 +76,7 @@ import com.mdblisthub.tv.core.ui.component.SideRail
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.model.MediaDetail
+import com.mdblisthub.tv.core.model.HubThemeVariant
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
@@ -128,7 +129,11 @@ private sealed interface EditableListTarget {
 @OptIn(ExperimentalFoundationApi::class)
 private val RowPivotScroll = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val pivot = if (HubColors.isNetflixy) 0.18f * containerSize else ROW_PIVOT * containerSize
+        val pivot = if (HubColors.isNetflixy) {
+            0.18f * containerSize
+        } else {
+            ROW_PIVOT * containerSize
+        }
 
         // A row tall enough that parking it at the pivot would hang its
         // bottom off-screen is aligned to the bottom edge instead — parking
@@ -410,12 +415,18 @@ fun HomeScreen(
     val menuThemeNormal = stringResource(R.string.menu_theme_normal)
     val menuThemeCyberpunk = stringResource(R.string.menu_theme_cyberpunk)
     val menuThemeNetflixy = stringResource(R.string.menu_theme_netflixy)
+    val menuThemePrimefly = stringResource(R.string.menu_theme_primefly)
     val menuSettings = stringResource(R.string.menu_settings)
     val menuExit = stringResource(R.string.menu_exit)
 
-    val currentThemeName = if (HubColors.isCyberpunk) menuThemeCyberpunk else if (HubColors.isNetflixy) menuThemeNetflixy else menuThemeNormal
+    val currentThemeName = when (HubColors.variant) {
+        HubThemeVariant.NORMAL -> menuThemeNormal
+        HubThemeVariant.CYBERPUNK -> menuThemeCyberpunk
+        HubThemeVariant.NETFLIXY -> menuThemeNetflixy
+        HubThemeVariant.PRIMEFLY -> menuThemePrimefly
+    }
 
-    val rail = remember(isEditMode, HubColors.isCyberpunk, HubColors.isNetflixy, menuHome, menuSearch, menuAddons, menuLists, menuListsDone, currentThemeName, menuSettings, menuExit) {
+    val rail = remember(isEditMode, HubColors.variant, menuHome, menuSearch, menuAddons, menuLists, menuListsDone, currentThemeName, menuSettings, menuExit) {
         listOf(
             RailItem("home", menuHome, Icons.Default.Home),
             RailItem("search", menuSearch, Icons.Default.Search),
@@ -536,7 +547,7 @@ fun HomeScreen(
 
                 CompositionLocalProvider(LocalBringIntoViewSpec provides RowPivotScroll) {
                     LazyColumn(
-                        modifier = if (HubColors.isNetflixy) 
+                        modifier = if (HubColors.isNetflixy)
                             Modifier.fillMaxWidth().height(264.dp).clipToBounds() 
                         else Modifier.fillMaxSize(),
                         // Tighter than HubDimens.RowSpacing on purpose — with the
@@ -551,7 +562,8 @@ fun HomeScreen(
                             bottom = HubDimens.ScreenPaddingVertical * 8,
                         ),
                     ) {
-                        if (!HubColors.isNetflixy) {
+                        // Primefly is shelves only: no clearlogo, synopsis or hero.
+                        if (!HubColors.isNetflixy && !HubColors.isPrimefly) {
                             item(key = "hero") {
                                 HeroPanel(viewModel)
                             }

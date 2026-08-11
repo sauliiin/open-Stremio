@@ -10,4 +10,4 @@ package com.mdblisthub.tv.core.model
  *
  * The order is the order the "tema" button cycles through.
  */
-enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY }
+enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY, PRIMEFLY }

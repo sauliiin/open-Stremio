@@ -45,6 +45,7 @@ object HubColors {
 
     val isCyberpunk: Boolean get() = variant == HubThemeVariant.CYBERPUNK
     val isNetflixy: Boolean get() = variant == HubThemeVariant.NETFLIXY
+    val isPrimefly: Boolean get() = variant == HubThemeVariant.PRIMEFLY
 
     /**
      * Paints a specific palette — what a cold start calls once the persisted
@@ -89,6 +90,19 @@ object HubColors {
                 TextDim = Color(0xFFB3B3B3)
                 TextFaint = Color(0xFF808080)
             }
+            // Prime Video-inspired navy surfaces with its signature cyan.
+            HubThemeVariant.PRIMEFLY -> {
+                Background = Color(0xFF0F171E)
+                Surface = Color(0xFF1A242F)
+                SurfaceStrong = Color(0xFF243244)
+                Border = Color(0xFF425265)
+                Accent = Color(0xFF00A8E1)
+                AccentSoft = Color(0xFF66CFF2)
+                Accent2 = Color(0xFF14B8F4)
+                Text = Color(0xFFFFFFFF)
+                TextDim = Color(0xFFD5DBDB)
+                TextFaint = Color(0xFF8197A4)
+            }
         }
         variant = target
     }
@@ -101,7 +115,8 @@ object HubColors {
         val next = when (variant) {
             HubThemeVariant.NORMAL -> HubThemeVariant.CYBERPUNK
             HubThemeVariant.CYBERPUNK -> HubThemeVariant.NETFLIXY
-            HubThemeVariant.NETFLIXY -> HubThemeVariant.NORMAL
+            HubThemeVariant.NETFLIXY -> HubThemeVariant.PRIMEFLY
+            HubThemeVariant.PRIMEFLY -> HubThemeVariant.NORMAL
         }
         apply(next)
         return next

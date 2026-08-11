@@ -31,6 +31,8 @@ data class MediaItem(
     val imdbId: String? = null,
     val year: Int? = null,
     val posterUrl: String? = null,
+    /** Horizontal promotional art for shelf cards, distinct from scene backdrops. */
+    val landscapeUrl: String? = null,
     val backdropUrl: String? = null,
     val genres: List<String> = emptyList(),
     val runtimeMinutes: Int? = null,
@@ -40,6 +42,15 @@ data class MediaItem(
     /** Stable identity across lists, used as the Compose list key. */
     val key: String get() = "${type.mdblist}:${tmdbId.takeIf { it > 0 } ?: imdbId.orEmpty()}"
 }
+
+/** Artwork resolved lazily for a landscape card without hydrating all metadata. */
+@Serializable
+data class LandscapeArtwork(
+    /** Purpose-made horizontal artwork: TMDB campaign art, then Fanart thumb. */
+    val landscapeUrl: String? = null,
+    /** Generic scene backdrop, used only when purpose-made artwork does not exist. */
+    val backdropUrl: String? = null,
+)
 
 @Serializable
 data class CastMember(
@@ -99,6 +110,8 @@ data class MediaDetail(
     val tagline: String? = null,
     val overview: String? = null,
     val posterUrl: String? = null,
+    /** Horizontal promotional art; never used as the full-screen background. */
+    val landscapeUrl: String? = null,
     val backdropUrl: String? = null,
     /** TMDB clearlogo. Kodi's skins lead with it instead of a text title. */
     val logoUrl: String? = null,
@@ -129,6 +142,7 @@ data class MediaDetail(
         imdbId = imdbId,
         year = year,
         posterUrl = posterUrl,
+        landscapeUrl = landscapeUrl,
         backdropUrl = backdropUrl,
         genres = genres,
         runtimeMinutes = runtimeMinutes,

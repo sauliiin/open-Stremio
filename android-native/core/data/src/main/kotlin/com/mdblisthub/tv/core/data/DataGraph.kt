@@ -55,7 +55,6 @@ class DataGraph(context: Context) {
         database,
     )
     val lists = ListsRepository(network.mdblist, session, database)
-    val homeFeeds = MdblistHomeFeedsRepository(network.mdblist, session)
     val addons = AddonsRepository(network.stremio, network.stremioInstall, database, session, lists)
     val listPreferencesSync = ListPreferencesSyncRepository(
         network.sync,
@@ -65,6 +64,7 @@ class DataGraph(context: Context) {
         scope,
     )
     val media = MediaRepository(network.tmdb, network.mdblist, network.omdb, network.fanartTv, session, database)
+    val homeFeeds = MdblistHomeFeedsRepository(network.mdblist, session, media)
     val stremioAccount = StremioAccountRepository(
         network.stremioAccount,
         stremioAccountStore,

@@ -7,9 +7,11 @@ import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toEntity
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.model.Episode
+import com.mdblisthub.tv.core.model.LandscapeArtwork
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.FanartTvApi
 import com.mdblisthub.tv.core.network.MdblistApi
@@ -58,6 +60,74 @@ class MediaRepository(
     suspend fun cachedDetail(type: MediaType, tmdbId: Int): MediaDetail? =
         mediaDao.detail(tmdbId, type.mdblist)?.toDomain()
 
+    /**
+     * Resolves only what a visible Primefly card needs.
+     *
+     * This deliberately avoids MDBList, OMDb, cast, reviews and the rest of
+     * full detail hydration. Every composed card can call it immediately
+     * without focus turning a row of artwork into a serial metadata crawl.
+     */
+    suspend fun resolveLandscapeArtwork(item: MediaItem): LandscapeArtwork {
+        item.landscapeUrl?.let { return LandscapeArtwork(it, item.backdropUrl) }
+
+        val resolvedTmdbId = item.tmdbId.takeIf { it > 0 }
+            ?: item.imdbId?.let { resolveImdb(item.type, it).getOrNull() }
+            ?: return LandscapeArtwork(backdropUrl = item.backdropUrl)
+
+        val cached = mediaDao.detail(resolvedTmdbId, item.type.mdblist)
+        if (cached?.landscapeUrl != null ||
+            cached != null && cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS
+        ) {
+            return LandscapeArtwork(
+                landscapeUrl = cached.landscapeUrl,
+                backdropUrl = cached.backdropUrl ?: item.backdropUrl,
+            )
+        }
+
+        return runCatching {
+            val tmdb = tmdbApi.detail(
+                type = item.type.tmdb,
+                tmdbId = resolvedTmdbId,
+                apiKey = ApiConfig.TMDB_KEY,
+                language = ApiConfig.LANGUAGE,
+                append = ARTWORK_APPEND,
+                imageLanguage = TmdbApi.IMAGE_LANGUAGES,
+                videoLanguage = TmdbApi.VIDEO_LANGUAGES,
+            )
+            val tmdbLandscape = bestTmdbLandscape(tmdb.images)
+            val fanartId = if (item.type == MediaType.SHOW) tmdb.externalIds?.tvdbId else resolvedTmdbId
+            val fanartLandscape = if (tmdbLandscape == null) {
+                fanartId?.takeIf { it > 0 }?.let { getFanartLandscapeUrl(item.type, it) }
+            } else {
+                null
+            }
+            val artwork = LandscapeArtwork(
+                landscapeUrl = tmdbLandscape ?: fanartLandscape,
+                backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART)
+                    ?: cached?.backdropUrl
+                    ?: item.backdropUrl,
+            )
+            mediaDao.updateArtwork(
+                resolvedTmdbId,
+                item.type.mdblist,
+                artwork.landscapeUrl,
+                artwork.backdropUrl,
+            )
+            mediaDao.updateDetailArtwork(
+                resolvedTmdbId,
+                item.type.mdblist,
+                artwork.landscapeUrl,
+                artwork.backdropUrl,
+            )
+            artwork
+        }.getOrElse {
+            LandscapeArtwork(
+                landscapeUrl = cached?.landscapeUrl,
+                backdropUrl = cached?.backdropUrl ?: item.backdropUrl,
+            )
+        }
+    }
+
     fun observeEpisodes(showTmdbId: Int, seasonNumber: Int): Flow<List<Episode>> =
         mediaDao.observeEpisodes(showTmdbId, seasonNumber).map { rows -> rows.map { it.toDomain() } }
 
@@ -74,6 +144,18 @@ class MediaRepository(
             ?.filter { it.url?.startsWith("http") == true }
             ?.maxByOrNull { it.likes?.toIntOrNull() ?: 0 }
             ?.url
+    }.getOrNull()
+
+    /**
+     * Artwork for a 16:9 shelf card. Fanart's `thumb` collections are authored
+     * for this exact shape. Generic Fanart backgrounds are deliberately not
+     * accepted here — they are backdrops, not card art.
+     */
+    private suspend fun getFanartLandscapeUrl(type: MediaType, fanartId: Int): String? = runCatching {
+        val mediaTypeStr = if (type == MediaType.SHOW) "tv" else "movies"
+        val response = fanartTvApi.getArt(mediaTypeStr, fanartId)
+        val thumbs = if (type == MediaType.SHOW) response.tvthumb else response.moviethumb
+        bestFanartUrl(thumbs)
     }.getOrNull()
 
     /** Resolves Stremio catalog cards, which are commonly identified only by IMDb ID. */
@@ -113,7 +195,10 @@ class MediaRepository(
         } else {
             CachePolicy.DETAIL_MS
         }
-        if (!force && cached != null && !CachePolicy.isStale(cached.fetchedAt, maxAge)) {
+        if (!force && cached != null &&
+            cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
+            !CachePolicy.isStale(cached.fetchedAt, maxAge)
+        ) {
             return@runCatching
         }
         hydrate(type, tmdbId)
@@ -132,6 +217,7 @@ class MediaRepository(
         val cached = mediaDao.detail(tmdbId, type.mdblist)
         if (cached != null &&
             cached.metadataComplete &&
+            cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
             !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)
         ) {
             return@runCatching
@@ -177,9 +263,19 @@ class MediaRepository(
             if (imdbId.isNullOrBlank()) Result.success(null)
             else runCatching { omdbApi.byImdb(ApiConfig.OMDB_KEY, imdbId, "full") }
         }
+        // Fanart.tv keys films by TMDB id, but series by TVDB id.
+        val fanartId = if (type == MediaType.SHOW) tmdb.externalIds?.tvdbId else tmdbId
+        val fanartLandscape = async {
+            fanartId?.takeIf { it > 0 }?.let { getFanartLandscapeUrl(type, it) }
+        }
 
         val infoResult = info.await()
         val omdbResult = omdb.await()
+
+        // A language-tagged TMDB backdrop generally carries the movie's title
+        // or campaign treatment and works as card art. Untagged imagery is a
+        // plain backdrop and therefore belongs only to the final fallback.
+        val tmdbLandscape = bestTmdbLandscape(tmdb.images)
 
         val entity = buildDetailEntity(
             type = type,
@@ -189,7 +285,11 @@ class MediaRepository(
             omdb = omdbResult.getOrNull(),
             now = System.currentTimeMillis(),
             metadataComplete = infoResult.isSuccess && omdbResult.isSuccess,
-        )
+        ).let { detail ->
+            // Explicit order requested by Primefly: TMDB landscape collection,
+            // Fanart.tv landscape, then the title's generic backdrop field.
+            detail.copy(landscapeUrl = tmdbLandscape ?: fanartLandscape.await())
+        }
         mediaDao.upsertDetail(entity)
     }
 
@@ -206,3 +306,22 @@ class MediaRepository(
         mediaDao.upsertEpisodes(season.episodes.map { it.toEntity(showTmdbId, now) })
     }
 }
+
+/** Forces pre-fix cached details to choose card artwork again exactly once. */
+private const val LANDSCAPE_ART_SELECTION_V2_MS = 1_786_478_867_150L
+private const val ARTWORK_APPEND = "external_ids,images"
+
+private fun bestTmdbLandscape(
+    images: com.mdblisthub.tv.core.network.dto.TmdbImagesDto?,
+): String? = listOf("pt", "en").firstNotNullOfOrNull { language ->
+    images?.backdrops
+        ?.filter { it.filePath.isNotBlank() && it.language == language }
+        ?.maxByOrNull { it.voteAverage }
+        ?.let { TmdbImages.url(it.filePath, TmdbImages.BACKDROP_FANART) }
+}
+
+private fun bestFanartUrl(images: List<com.mdblisthub.tv.core.network.FanartTvImage>?): String? =
+    images
+        ?.filter { it.url?.startsWith("http") == true }
+        ?.maxByOrNull { it.likes?.toIntOrNull() ?: 0 }
+        ?.url

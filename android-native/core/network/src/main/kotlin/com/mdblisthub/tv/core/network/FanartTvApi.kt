@@ -19,6 +19,9 @@ data class FanartTvResponse(
     val thetvdb_id: String? = null,
     val moviebackground: List<FanartTvImage>? = null,
     val showbackground: List<FanartTvImage>? = null,
+    /** 16:9 promotional art made specifically for catalogue cards. */
+    val moviethumb: List<FanartTvImage>? = null,
+    val tvthumb: List<FanartTvImage>? = null,
 )
 
 interface FanartTvApi {

@@ -95,6 +95,7 @@ fun MdbItemDto.toEntity(now: Long): MediaEntity {
         // Normalised onto POSTER_CARD so every card, whatever its source,
         // downloads the one size the row actually paints.
         posterUrl = TmdbImages.upscale(poster),
+        landscapeUrl = null,
         backdropUrl = null,
         genres = genre.orEmpty(),
         runtimeMinutes = runtime?.takeIf { it > 0 },
@@ -110,6 +111,7 @@ fun MediaEntity.toDomain() = MediaItem(
     imdbId = imdbId,
     year = year,
     posterUrl = posterUrl,
+    landscapeUrl = landscapeUrl,
     backdropUrl = backdropUrl,
     genres = genres,
     runtimeMinutes = runtimeMinutes,
@@ -162,6 +164,7 @@ fun buildDetailEntity(
             ?: info?.description
             ?: omdb?.plot.orNullIfNA(),
         posterUrl = TmdbImages.url(tmdb.posterPath, TmdbImages.POSTER_LARGE),
+        landscapeUrl = null,
         backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART),
         logoUrl = TmdbImages.url(logo?.filePath, TmdbImages.LOGO),
         year = date?.take(4)?.toIntOrNull() ?: info?.year,
@@ -256,6 +259,7 @@ fun MediaDetailEntity.toDomain() = MediaDetail(
     tagline = tagline,
     overview = overview,
     posterUrl = posterUrl,
+    landscapeUrl = landscapeUrl,
     backdropUrl = backdropUrl,
     logoUrl = logoUrl,
     year = year,

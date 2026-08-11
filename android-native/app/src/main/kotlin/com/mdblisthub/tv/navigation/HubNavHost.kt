@@ -3,10 +3,13 @@ import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -15,8 +18,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.LandscapeArtwork
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.ui.component.LandscapeArtworkLoader
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
+import com.mdblisthub.tv.core.ui.component.LocalLandscapeArtworkLoader
 import com.mdblisthub.tv.ui.addons.AddonsScreen
 import com.mdblisthub.tv.ui.detail.DetailScreen
 import com.mdblisthub.tv.ui.home.HomeScreen
@@ -24,6 +30,9 @@ import com.mdblisthub.tv.ui.login.LoginScreen
 import com.mdblisthub.tv.ui.player.PlayerScreen
 import com.mdblisthub.tv.ui.search.SearchScreen
 import com.mdblisthub.tv.ui.settings.SettingsScreen
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 object Routes {
     const val LOGIN = "login"
@@ -60,10 +69,33 @@ fun HubNavHost(graph: DataGraph) {
         return
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = if (signedIn == true) Routes.HOME else Routes.LOGIN,
-    ) {
+    val artworkCache = remember { mutableStateMapOf<String, LandscapeArtwork>() }
+    val artworkRequests = remember { mutableSetOf<String>() }
+    val artworkPermits = remember { Semaphore(16) }
+    val artworkScope = rememberCoroutineScope()
+    val artworkLoader = remember(graph, artworkScope) {
+        LandscapeArtworkLoader(
+            artworkFor = { item -> artworkCache[item.key] },
+            request = { item ->
+                // All calls happen from a card effect on the main thread. The
+                // set makes recomposition and repeated shelves share one call.
+                if (artworkRequests.add(item.key)) {
+                    artworkScope.launch {
+                        val artwork = artworkPermits.withPermit {
+                            graph.media.resolveLandscapeArtwork(item)
+                        }
+                        artworkCache[item.key] = artwork
+                    }
+                }
+            },
+        )
+    }
+
+    CompositionLocalProvider(LocalLandscapeArtworkLoader provides artworkLoader) {
+        NavHost(
+            navController = navController,
+            startDestination = if (signedIn == true) Routes.HOME else Routes.LOGIN,
+        ) {
         composable(Routes.LOGIN) {
             LoginScreen(
                 graph = graph,
@@ -151,6 +183,7 @@ fun HubNavHost(graph: DataGraph) {
                 onBack = { navController.popBackStack() },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
             )
+        }
         }
     }
 }

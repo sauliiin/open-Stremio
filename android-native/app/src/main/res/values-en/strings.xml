@@ -9,6 +9,7 @@
     <string name="menu_theme_normal">Normal</string>
     <string name="menu_theme_cyberpunk">Cyberpunk</string>
     <string name="menu_theme_netflixy">Netflixy</string>
+    <string name="menu_theme_primefly">Primefly</string>
     <string name="menu_settings">Settings</string>
     <string name="menu_exit">Exit</string>
     <string name="home_empty_title">You are connected to Google</string>

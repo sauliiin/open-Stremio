@@ -102,7 +102,11 @@ data class TmdbVideoDto(
 )
 
 @Serializable
-data class TmdbImagesDto(val logos: List<TmdbImageDto> = emptyList())
+data class TmdbImagesDto(
+    val logos: List<TmdbImageDto> = emptyList(),
+    /** Full landscape collection; the highest-voted image feeds Primefly cards. */
+    val backdrops: List<TmdbImageDto> = emptyList(),
+)
 
 @Serializable
 data class TmdbImageDto(

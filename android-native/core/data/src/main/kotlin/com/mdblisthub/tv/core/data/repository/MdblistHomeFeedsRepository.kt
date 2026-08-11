@@ -20,11 +20,15 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /** Account-native MDBList rows that are not user-created lists. */
 class MdblistHomeFeedsRepository(
     private val api: MdblistApi,
     private val session: SessionStore,
+    private val media: MediaRepository,
 ) {
     /** Content is account-scoped; a previous API key's rows must never bleed into a new session. */
     private val content = MutableStateFlow(OwnedFeedContent())
@@ -60,35 +64,40 @@ class MdblistHomeFeedsRepository(
                 async {
                     runCatching {
                         MdblistHomeFeedKeys.UP_NEXT to
-                            api.upNext(apiKey).items.mapNotNull(UpNextItemDto::toFeedItem)
+                            withArtwork(api.upNext(apiKey).items.mapNotNull(UpNextItemDto::toFeedItem))
                     }.getOrNull()
                 },
                 async {
                     runCatching {
-                        MdblistHomeFeedKeys.RECENTLY_ADDED to api.recentlyAdded(apiKey)
-                            .sortedByDescending { it.collectedAt.orEmpty() }
-                            .mapNotNull { it.toFeedItem() }
-                            .distinctBy { it.media.key }
+                        MdblistHomeFeedKeys.RECENTLY_ADDED to withArtwork(
+                            api.recentlyAdded(apiKey)
+                                .sortedByDescending { it.collectedAt.orEmpty() }
+                                .mapNotNull { it.toFeedItem() }
+                                .distinctBy { it.media.key },
+                        )
                     }.getOrNull()
                 },
                 async {
                     runCatching {
-                        MdblistHomeFeedKeys.WATCHLIST to api.watchlist(apiKey)
-                            .sortedByDescending { it.watchlistAt.orEmpty() }
-                            .mapNotNull { it.toFeedItem() }
-                            .distinctBy { it.media.key }
+                        MdblistHomeFeedKeys.WATCHLIST to withArtwork(
+                            api.watchlist(apiKey)
+                                .sortedByDescending { it.watchlistAt.orEmpty() }
+                                .mapNotNull { it.toFeedItem() }
+                                .distinctBy { it.media.key },
+                        )
                     }.getOrNull()
                 },
                 async {
                     runCatching {
                         val watched = api.recentlyWatched(apiKey)
-                        MdblistHomeFeedKeys.RECENTLY_WATCHED to
+                        MdblistHomeFeedKeys.RECENTLY_WATCHED to withArtwork(
                             (watched.movies.map { it to MediaType.MOVIE } +
                                 watched.shows.map { it to MediaType.SHOW })
                                 .sortedByDescending { (entry, _) -> entry.lastWatchedAt.orEmpty() }
                                 .mapNotNull { (entry, type) -> entry.toFeedItem(type) }
                                 .distinctBy { it.media.key }
-                                .take(FEED_LIMIT)
+                                .take(FEED_LIMIT),
+                        )
                     }.getOrNull()
                 },
             ).awaitAll().filterNotNull().forEach { (key, items) ->
@@ -106,6 +115,46 @@ class MdblistHomeFeedsRepository(
                 )
             }
         }
+    }
+
+    /**
+     * These feed items arrive from mdblist with only a poster — see the
+     * `toFeedItem` mappers below — so Primefly's landscape card (which reads
+     * `landscapeUrl ?: backdropUrl`, never `posterUrl`) has nothing to draw
+     * without this pass. Mirrors [PlaybackRepository.withArtwork]: `ensureDetail`
+     * is a no-op for anything already hydrated, so this is cheap for titles
+     * the account has looked at before and a real fetch only for new ones.
+     *
+     * Bounded rather than unconditional like that resume-row equivalent: a
+     * resume row holds a handful of titles, a watchlist can hold up to
+     * [FEED_LIMIT], and firing fifty concurrent hydrations at once on a
+     * refresh would be its own kind of slow start.
+     */
+    private suspend fun withArtwork(items: List<MdblistHomeFeedItem>): List<MdblistHomeFeedItem> = coroutineScope {
+        val gate = Semaphore(ARTWORK_CONCURRENCY)
+        items.map { item ->
+            async {
+                val tmdbId = item.media.tmdbId.takeIf { it > 0 }
+                if (tmdbId == null) {
+                    item
+                } else {
+                    gate.withPermit {
+                        media.ensureDetail(item.media.type, tmdbId)
+                        val detail = media.observeDetail(item.media.type, tmdbId).first()
+                        if (detail == null) {
+                            item
+                        } else {
+                            item.copy(
+                                media = item.media.copy(
+                                    landscapeUrl = detail.landscapeUrl,
+                                    backdropUrl = detail.backdropUrl,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }.awaitAll()
     }
 
     suspend fun toggleVisibility(feed: MdblistHomeFeed, hidden: Boolean) = runCatching {
@@ -142,6 +191,9 @@ class MdblistHomeFeedsRepository(
 
     private companion object {
         const val FEED_LIMIT = 50
+
+        /** Same ceiling as the decoy-duration probe: a network+DB round trip per title, bounded. */
+        const val ARTWORK_CONCURRENCY = 8
 
         val DEFAULTS = listOf(
             MdblistHomeFeed(
