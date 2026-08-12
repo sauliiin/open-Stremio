@@ -5,6 +5,8 @@ import android.util.Log
 import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.WikipediaLookup
 import com.mdblisthub.tv.core.network.WikipediaApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * A cast member's bio, looked up by name alone.
@@ -17,23 +19,27 @@ import com.mdblisthub.tv.core.network.WikipediaApi
  * endpoint enforces much stricter anti-abuse limits on anonymous traffic —
  * shared IPs (carrier CGNAT, a TV box's ISP) were getting a flat HTTP 403
  * from it long before the summary endpoint itself would ever be a problem.
- * pt.wikipedia is tried first — this is a Portuguese-language app — and
- * en.wikipedia backs it up, since plenty of actors have a fuller (or their
- * only) article there.
+ * The edition follows the current interface language. Portuguese uses the
+ * Portuguese edition first and falls back to English when no local article
+ * exists; English stays on the English edition so changing the app language
+ * cannot still produce a Portuguese biography.
  */
-class WikipediaRepository(private val api: WikipediaApi) {
+class WikipediaRepository(
+    private val api: WikipediaApi,
+    private val interfaceLanguage: Flow<String>,
+) {
 
     suspend fun summaryFor(name: String): WikipediaLookup {
-        val pt = runCatching { fetch("pt", name) }
-        pt.getOrNull()?.let { return WikipediaLookup.Found(it) }
+        var failure: Throwable? = null
+        for (edition in wikipediaEditionsFor(interfaceLanguage.first())) {
+            val result = runCatching { fetch(edition, name) }
+            result.getOrNull()?.let { return WikipediaLookup.Found(it) }
+            failure = result.exceptionOrNull() ?: failure
+        }
 
-        val en = runCatching { fetch("en", name) }
-        en.getOrNull()?.let { return WikipediaLookup.Found(it) }
-
-        // Neither hit — surface *why*, not just that it failed. A page that
+        // No edition hit — surface *why*, not just that it failed. A page that
         // genuinely does not exist and a network/parse failure both end up
         // here, and only the reason tells them apart.
-        val failure = en.exceptionOrNull() ?: pt.exceptionOrNull()
         if (failure != null) Log.w(TAG, "lookup failed for \"$name\"", failure)
         return WikipediaLookup.NotFound(failure?.let { "${it::class.simpleName}: ${it.message}" } ?: "sem artigo")
     }
@@ -55,3 +61,10 @@ class WikipediaRepository(private val api: WikipediaApi) {
         const val TAG = "WikipediaRepository"
     }
 }
+
+internal fun wikipediaEditionsFor(languageTag: String): List<String> =
+    if (languageTag.equals("pt", ignoreCase = true) || languageTag.startsWith("pt-", ignoreCase = true)) {
+        listOf("pt", "en")
+    } else {
+        listOf("en")
+    }

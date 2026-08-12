@@ -126,12 +126,13 @@ fun PlayerScreen(
     tmdbId: Int,
     season: Int?,
     episode: Int?,
+    manualSelect: Boolean = false,
     onBack: () -> Unit,
     onOpenAddons: () -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
-    val viewModel = hubViewModel(key = "player-$type-$tmdbId-$season-$episode") {
-        PlayerViewModel(graph, appContext, type, tmdbId, season, episode)
+    val viewModel = hubViewModel(key = "player-$type-$tmdbId-$season-$episode-$manualSelect") {
+        PlayerViewModel(graph, appContext, type, tmdbId, season, episode, manualSelect)
     }
 
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -370,6 +371,23 @@ fun PlayerScreen(
                 subtitle = ui.episodeLabel,
                 attempt = playback.attempt,
                 total = playback.candidateCount,
+            )
+        }
+
+        if (playback.phase == PlaybackPhase.SELECTING) {
+            FailureVeil(
+                backdropUrl = ui.backdropUrl,
+                title = stringResource(R.string.player_select_title),
+                message = if (playback.availableSources.isEmpty()) {
+                    stringResource(R.string.player_select_searching)
+                } else {
+                    stringResource(R.string.player_select_pick)
+                },
+                showAddons = false,
+                onOpenAddons = onOpenAddons,
+                onBack = onBack,
+                sources = playback.availableSources,
+                onSelectSource = { stream -> viewModel.controller.playManual(stream) },
             )
         }
 

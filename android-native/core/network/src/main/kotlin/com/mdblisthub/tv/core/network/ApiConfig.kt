@@ -72,7 +72,7 @@ object ApiConfig {
     @Volatile
     var LANGUAGE: String = DEFAULT_LANGUAGE
 
-    const val DEFAULT_LANGUAGE = "pt-BR"
+    const val DEFAULT_LANGUAGE = "en-US"
 
     /**
      * Turns an interface language tag into the region-qualified one TMDB

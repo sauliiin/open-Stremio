@@ -30,9 +30,10 @@
     <string name="settings_section_player">Reprodutor</string>
     <string name="settings_audio_preferred_lang">Faixa de Áudio Preferida</string>
     <string name="lang_pt">Português</string>
-    <string name="lang_en">Inglês</string>
+    <string name="lang_en">English</string>
     <string name="detail_watch">Assistir</string>
     <string name="detail_watch_episode">Assistir T%1$dE%2$d</string>
+    <string name="detail_select_source">Selecionar Fonte</string>
     <string name="detail_trailer">Trailer</string>
     <string name="detail_in_collection">Na coleção</string>
     <string name="detail_add_collection">+ Coleção</string>
@@ -153,6 +154,9 @@
     <string name="player_no_imdb">Este título não tem IMDb ID, e os addons são indexados por ele.</string>
     <string name="player_generic_error">Não consegui reproduzir este título.</string>
     <string name="player_pick_source">Ou escolha uma fonte manualmente</string>
+    <string name="player_select_title">Escolha a fonte</string>
+    <string name="player_select_searching">Buscando fontes disponíveis…</string>
+    <string name="player_select_pick">Toque em uma fonte para assistir</string>
     <string name="player_open_addons">Ver addons</string>
     <string name="player_back">Voltar</string>
     <string name="player_play">Tocar</string>

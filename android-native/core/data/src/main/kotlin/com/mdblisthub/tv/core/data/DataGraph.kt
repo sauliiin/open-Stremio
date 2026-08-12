@@ -79,7 +79,7 @@ class DataGraph(context: Context) {
     val library = LibraryRepository(network.mdblist, session, database)
     val playback = PlaybackRepository(network.mdblist, session, database, media)
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, auth, addons, scope)
-    val wikipedia = WikipediaRepository(network.wikipedia)
+    val wikipedia = WikipediaRepository(network.wikipedia, uiPreferences.language)
     val trailers = TrailerRepository(network.imdb)
     val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)
 

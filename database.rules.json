@@ -18,6 +18,18 @@
             ".validate": "$other == 'updatedAt' || $other == 'addons'"
           }
         },
+        "preferences": {
+          ".validate": "newData.hasChild('updatedAt') && newData.child('updatedAt').isString() && newData.child('updatedAt').val().length <= 64",
+          "updatedAt": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "subtitleFont": {
+            ".validate": "newData.isString() && newData.val().length <= 64"
+          },
+          "$other": {
+            ".validate": "$other == 'updatedAt' || $other == 'subtitleFont'"
+          }
+        },
         "listPreferences": {
           ".validate": "newData.hasChild('updatedAt') && newData.child('updatedAt').isString() && newData.hasChild('mdblistUserId') && newData.child('mdblistUserId').isNumber() && newData.child('mdblistUserId').val() >= 0",
           "updatedAt": {
@@ -47,7 +59,7 @@
           }
         },
         "$other": {
-          ".validate": "$other == 'profile' || $other == 'addons' || $other == 'listPreferences'"
+          ".validate": "$other == 'profile' || $other == 'addons' || $other == 'listPreferences' || $other == 'preferences'"
         }
       }
     },

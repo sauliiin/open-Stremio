@@ -104,6 +104,7 @@ fun DetailScreen(
     tmdbId: Int,
     onBack: () -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
+    onSelectSource: (season: Int?, episode: Int?) -> Unit,
     onOpenTitle: (MediaItem) -> Unit,
 ) {
     val viewModel = hubViewModel(key = "detail-$type-$tmdbId") {
@@ -288,6 +289,17 @@ fun DetailScreen(
                                     onPlay(season, firstEpisode)
                                 } else {
                                     onPlay(null, null)
+                                }
+                            },
+                            modifier = Modifier.fillMaxHeight(),
+                        )
+                        HubButton(
+                            text = stringResource(R.string.detail_select_source),
+                            onClick = {
+                                if (type == MediaType.SHOW) {
+                                    onSelectSource(season, firstEpisode)
+                                } else {
+                                    onSelectSource(null, null)
                                 }
                             },
                             modifier = Modifier.fillMaxHeight(),

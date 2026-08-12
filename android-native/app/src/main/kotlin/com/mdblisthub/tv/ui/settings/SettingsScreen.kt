@@ -65,7 +65,7 @@ val ALL_LANGUAGES = listOf(
 )
 
 data class SettingsUiState(
-    val language: String = "pt",
+    val language: String = "en",
     val subtitleAutoDownload: Boolean = true,
     val subtitleLanguage: String = "pt",
     val subtitleColor: String = "white",

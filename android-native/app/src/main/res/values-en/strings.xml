@@ -33,6 +33,7 @@
     <string name="lang_en">English</string>
     <string name="detail_watch">Watch</string>
     <string name="detail_watch_episode">Watch S%1$dE%2$d</string>
+    <string name="detail_select_source">Select Source</string>
     <string name="detail_trailer">Trailer</string>
     <string name="detail_in_collection">In collection</string>
     <string name="detail_add_collection">+ Collection</string>
@@ -153,6 +154,9 @@
     <string name="player_no_imdb">This title has no IMDb ID, and addons are indexed by it.</string>
     <string name="player_generic_error">Could not play this title.</string>
     <string name="player_pick_source">Or pick a source yourself</string>
+    <string name="player_select_title">Pick a source</string>
+    <string name="player_select_searching">Looking for sources…</string>
+    <string name="player_select_pick">Tap a source to play it</string>
     <string name="player_open_addons">Open addons</string>
     <string name="player_back">Back</string>
     <string name="player_play">Play</string>

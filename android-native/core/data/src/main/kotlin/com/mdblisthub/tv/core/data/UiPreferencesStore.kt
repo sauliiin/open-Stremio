@@ -76,7 +76,7 @@ class UiPreferencesStore(context: Context) {
     }
 
     val language: Flow<String> = store.data.map { prefs ->
-        prefs[KEY_LANGUAGE] ?: "pt" // Default language
+        prefs[KEY_LANGUAGE] ?: "en" // Default language
     }
     suspend fun saveLanguage(lang: String) {
         store.edit { it[KEY_LANGUAGE] = lang }
@@ -120,4 +120,3 @@ class UiPreferencesStore(context: Context) {
         val KEY_AUDIO_LANGUAGE = stringPreferencesKey("audio_language")
     }
 }
-

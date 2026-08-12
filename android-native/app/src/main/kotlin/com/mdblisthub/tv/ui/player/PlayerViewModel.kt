@@ -54,6 +54,9 @@ class PlayerViewModel(
     private val tmdbId: Int,
     private val season: Int?,
     private val episode: Int?,
+    // True when the user asked to pick a source up front, from the detail
+    // screen's "select source" button, instead of letting the cascade choose.
+    private val manualSelect: Boolean = false,
 ) : ViewModel() {
 
     val controller = PlaybackController(
@@ -140,7 +143,12 @@ class PlayerViewModel(
         val resumeAt = graph.playback.resumeFor(scrobbleTarget)
 
         _ui.update { it.copy(searching = false) }
-        controller.play(candidates, resumeAt, expectedRuntimeMinutes(cachedDetail, card))
+        controller.play(
+            candidates,
+            resumeAt,
+            expectedRuntimeMinutes(cachedDetail, card),
+            selectManually = manualSelect,
+        )
 
         // Subtitles are fetched after playback has been handed off: they take
         // as long as the streams did, and nothing should wait on them.

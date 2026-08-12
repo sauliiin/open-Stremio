@@ -392,6 +392,11 @@ class PlaybackController(
         candidates: Flow<PlayableStream>,
         resumeAtPercent: Float? = null,
         expectedRuntimeMinutes: Int? = null,
+        // When true, candidates are still collected in the background but
+        // none is opened automatically: the queue is surfaced as
+        // PlaybackState.availableSources as it grows, and the caller picks
+        // one by hand via [playManual]. See [PlaybackPhase.SELECTING].
+        selectManually: Boolean = false,
     ) {
         stopInternal()
         subtitleTrack = null
@@ -416,7 +421,8 @@ class PlaybackController(
         resumePercent = resumeAtPercent?.takeIf { it > 1f && it < 95f }
         resumeApplied = false
 
-        _state.value = PlaybackState(phase = PlaybackPhase.RESOLVING, candidateCount = 0)
+        val initialPhase = if (selectManually) PlaybackPhase.SELECTING else PlaybackPhase.RESOLVING
+        _state.value = PlaybackState(phase = initialPhase, candidateCount = 0)
 
         candidatesJob = scope.launch {
             candidates
@@ -428,7 +434,12 @@ class PlaybackController(
                 .collect { stream ->
                     queue += stream
                     val index = queue.size - 1
-                    _state.update { it.copy(candidateCount = queue.size) }
+                    _state.update {
+                        it.copy(
+                            candidateCount = queue.size,
+                            availableSources = if (selectManually) queue.toList() else it.availableSources,
+                        )
+                    }
                     // Runs alongside, not instead of, the sequential real
                     // cascade below — see [launchDecoyProbe]. Candidate 0
                     // gets both a real open and a probe at once, which is
@@ -436,13 +447,18 @@ class PlaybackController(
                     // benefits from already knowing the answer by the time
                     // tryAdvance reaches it.
                     launchDecoyProbe(stream, index)
-                    if (awaitingCandidate) {
+                    if (!selectManually && awaitingCandidate) {
                         awaitingCandidate = false
                         tryAdvance()
                     }
                 }
             candidatesCollecting = false
-            if (awaitingCandidate) {
+            if (selectManually) {
+                // Nothing arrived to choose from — that is a failure the same
+                // way it is for the automatic cascade, just reached without
+                // ever trying to open anything.
+                if (queue.isEmpty()) fail(PlaybackFailure.NoCandidates)
+            } else if (awaitingCandidate) {
                 awaitingCandidate = false
                 tryAdvance()
             }

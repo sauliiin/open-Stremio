@@ -41,12 +41,12 @@ object Routes {
     const val ADDONS = "addons"
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{type}/{tmdbId}"
-    const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}"
+    const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}&select={select}"
 
     fun detail(type: MediaType, tmdbId: Int) = "detail/${type.mdblist}/$tmdbId"
 
-    fun player(type: MediaType, tmdbId: Int, season: Int? = null, episode: Int? = null) =
-        "player/${type.mdblist}/$tmdbId?season=${season ?: -1}&episode=${episode ?: -1}"
+    fun player(type: MediaType, tmdbId: Int, season: Int? = null, episode: Int? = null, select: Boolean = false) =
+        "player/${type.mdblist}/$tmdbId?season=${season ?: -1}&episode=${episode ?: -1}&select=$select"
 }
 
 @Composable
@@ -160,6 +160,9 @@ fun HubNavHost(graph: DataGraph) {
                 onPlay = { season, episode ->
                     navController.navigate(Routes.player(type, tmdbId, season, episode))
                 },
+                onSelectSource = { season, episode ->
+                    navController.navigate(Routes.player(type, tmdbId, season, episode, select = true))
+                },
                 onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) },
             )
         }
@@ -171,6 +174,7 @@ fun HubNavHost(graph: DataGraph) {
                 navArgument("tmdbId") { type = NavType.IntType },
                 navArgument("season") { type = NavType.IntType; defaultValue = -1 },
                 navArgument("episode") { type = NavType.IntType; defaultValue = -1 },
+                navArgument("select") { type = NavType.BoolType; defaultValue = false },
             ),
         ) { entry ->
             val args = entry.arguments
@@ -180,6 +184,7 @@ fun HubNavHost(graph: DataGraph) {
                 tmdbId = args?.getInt("tmdbId") ?: 0,
                 season = args?.getInt("season")?.takeIf { it > 0 },
                 episode = args?.getInt("episode")?.takeIf { it > 0 },
+                manualSelect = args?.getBoolean("select") ?: false,
                 onBack = { navController.popBackStack() },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
             )

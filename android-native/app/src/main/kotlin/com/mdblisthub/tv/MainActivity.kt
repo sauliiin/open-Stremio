@@ -72,6 +72,6 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val DEFAULT_LANGUAGE = "pt"
+        const val DEFAULT_LANGUAGE = "en"
     }
 }
