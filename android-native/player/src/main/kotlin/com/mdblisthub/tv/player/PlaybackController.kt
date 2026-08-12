@@ -169,6 +169,10 @@ class PlaybackController(
     private val allocator = DefaultAllocator(/* trimOnReset = */ true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
 
     private val targetBufferBytes = HeapBudget.targetBufferBytes(context.applicationContext)
+        // Registered before the player exists, so the first trim notice cannot
+        // arrive with nothing listening. Idempotent — one registration per
+        // process, however many films are played in it.
+        .also { MemoryPressure.install(appContext) }
 
     val player: ExoPlayer = ExoPlayer.Builder(
         context.applicationContext,
@@ -1153,27 +1157,33 @@ class PlaybackController(
     }
 
     /**
-     * Applies a signed adjustment, clamped to a useful TV-friendly range.
+     * Applies a signed adjustment relative to whatever the offset is *now*.
      *
-     * Nothing here reaches the player — this is why the offset can be nudged
-     * with the film still rolling: the next tick of [subtitleTicker] simply
-     * looks up a different point in the same in-memory cue list.
+     * Relative rather than "read the value, add, write it back" in the caller:
+     * the sync bar repeats this many times a second while a key is held, and
+     * the value it renders is a recomposition behind. Computing the sum here,
+     * against the authoritative state, is what keeps a fast hold from
+     * occasionally repeating a step it has already taken.
      */
     fun adjustSubtitleOffset(deltaMs: Long) {
         if (subtitleTrack == null) return
-        val adjustedMs = (_state.value.subtitleOffsetMs + deltaMs)
-            .coerceIn(-MAX_SUBTITLE_OFFSET_MS, MAX_SUBTITLE_OFFSET_MS)
-        if (adjustedMs == _state.value.subtitleOffsetMs) return
-
-        _state.update { it.copy(subtitleOffsetMs = adjustedMs) }
-        updateActiveCueNow()
+        setSubtitleOffset(_state.value.subtitleOffsetMs + deltaMs)
     }
 
-    fun resetSubtitleOffset() {
+    /**
+     * Moves straight to an offset — what a drag along the sync bar reports,
+     * where the finger's position *is* the value rather than a delta.
+     *
+     * Nothing here reaches the player, which is why the offset can be dragged
+     * with the film still rolling: the next tick of [subtitleTicker] simply
+     * looks up a different point in the same in-memory cue list.
+     */
+    fun setSubtitleOffset(offsetMs: Long) {
         if (subtitleTrack == null) return
-        if (_state.value.subtitleOffsetMs == 0L) return
+        val clamped = offsetMs.coerceIn(-MAX_SUBTITLE_OFFSET_MS, MAX_SUBTITLE_OFFSET_MS)
+        if (clamped == _state.value.subtitleOffsetMs) return
 
-        _state.update { it.copy(subtitleOffsetMs = 0L) }
+        _state.update { it.copy(subtitleOffsetMs = clamped) }
         updateActiveCueNow()
     }
 
@@ -1335,6 +1345,7 @@ class PlaybackController(
          */
         const val COMMITTED_RETRY_LIMIT = 6
 
-        const val MAX_SUBTITLE_OFFSET_MS = 10_000L
+        // The offset range itself lives in `PlaybackState.kt`, public, because
+        // the sync bar has to draw exactly the range this clamps to.
     }
 }

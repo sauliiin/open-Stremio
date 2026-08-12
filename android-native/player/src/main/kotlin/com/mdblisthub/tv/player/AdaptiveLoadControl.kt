@@ -102,20 +102,31 @@ class AdaptiveLoadControl(
     override fun getBackBufferDurationUs(playerId: PlayerId): Long = backBufferUs
 
     /**
-     * Loading is never vetoed here — the delegate alone decides.
+     * Loading is vetoed for one reason only, and never below [PRESSURE_FLOOR_US]
+     * of buffer.
      *
-     * There used to be a heap-pressure veto: when free memory looked low this
-     * returned false, stopping the buffer from growing. That was wrong, and
-     * badly so. `totalMemory() - freeMemory()` counts garbage that has not been
-     * collected yet, so free heap dips below any fixed threshold routinely and
-     * transiently — and each dip stopped loading entirely, drained the buffer,
-     * and stalled playback mid-film for a reason that had nothing to do with
-     * the source. The byte budget passed to `setTargetBufferBytes` already
-     * bounds what the allocator may take; a second, noisier limiter on top of
-     * it only ever subtracted from playback.
+     * There used to be a heap-pressure veto here: when free memory looked low
+     * this returned false, stopping the buffer from growing. That was wrong,
+     * and badly so. `totalMemory() - freeMemory()` counts garbage that has not
+     * been collected yet, so free heap dips below any fixed threshold routinely
+     * and transiently — and each dip stopped loading *at any buffer level*,
+     * drained what was left, and stalled playback mid-film for a reason that
+     * had nothing to do with the source.
+     *
+     * What replaces it differs on both counts. The signal is [MemoryPressure],
+     * which is the system announcing that it is reclaiming rather than a
+     * reading being interpreted; and the veto has a floor, so the worst it can
+     * do is hold the buffer at half a minute instead of the full budget. It
+     * cannot starve the forward buffer, which is what made the old version a
+     * cure worse than the disease. This exists because the budget in
+     * `HeapBudget` is chosen once, from measurements taken before the film
+     * started — the trim notice is the only chance to give ground afterwards.
      */
     override fun shouldContinueLoading(parameters: LoadControl.Parameters): Boolean {
         sampleIfDue(parameters.bufferedDurationUs)
+        if (MemoryPressure.isTight && parameters.bufferedDurationUs > PRESSURE_FLOOR_US) {
+            return false
+        }
         return delegate.shouldContinueLoading(parameters)
     }
 
@@ -152,5 +163,14 @@ class AdaptiveLoadControl(
 
         /** Under a second of buffer, the throughput division is mostly noise. */
         const val MIN_MEASURABLE_BUFFER_US = 1_000_000L
+
+        /**
+         * The buffer a memory-pressure veto may never take playback below.
+         *
+         * Enough that a mirror can go quiet for half a minute without the
+         * picture stopping — the same cushion the whole load control is sized
+         * for, just without the headroom above it.
+         */
+        const val PRESSURE_FLOOR_US = 30L * 1_000_000L
     }
 }

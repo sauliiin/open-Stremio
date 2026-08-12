@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.ui.player
 
+import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -7,10 +8,13 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -44,9 +48,11 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -57,7 +63,9 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -77,6 +85,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -98,12 +107,14 @@ import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.player.ExoVideoSurface
+import com.mdblisthub.tv.player.MAX_SUBTITLE_OFFSET_MS
 import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.TrackInfo
 import com.mdblisthub.tv.player.VideoScaleType
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 private const val OSD_TIMEOUT_MS = 4_000L
@@ -117,6 +128,53 @@ private val SUBTITLE_FONT_SIZE = 26.sp
 private val SUBTITLE_LINE_HEIGHT = 35.sp
 private const val SEEK_STEP_MS = 10_000L
 private const val SUBTITLE_OFFSET_STEP_MS = 100L
+
+/**
+ * The subtitle sync bar's geometry and its hold behaviour.
+ *
+ * The resting sizes are what the bar looks like when something else has focus,
+ * which on this panel is never — but the focused/unfocused pair is the cue the
+ * OSD's seek bar already uses, and a control that never reacts to focus reads
+ * as disabled next to one that does.
+ */
+private val SLIDER_TRACK_RESTING = 3.dp
+private val SLIDER_TRACK_FOCUSED = 5.dp
+private val SLIDER_THUMB_RESTING = 5.dp
+private val SLIDER_THUMB_FOCUSED = 7.dp
+private val SLIDER_TICK_WIDTH = 2.dp
+
+/** Held past this, a direction key stops being a single step and starts sliding. */
+private const val SLIDER_HOLD_DELAY_MS = 400L
+private const val SLIDER_REPEAT_INTERVAL_MS = 60L
+
+/**
+ * How stale the last key-down may get before a slide gives up on its own.
+ *
+ * A repeat that only ends on key-up is a repeat that runs forever the day a
+ * key-up goes missing — and one does: an injected long press, a remote whose
+ * release is swallowed, focus torn away mid-hold. That is not hypothetical
+ * here, it was watched happening, the offset sliding to the end of its range
+ * on its own with nothing held.
+ *
+ * So key-up is no longer the only thing that stops it. While a key really is
+ * down the platform re-delivers it as auto-repeat every ~50ms, after an
+ * initial ~400ms pause; treating those as a heartbeat means the slide stops
+ * within a blink of the key actually being released, whatever happened to the
+ * release event. The threshold has to clear that initial pause, or a genuine
+ * hold would cut out just as it got going.
+ */
+private const val SLIDER_HEARTBEAT_MS = 700L
+
+/**
+ * How the hold coarsens: fine steps first so a slow adjustment stays precise,
+ * then 0.5s, then 1s — which crosses the whole ±60s in about four seconds
+ * without ever making the first half-second of a press imprecise.
+ */
+private const val SLIDER_FINE_REPEATS = 8
+private const val SLIDER_MEDIUM_REPEATS = 20
+
+/** What a remote or a keyboard uses to confirm; here, to close the panel. */
+private val CONFIRM_KEYS = setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar)
 private const val FOCUS_RESTORE_ATTEMPTS = 3
 
 @Composable
@@ -162,6 +220,17 @@ fun PlayerScreen(
     var subtitleSyncOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
     val overlayOpen = subtitlePickerOpen || subtitleSyncOpen || audioPickerOpen
+
+    /**
+     * The sync overlay deliberately does not count here.
+     *
+     * Judging whether a subtitle is early or late means watching it move, so
+     * the caption has to stay on screen while the offset is being nudged —
+     * hiding it left the user adjusting a number against a film with no
+     * subtitles on it. The two pickers do count: they are lists that cover the
+     * picture anyway, and a caption behind one is only clutter.
+     */
+    val listOverlayOpen = subtitlePickerOpen || audioPickerOpen
     // Whether one of the OSD buttons currently holds focus. While it does,
     // left/right have to move focus between the buttons instead of seeking —
     // see the key handler below.
@@ -423,19 +492,27 @@ fun PlayerScreen(
             )
         }
 
+        // Whether the controls are really drawn, which is not the same question
+        // as whether they have timed out: a paused film keeps `osdVisible` true
+        // while an overlay is up and the OSD itself is not composed. The
+        // caption lifts for the controls, so it has to read the same flag they
+        // do — otherwise opening sync on a paused film shunts the subtitle up
+        // to clear a gradient that is not there.
+        val osdOnScreen = osdVisible && playback.canShowVideo && !overlayOpen
+
         // Independent of the OSD gradient: a caption still belongs on screen
         // while the controls are hidden, which is most of a film's runtime.
         val subtitleCue = playback.activeSubtitleCue
-        if (playback.canShowVideo && !overlayOpen && !subtitleCue.isNullOrBlank()) {
+        if (playback.canShowVideo && !listOverlayOpen && !subtitleCue.isNullOrBlank()) {
             ExternalSubtitleOverlay(
                 text = subtitleCue,
-                liftForOsd = osdVisible,
+                liftForOsd = osdOnScreen,
                 color = parsedSubtitleColor,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
 
-        if (osdVisible && playback.canShowVideo && !overlayOpen) {
+        if (osdOnScreen) {
             PlayerOsd(
                 title = ui.title,
                 subtitle = ui.episodeLabel,
@@ -483,7 +560,7 @@ fun PlayerScreen(
         SubtitleSyncOverlay(
             offsetMs = playback.subtitleOffsetMs,
             onAdjust = viewModel.controller::adjustSubtitleOffset,
-            onReset = viewModel.controller::resetSubtitleOffset,
+            onSet = viewModel.controller::setSubtitleOffset,
             onDismiss = {
                 subtitleSyncOpen = false
                 wantsPlayFocus = true
@@ -1250,17 +1327,19 @@ private fun SubtitleRow(
  * Kept at the top so the film and its captions remain visible while the user
  * nudges timing with the remote. The picker closes before this opens; there
  * is deliberately no dark scrim over the video to judge synchronization
- * against.
+ * against, and the caption overlay keeps drawing underneath this panel while
+ * it is up (see `listOverlayOpen` in [PlayerScreen]) — the subtitle moving in
+ * step with the number is the whole feedback loop this screen exists for.
  */
 @Composable
 private fun SubtitleSyncOverlay(
     offsetMs: Long,
     onAdjust: (Long) -> Unit,
-    onReset: () -> Unit,
+    onSet: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val firstButtonFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { firstButtonFocus.requestFocus() }
+    val sliderFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { sliderFocus.requestFocus() }
 
     Box(
         Modifier
@@ -1273,70 +1352,272 @@ private fun SubtitleSyncOverlay(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 28.dp)
-                .widthIn(max = 640.dp)
-                .clip(RoundedCornerShape(14.dp))
+                // A definite width, where this used to wrap its content: a bar
+                // is the one child here with no natural width of its own, and
+                // inside a column that only ever grew to fit its widest child
+                // it would have collapsed to nothing.
+                //
+                // Half of what it first took. A panel this is meant to be
+                // glanced at over the film, not read — and at 62% of the screen
+                // it was covering enough of the picture to make judging the
+                // subtitle underneath it harder, which is the one thing it
+                // exists to help with.
+                .fillMaxWidth(0.31f)
+                .clip(RoundedCornerShape(12.dp))
                 .background(HubColors.Surface.copy(alpha = 0.96f))
-                .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp))
+                .border(1.dp, HubColors.Border, RoundedCornerShape(12.dp))
                 .pointerInput(Unit) { detectTapGestures {} }
-                .padding(horizontal = 22.dp, vertical = 18.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = stringResource(R.string.player_subtitle_sync),
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleSmall,
                 color = HubColors.Text,
             )
-            Spacer(Modifier.height(4.dp))
             Text(
                 text = formatSubtitleOffset(offsetMs),
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 color = if (offsetMs == 0L) HubColors.Text else HubColors.AccentSoft,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
             )
+            Spacer(Modifier.height(10.dp))
+            SubtitleOffsetSlider(
+                offsetMs = offsetMs,
+                onAdjust = onAdjust,
+                onSet = onSet,
+                onDismiss = onDismiss,
+                modifier = Modifier.focusRequester(sliderFocus),
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                // Formatted from the same constant the bar and the controller
+                // use, rather than written into strings.xml: an end label that
+                // disagrees with where the bar actually stops is worse than no
+                // label at all.
+                Text(
+                    text = formatSubtitleOffset(-MAX_SUBTITLE_OFFSET_MS),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HubColors.TextFaint,
+                )
+                Text(
+                    text = formatSubtitleOffset(MAX_SUBTITLE_OFFSET_MS),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HubColors.TextFaint,
+                )
+            }
+            // On its own line now rather than between the two end labels:
+            // at half the width there is no longer room for three things
+            // across, and the end labels are the pair that has to stay
+            // pinned to the ends of the bar.
             Text(
-                text = stringResource(R.string.player_subtitle_sync_hint),
+                text = stringResource(R.string.player_subtitle_sync_controls),
                 style = MaterialTheme.typography.labelSmall,
                 color = HubColors.TextDim,
             )
-            Spacer(Modifier.height(14.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.onPreviewKeyEvent { event ->
-                    // There is intentionally nowhere above or below this
-                    // compact popup for focus to go. Consuming the vertical
-                    // directions prevents it escaping to the player root.
-                    event.type == KeyEventType.KeyDown &&
-                        (event.key == Key.DirectionUp || event.key == Key.DirectionDown)
-                },
-            ) {
-                HubButton(
-                    text = stringResource(R.string.player_offset_minus),
-                    onClick = { onAdjust(-SUBTITLE_OFFSET_STEP_MS) },
-                    modifier = Modifier
-                        .focusRequester(firstButtonFocus)
-                        .onPreviewKeyEvent { event ->
-                            event.type == KeyEventType.KeyDown && event.key == Key.DirectionLeft
-                        },
-                )
-                // Keep this focusable at zero: disabling the currently
-                // focused button after a reset leaves a TV remote with no
-                // focus anchor for the next left/right press.
-                HubButton(text = stringResource(R.string.player_offset_reset), onClick = onReset)
-                HubButton(
-                    text = stringResource(R.string.player_offset_plus),
-                    onClick = { onAdjust(SUBTITLE_OFFSET_STEP_MS) },
-                )
-                HubButton(
-                    text = stringResource(R.string.player_done),
-                    onClick = onDismiss,
-                    modifier = Modifier.onPreviewKeyEvent { event ->
-                        event.type == KeyEventType.KeyDown && event.key == Key.DirectionRight
-                    },
-                    primary = true,
-                )
-            }
         }
     }
+}
+
+/**
+ * The whole subtitle-sync control: one bar, dragged with a finger or walked
+ * with the d-pad.
+ *
+ * It replaced a row of −/reset/+/done buttons. Four focus targets to move a
+ * number is a lot of remote work for what is really one continuous value, and
+ * at ±60s the stepping buttons stopped being viable at all — six hundred
+ * presses from one end to the other.
+ *
+ * Both input styles have to stay honest about precision, which is why the two
+ * of them do not share a path:
+ *
+ * - **A single d-pad press** moves exactly [SUBTITLE_OFFSET_STEP_MS] — 0.1s,
+ *   fine enough to land on a line that is only slightly out. It fires inline
+ *   in the key handler rather than from the effect below, because a press
+ *   short enough to arrive and release inside one frame would otherwise be
+ *   dropped: the effect's key would go true and back to false with no
+ *   recomposition in between, so it would never restart. Injected key events
+ *   and mouse clicks are routinely that short.
+ * - **Holding** it hands over to the effect, which keeps the fine step for
+ *   half a second and then coarsens — the only way a minute of range is
+ *   crossable without lifting a finger.
+ * - **Dragging** is absolute: the position of the finger is the value, snapped
+ *   to the same 0.1s grid so a drag can still land exactly on zero.
+ */
+@Composable
+private fun SubtitleOffsetSlider(
+    offsetMs: Long,
+    onAdjust: (Long) -> Unit,
+    onSet: (Long) -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+
+    val trackHeight by animateDpAsState(
+        if (focused) SLIDER_TRACK_FOCUSED else SLIDER_TRACK_RESTING,
+        focusTween(),
+        label = "sync-track-height",
+    )
+    val thumbRadius by animateDpAsState(
+        if (focused) SLIDER_THUMB_FOCUSED else SLIDER_THUMB_RESTING,
+        focusTween(),
+        label = "sync-thumb-radius",
+    )
+    val thumbRadiusPx = with(LocalDensity.current) { thumbRadius.toPx() }
+    // Fixed, unlike the animating radius above: the geometry a drag is read
+    // against must not move while the thumb is growing into focus, or the
+    // value under the finger shifts on its own.
+    val insetPx = with(LocalDensity.current) { SLIDER_THUMB_FOCUSED.toPx() }
+
+    // -1 for left, +1 for right, 0 when nothing is held.
+    var heldDirection by remember { mutableIntStateOf(0) }
+    // Last time the key was seen down, auto-repeats included — the heartbeat
+    // the slide below checks so a missing key-up cannot leave it running.
+    var lastKeyDownMs by remember { mutableLongStateOf(0L) }
+    val adjust by rememberUpdatedState(onAdjust)
+
+    LaunchedEffect(heldDirection) {
+        val direction = heldDirection
+        if (direction == 0) return@LaunchedEffect
+        // The press itself already moved one fine step; this is the hold.
+        delay(SLIDER_HOLD_DELAY_MS)
+        var fired = 0
+        while (SystemClock.uptimeMillis() - lastKeyDownMs < SLIDER_HEARTBEAT_MS) {
+            val step = when {
+                fired < SLIDER_FINE_REPEATS -> SUBTITLE_OFFSET_STEP_MS
+                fired < SLIDER_MEDIUM_REPEATS -> SUBTITLE_OFFSET_STEP_MS * 5
+                else -> SUBTITLE_OFFSET_STEP_MS * 10
+            }
+            adjust(direction * step)
+            delay(SLIDER_REPEAT_INTERVAL_MS)
+            fired++
+        }
+        // Reached only when the heartbeat stopped, i.e. the key-up never came.
+        heldDirection = 0
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(SLIDER_THUMB_FOCUSED * 2)
+            .onFocusChanged { if (!it.isFocused) heldDirection = 0 }
+            .onKeyEvent { event ->
+                val direction = when (event.key) {
+                    Key.DirectionLeft -> -1
+                    Key.DirectionRight -> 1
+                    // Nothing above or below is focusable — this panel is the
+                    // only thing on screen taking a remote — so the vertical
+                    // directions are swallowed rather than allowed to escape
+                    // to the player root behind it.
+                    Key.DirectionUp, Key.DirectionDown -> return@onKeyEvent true
+                    // The "concluir" button went with the rest of them; OK is
+                    // what closes this now. Back still returns to the subtitle
+                    // list, which is a different destination on purpose.
+                    in CONFIRM_KEYS -> {
+                        if (event.type == KeyEventType.KeyUp) onDismiss()
+                        return@onKeyEvent true
+                    }
+                    else -> return@onKeyEvent false
+                }
+                when (event.type) {
+                    KeyEventType.KeyDown -> {
+                        // Auto-repeat key-downs do not step the value — once a
+                        // direction is held the effect above owns the cadence
+                        // rather than inheriting the system's — but they are
+                        // what keeps the heartbeat alive.
+                        lastKeyDownMs = SystemClock.uptimeMillis()
+                        if (heldDirection != direction) {
+                            onAdjust(direction * SUBTITLE_OFFSET_STEP_MS)
+                            heldDirection = direction
+                        }
+                        true
+                    }
+                    KeyEventType.KeyUp -> { heldDirection = 0; true }
+                    else -> false
+                }
+            }
+            .focusable(interactionSource = interaction)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // Consumed so the press cannot also reach the panel's
+                    // tap-to-dismiss layer underneath.
+                    down.consume()
+                    onSet(offsetAt(down.position.x, size.width.toFloat(), insetPx))
+                    var pressed = true
+                    while (pressed) {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { change ->
+                            if (change.pressed) {
+                                onSet(offsetAt(change.position.x, size.width.toFloat(), insetPx))
+                            }
+                            change.consume()
+                        }
+                        pressed = event.changes.any { it.pressed }
+                    }
+                }
+            }
+            .semantics { liveRegion = LiveRegionMode.Polite },
+    ) {
+        val centreY = size.height / 2f
+        val usable = (size.width - insetPx * 2f).coerceAtLeast(1f)
+        val zeroX = insetPx + usable / 2f
+        val valueX = insetPx + usable *
+            ((offsetMs + MAX_SUBTITLE_OFFSET_MS).toFloat() / (MAX_SUBTITLE_OFFSET_MS * 2f))
+
+        val trackPx = trackHeight.toPx()
+        val corner = CornerRadius(trackPx / 2f, trackPx / 2f)
+
+        drawRoundRect(
+            color = HubColors.Border,
+            topLeft = Offset(insetPx, centreY - trackPx / 2f),
+            size = Size(usable, trackPx),
+            cornerRadius = corner,
+        )
+
+        // Filled from the centre outwards rather than from the left edge: zero
+        // is the meaningful origin here, and which side of it the value sits on
+        // is the first thing to read off the bar.
+        drawRoundRect(
+            color = if (focused) HubColors.Accent else HubColors.AccentSoft,
+            topLeft = Offset(minOf(zeroX, valueX), centreY - trackPx / 2f),
+            size = Size(kotlin.math.abs(valueX - zeroX), trackPx),
+            cornerRadius = corner,
+        )
+
+        // The zero detent, drawn over the fill so it stays visible when the
+        // value is sitting right next to it.
+        val tickHalf = SLIDER_TICK_WIDTH.toPx() / 2f
+        drawRoundRect(
+            color = HubColors.Text,
+            topLeft = Offset(zeroX - tickHalf, centreY - trackPx),
+            size = Size(tickHalf * 2f, trackPx * 2f),
+            cornerRadius = CornerRadius(tickHalf, tickHalf),
+        )
+
+        drawCircle(
+            color = if (focused) HubColors.Accent else HubColors.Text,
+            radius = thumbRadiusPx,
+            center = Offset(valueX, centreY),
+        )
+    }
+}
+
+/**
+ * Where along the bar an x lands, in milliseconds, snapped to the d-pad's own
+ * step so that a drag can still finish exactly on zero — and so the readout
+ * above never shows a value the buttons could not have produced.
+ */
+private fun offsetAt(x: Float, width: Float, insetPx: Float): Long {
+    val usable = (width - insetPx * 2f).coerceAtLeast(1f)
+    val fraction = ((x - insetPx) / usable).coerceIn(0f, 1f)
+    val raw = (fraction * 2f - 1f) * MAX_SUBTITLE_OFFSET_MS
+    return (raw / SUBTITLE_OFFSET_STEP_MS).roundToInt() * SUBTITLE_OFFSET_STEP_MS
 }
 
 /**

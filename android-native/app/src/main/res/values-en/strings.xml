@@ -167,12 +167,8 @@
     <string name="player_subtitle_sync">Sync subtitles</string>
     <string name="player_subtitle_sync_disabled">Sync subtitles — pick a subtitle first</string>
     <string name="player_subtitle_sync_value">Sync subtitles  %1$s</string>
-    <string name="player_subtitle_sync_hint">Negative is earlier  •  positive is later</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
-    <string name="player_offset_minus">−0.1 s</string>
-    <string name="player_offset_plus">+0.1 s</string>
-    <string name="player_offset_reset">Reset</string>
-    <string name="player_done">Done</string>
+    <string name="player_subtitle_sync_controls">Drag or use ◀ ▶  •  OK to finish</string>
     <string name="player_scale">Scaling: %1$s</string>
     <string name="player_scale_fit">Fit to screen</string>
     <string name="player_scale_zoom">Fill</string>

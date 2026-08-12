@@ -78,6 +78,20 @@ data class TrackInfo(
     val language: String? = null,
 )
 
+/**
+ * How far the subtitle offset reaches in either direction.
+ *
+ * Public, and deliberately not duplicated in the UI: the bar that draws this
+ * range and the controller that clamps to it have to be the same number, or the
+ * bar's ends stop somewhere other than where it appears to end.
+ *
+ * Ten seconds — what this was — covers a subtitle matched to the wrong release.
+ * A minute covers one matched to the wrong *cut*: an extended edition, or a
+ * master with the recap trimmed off the front, which is the case that used to
+ * be unfixable here.
+ */
+const val MAX_SUBTITLE_OFFSET_MS = 60_000L
+
 data class PlaybackState(
     val phase: PlaybackPhase = PlaybackPhase.IDLE,
     /** 1-based position within a single pass over the candidates. */

@@ -167,12 +167,8 @@
     <string name="player_subtitle_sync">Sincronizar legenda</string>
     <string name="player_subtitle_sync_disabled">Sincronizar legenda — selecione uma legenda</string>
     <string name="player_subtitle_sync_value">Sincronizar legenda  %1$s</string>
-    <string name="player_subtitle_sync_hint">Negativo adianta  •  positivo atrasa</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
-    <string name="player_offset_minus">−0,1 s</string>
-    <string name="player_offset_plus">+0,1 s</string>
-    <string name="player_offset_reset">Zerar</string>
-    <string name="player_done">Concluir</string>
+    <string name="player_subtitle_sync_controls">Arraste ou use ◀ ▶  •  OK conclui</string>
     <string name="player_scale">Esticar: %1$s</string>
     <string name="player_scale_fit">Ajustar à tela</string>
     <string name="player_scale_zoom">Preencher</string>

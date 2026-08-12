@@ -30,23 +30,34 @@ internal object HeapBudget {
     /**
      * Share of the *currently free* heap headroom the buffer may claim.
      *
-     * Well under all of it: Compose, Coil and the decoders still need to
-     * allocate while a film runs, and a buffer that claims everything free at
-     * the moment it was measured turns the next artwork decode into an OOM.
+     * Still not all of it: Compose, Coil and the decoders keep allocating while
+     * a film runs, and a buffer that claims everything free at the moment it
+     * was measured turns the next artwork decode into an OOM.
+     *
+     * But the reading this multiplies is already pessimistic twice over — it
+     * counts uncollected garbage as used, and it is taken while the browsing
+     * screens' bitmaps are still resident — so the old 0.55 was cautious about
+     * a number that was itself cautious. That compounding is what left
+     * high-bitrate files stuttering on boxes with room to spare: the byte
+     * budget, not the 120s buffer duration, is what caps the forward buffer,
+     * and at 25Mbps every 32MB of it is only ten seconds of film.
      */
-    private const val HEAP_SHARE = 0.55
+    private const val HEAP_SHARE = 0.72
 
     /**
      * Share of genuinely spare device RAM the buffer may claim.
      *
      * Lower than the heap share on purpose. Heap headroom is ours alone; free
      * RAM is shared with every other process on the box, and taking a large
-     * slice of it is how an app gets itself killed while backgrounded.
+     * slice of it is how an app gets itself killed while backgrounded. Half of
+     * what the platform itself calls spare — i.e. what is left *above* the
+     * low-memory killer's own threshold — is the most that can be justified
+     * against that risk.
      */
-    private const val RAM_SHARE = 0.35
+    private const val RAM_SHARE = 0.50
 
     /** What a healthy device should get, when both limits allow it. */
-    private const val PREFERRED_MIN_BYTES = 64L * 1024 * 1024
+    private const val PREFERRED_MIN_BYTES = 96L * 1024 * 1024
 
     /**
      * The point below which playback stutters regardless, so there is no
@@ -55,8 +66,15 @@ internal object HeapBudget {
      */
     private const val ABSOLUTE_MIN_BYTES = 24L * 1024 * 1024
 
-    /** Above this the extra buffer buys nothing a viewer can perceive. */
-    private const val MAX_TARGET_BYTES = 320L * 1024 * 1024
+    /**
+     * Above this the extra buffer buys nothing a viewer can perceive.
+     *
+     * "Perceive" is bitrate-relative, which is why this is not lower: 320MB is
+     * a comfortable four minutes of a 10Mbps encode but under two of a 40Mbps
+     * remux, and the remux is the file that stutters. A device only ever
+     * reaches this ceiling if both measured limits above already allowed it.
+     */
+    private const val MAX_TARGET_BYTES = 448L * 1024 * 1024
 
     /**
      * Fraction of the byte budget the back buffer may hold.
@@ -124,11 +142,11 @@ internal object HeapBudget {
         val allowance = minOf(heapAllowance, ramAllowance)
 
         // The preferred floor is itself capped by both limits: pushing a
-        // buffer up to 64MB on a device that just told us it cannot spare that
+        // buffer up to 96MB on a device that just told us it cannot spare that
         // would defeat the point of measuring at all.
         val floor = minOf(
             PREFERRED_MIN_BYTES,
-            Runtime.getRuntime().maxMemory() / 4,
+            Runtime.getRuntime().maxMemory() / 3,
             allowance.coerceAtLeast(ABSOLUTE_MIN_BYTES),
         ).coerceAtLeast(ABSOLUTE_MIN_BYTES)
 
