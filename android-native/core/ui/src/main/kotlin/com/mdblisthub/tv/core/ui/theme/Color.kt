@@ -31,6 +31,8 @@ object HubColors {
     val Rotten = Color(0xFFF87171)
     val Metacritic = Color(0xFFFFCC33)
     val Trakt = Color(0xFFED1C24)
+    /** Netflix brand red, also used by the themed metadata separators. */
+    val NetflixRed = Color(0xFFE50914)
     val Tmdb = Color(0xFF01B4E4)
     val Letterboxd = Color(0xFF00E054)
 

@@ -120,7 +120,7 @@ fun PosterCard(
 
     Column(
         modifier = modifier.width(HubDimens.PosterWidth),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(if (HubColors.isPrimefly) 4.dp else 8.dp),
     ) {
         val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 10.dp
         Box(

@@ -39,8 +39,10 @@ object HubDimens {
     val RowSpacing = 28.dp
     val CardSpacing = 14.dp
     /** Primefly follows a streaming-service shelf: wide 16:9 art instead of posters. */
-    val PosterWidth get() = if (HubColors.isPrimefly) 166.4.dp else 88.8.dp
-    val PosterHeight get() = if (HubColors.isPrimefly) 93.6.dp else 133.2.dp
+    // Primefly cards are 15% smaller than the previous 166.4 × 93.6 dp,
+    // while preserving the authored 16:9 landscape ratio.
+    val PosterWidth get() = if (HubColors.isPrimefly) 141.44.dp else 88.8.dp
+    val PosterHeight get() = if (HubColors.isPrimefly) 79.56.dp else 133.2.dp
 }
 
 @Composable

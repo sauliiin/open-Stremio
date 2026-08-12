@@ -141,7 +141,10 @@ fun MediaRow(
     val hideLabel = stringResource(R.string.row_hide)
     val deleteLabel = stringResource(R.string.row_delete)
 
-    Column(modifier.fillMaxWidth().alpha(if (isEditMode && hidden) 0.5f else 1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+        modifier.fillMaxWidth().alpha(if (isEditMode && hidden) 0.5f else 1f),
+        verticalArrangement = Arrangement.spacedBy(if (HubColors.isPrimefly) 6.dp else 10.dp),
+    ) {
         Row(
             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
             verticalAlignment = Alignment.CenterVertically

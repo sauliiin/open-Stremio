@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,7 +66,6 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
 import com.mdblisthub.tv.core.model.MdblistHomeFeed
-import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.AddonCatalog
 import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
@@ -129,10 +129,13 @@ private sealed interface EditableListTarget {
 @OptIn(ExperimentalFoundationApi::class)
 private val RowPivotScroll = object : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val pivot = if (HubColors.isNetflixy) {
-            0.18f * containerSize
-        } else {
-            ROW_PIVOT * containerSize
+        val pivot = when {
+            // The focused child is the card, not the whole shelf. This offset
+            // equals the shelf heading plus its gap, so that heading lands at
+            // the viewport top and every preceding shelf remains clipped.
+            HubColors.isPrimefly -> 0.11f * containerSize
+            HubColors.isNetflixy -> 0.18f * containerSize
+            else -> ROW_PIVOT * containerSize
         }
 
         // A row tall enough that parking it at the pivot would hang its
@@ -539,7 +542,7 @@ fun HomeScreen(
             }
 
             Column(Modifier.fillMaxSize()) {
-                if (HubColors.isNetflixy) {
+                if (HubColors.isNetflixy || HubColors.isPrimefly) {
                     Box(Modifier.weight(1f)) {
                         HeroPanel(viewModel)
                     }
@@ -547,22 +550,37 @@ fun HomeScreen(
 
                 CompositionLocalProvider(LocalBringIntoViewSpec provides RowPivotScroll) {
                     LazyColumn(
-                        modifier = if (HubColors.isNetflixy)
-                            Modifier.fillMaxWidth().height(264.dp).clipToBounds() 
-                        else Modifier.fillMaxSize(),
+                        modifier = when {
+                            HubColors.isPrimefly -> Modifier
+                                .fillMaxWidth()
+                                // Two complete landscape shelves remain visible;
+                                // the hero gives this space back from its bottom.
+                                .height(312.dp)
+                                .offset(y = 15.dp)
+                                .clipToBounds()
+                            HubColors.isNetflixy -> Modifier
+                                .fillMaxWidth()
+                                .height(264.dp)
+                                .clipToBounds()
+                            else -> Modifier.fillMaxSize()
+                        },
                         // Tighter than HubDimens.RowSpacing on purpose — with the
                         // smaller posters, this is what keeps two rows of a list on
                         // screen together instead of one full row plus a sliver of
                         // the next.
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(
+                            if (HubColors.isPrimefly) 6.dp else 14.dp,
+                        ),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                            top = 12.dp,
+                            // Primefly positions the whole viewport instead;
+                            // padding here would be consumed when focus moves.
+                            top = if (HubColors.isPrimefly) 0.dp else 12.dp,
                             // Room to park the last row at the pivot instead of
                             // stopping short with it pinned to the bottom edge.
                             bottom = HubDimens.ScreenPaddingVertical * 8,
                         ),
                     ) {
-                        // Primefly is shelves only: no clearlogo, synopsis or hero.
+                        // Netflixy and Primefly keep the hero fixed above the shelves.
                         if (!HubColors.isNetflixy && !HubColors.isPrimefly) {
                             item(key = "hero") {
                                 HeroPanel(viewModel)
@@ -874,7 +892,7 @@ private fun HeroPanel(viewModel: HomeViewModel) {
 
 @Composable
 private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
-    if (HubColors.isNetflixy) {
+    if (HubColors.isNetflixy || HubColors.isPrimefly) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -890,12 +908,13 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
             }
 
             val logoUrl = itemDetail?.logoUrl
+            val logoBottomPadding = if (HubColors.isPrimefly) 4.dp else 20.dp
             if (logoUrl != null) {
                 AsyncImage(
                     model = logoUrl,
                     contentDescription = item.title,
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.height(100.dp).padding(bottom = 20.dp),
+                    modifier = Modifier.height(100.dp).padding(bottom = logoBottomPadding),
                     alignment = Alignment.BottomStart,
                 )
             } else {
@@ -905,31 +924,35 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
                     color = HubColors.Text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = logoBottomPadding)
                 )
             }
             
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(bottom = 12.dp)) {
-                listOfNotNull(
-                    item.year?.toString(),
-                    stringResource(
-                        if (item.type == MediaType.SHOW) R.string.home_type_show else R.string.home_type_movie,
-                    ),
-                    item.runtimeMinutes?.let { stringResource(R.string.home_minutes, it) },
-                    item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
-                ).forEach {
-                    Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
-                }
-            }
+            HeroMetadataRow(
+                item = item,
+                detail = itemDetail,
+                modifier = Modifier.padding(bottom = if (HubColors.isPrimefly) 6.dp else 12.dp),
+            )
 
             val overview = itemDetail?.overview
             if (overview != null) {
-                AutoScrollText(
-                    text = overview,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = HubColors.Text,
-                    modifier = Modifier.fillMaxWidth(0.55f).weight(1f, fill = false)
-                )
+                if (HubColors.isPrimefly) {
+                    AutoScrollText(
+                        text = overview,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = HubColors.Text,
+                        // Four visible lines, then the exact same timed
+                        // vertical scroll used by the Netflixy synopsis.
+                        modifier = Modifier.fillMaxWidth(0.55f).height(96.dp),
+                    )
+                } else {
+                    AutoScrollText(
+                        text = overview,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = HubColors.Text,
+                        modifier = Modifier.fillMaxWidth(0.55f).weight(1f, fill = false)
+                    )
+                }
             }
         }
     } else {
@@ -955,18 +978,45 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                listOfNotNull(
-                    item.year?.toString(),
-                    stringResource(
-                        if (item.type == MediaType.SHOW) R.string.home_type_show else R.string.home_type_movie,
-                    ),
-                    item.runtimeMinutes?.let { stringResource(R.string.home_minutes, it) },
-                    item.genres.take(2).joinToString(" · ").takeIf { it.isNotBlank() },
-                ).forEach {
-                    Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
-                }
+            HeroMetadataRow(item = item, detail = itemDetail)
+        }
+    }
+}
+
+/** Exact themed order: year • genre • duration, with theme-coloured separators. */
+@Composable
+private fun HeroMetadataRow(
+    item: MediaItem,
+    detail: MediaDetail?,
+    modifier: Modifier = Modifier,
+) {
+    val values = listOfNotNull(
+        (item.year ?: detail?.year)?.toString(),
+        item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
+            ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
+        (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
+            stringResource(R.string.home_minutes, it)
+        },
+    )
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier,
+    ) {
+        values.forEachIndexed { index, value ->
+            if (index > 0) {
+                Text(
+                    text = "•",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (HubColors.isPrimefly) HubColors.Accent else HubColors.NetflixRed,
+                )
             }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                color = HubColors.TextDim,
+            )
         }
     }
 }

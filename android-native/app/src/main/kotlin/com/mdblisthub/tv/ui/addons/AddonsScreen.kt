@@ -26,11 +26,15 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -556,6 +560,10 @@ private fun StremioSyncCard(
     onSync: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    val passwordFocusRequester = remember { FocusRequester() }
+    val signInFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     SyncCard(accent = HubColors.Accent) {
         if (state.account != null) {
             Text(
@@ -596,6 +604,8 @@ private fun StremioSyncCard(
                     onValueChange = onEmailChange,
                     placeholder = stringResource(R.string.addons_email_placeholder),
                     keyboardType = KeyboardType.Email,
+                    imeAction = ImeAction.Next,
+                    onImeAction = passwordFocusRequester::requestFocus,
                     modifier = Modifier.weight(1f),
                 )
                 HubTextField(
@@ -604,8 +614,12 @@ private fun StremioSyncCard(
                     placeholder = stringResource(R.string.addons_password_placeholder),
                     keyboardType = KeyboardType.Password,
                     obscure = true,
-                    imeAction = ImeAction.Done,
-                    onImeAction = onSignIn,
+                    imeAction = ImeAction.Next,
+                    onImeAction = {
+                        keyboardController?.hide()
+                        signInFocusRequester.requestFocus()
+                    },
+                    focusRequester = passwordFocusRequester,
                     modifier = Modifier.weight(1f),
                 )
                 HubButton(
@@ -613,6 +627,7 @@ private fun StremioSyncCard(
                     primary = true,
                     enabled = state.email.isNotBlank() && state.password.isNotBlank() && !state.busy,
                     onClick = onSignIn,
+                    modifier = Modifier.focusRequester(signInFocusRequester),
                 )
             }
         }
@@ -788,6 +803,9 @@ private fun InstallCard(
     onUrlChange: (String) -> Unit,
     onSubmit: () -> Unit,
 ) {
+    val installFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.addons_add_manually), style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -799,8 +817,11 @@ private fun InstallCard(
                 onValueChange = onUrlChange,
                 placeholder = stringResource(R.string.addons_url_placeholder),
                 keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Done,
-                onImeAction = onSubmit,
+                imeAction = ImeAction.Next,
+                onImeAction = {
+                    keyboardController?.hide()
+                    installFocusRequester.requestFocus()
+                },
                 modifier = Modifier.weight(1f),
             )
             HubButton(
@@ -808,6 +829,7 @@ private fun InstallCard(
                 primary = true,
                 enabled = state.url.isNotBlank() && !state.busy,
                 onClick = onSubmit,
+                modifier = Modifier.focusRequester(installFocusRequester),
             )
         }
 
@@ -985,6 +1007,7 @@ private fun HubTextField(
     obscure: Boolean = false,
     imeAction: ImeAction = ImeAction.Default,
     onImeAction: (() -> Unit)? = null,
+    focusRequester: FocusRequester? = null,
 ) {
     Box(
         modifier = modifier
@@ -999,12 +1022,18 @@ private fun HubTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
+            modifier = if (focusRequester != null) {
+                Modifier.focusRequester(focusRequester)
+            } else {
+                Modifier
+            },
             singleLine = true,
             textStyle = MaterialTheme.typography.titleMedium.copy(color = HubColors.Text),
             cursorBrush = SolidColor(HubColors.Accent2),
             visualTransformation = if (obscure) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
             keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
             keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                onNext = { onImeAction?.invoke() },
                 onDone = { onImeAction?.invoke() },
             ),
         )
