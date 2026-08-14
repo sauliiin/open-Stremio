@@ -219,4 +219,16 @@
     <!-- Settings -->
     <string name="settings_on">On</string>
     <string name="settings_off">Off</string>
+
+    <!-- Automatic update through GitHub Releases -->
+    <string name="update_title">Open Stremio update</string>
+    <string name="update_available">Version %1$s is available. Download the latest APK from GitHub now.</string>
+    <string name="update_now">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading and verifying the update… %1$d%%</string>
+    <string name="update_cancel">Cancel</string>
+    <string name="update_permission">APK %1$s was verified. Allow Open Stremio to install apps to continue.</string>
+    <string name="update_open_settings">Open settings</string>
+    <string name="update_failed">Could not complete the update.</string>
+    <string name="update_retry">Try again</string>
 </resources>

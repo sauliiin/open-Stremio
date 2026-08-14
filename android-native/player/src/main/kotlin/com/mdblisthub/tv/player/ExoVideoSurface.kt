@@ -39,6 +39,14 @@ fun ExoVideoSurface(
         factory = { context ->
             PlayerView(context).apply {
                 useController = false
+                // Letterbox/pillarbox bars must stay black regardless of the
+                // selected theme. Under `RESIZE_MODE_FIT` the content frame
+                // shrinks to the video's own aspect ratio and centers itself;
+                // the view paints nothing behind that shrunk frame on its
+                // own, so without this the gap falls through to whatever is
+                // drawn beneath in the Compose z-order — `PlayerScreen`'s
+                // root Box, tinted with `HubColors.Background`.
+                setBackgroundColor(Color.BLACK)
                 // SurfaceView, not TextureView: a set-top box gets a hardware
                 // overlay out of it, which is both cheaper and the only path
                 // to HDR passthrough on most of them.

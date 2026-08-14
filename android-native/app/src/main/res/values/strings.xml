@@ -219,4 +219,16 @@
     <!-- Configurações -->
     <string name="settings_on">Ligado</string>
     <string name="settings_off">Desligado</string>
+
+    <!-- Atualização automática via GitHub Releases -->
+    <string name="update_title">Atualização do Open Stremio</string>
+    <string name="update_available">A versão %1$s está disponível. Baixe agora o APK mais recente do GitHub.</string>
+    <string name="update_now">Atualizar agora</string>
+    <string name="update_later">Mais tarde</string>
+    <string name="update_downloading">Baixando e verificando a atualização… %1$d%%</string>
+    <string name="update_cancel">Cancelar</string>
+    <string name="update_permission">O APK %1$s foi verificado. Permita que o Open Stremio instale apps para continuar.</string>
+    <string name="update_open_settings">Abrir configurações</string>
+    <string name="update_failed">Não foi possível concluir a atualização.</string>
+    <string name="update_retry">Tentar novamente</string>
 </resources>

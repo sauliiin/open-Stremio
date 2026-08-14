@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,6 +15,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdblisthub.tv.core.ui.theme.HubTheme
 import com.mdblisthub.tv.navigation.HubNavHost
+import com.mdblisthub.tv.update.AppUpdateManager
+import com.mdblisthub.tv.update.AppUpdateOverlay
 import java.util.Locale
 
 /**
@@ -25,11 +28,14 @@ import java.util.Locale
  */
 class MainActivity : ComponentActivity() {
 
+    private lateinit var appUpdateManager: AppUpdateManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         val graph = (application as HubApplication).graph
+        appUpdateManager = AppUpdateManager(this, GITHUB_REPOSITORY)
 
         setContent {
             val language by graph.uiPreferences.language
@@ -65,13 +71,29 @@ class MainActivity : ComponentActivity() {
                 LocalHostActivity provides activity,
             ) {
                 HubTheme {
-                    HubNavHost(graph = graph)
+                    Box {
+                        HubNavHost(graph = graph)
+                        AppUpdateOverlay(manager = appUpdateManager)
+                    }
                 }
             }
         }
+
+        appUpdateManager.checkForUpdate()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::appUpdateManager.isInitialized) appUpdateManager.onHostResumed()
+    }
+
+    override fun onDestroy() {
+        if (::appUpdateManager.isInitialized) appUpdateManager.close()
+        super.onDestroy()
     }
 
     private companion object {
         const val DEFAULT_LANGUAGE = "en"
+        const val GITHUB_REPOSITORY = "sauliiin/open-Stremio"
     }
 }
