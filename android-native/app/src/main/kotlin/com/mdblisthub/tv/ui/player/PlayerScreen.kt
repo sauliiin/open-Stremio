@@ -583,6 +583,7 @@ fun PlayerScreen(
         AudioPickerOverlay(
             options = playback.audioTracks,
             activeId = playback.currentAudioId,
+            silenced = playback.audioSilenced,
             onSelect = { id ->
                 viewModel.controller.selectAudioTrack(id)
                 audioPickerOpen = false
@@ -1684,30 +1685,25 @@ private fun offsetAt(x: Float, width: Float, insetPx: Float): Long {
  * row — a file always has at least one audio track playing.
  *
  * Every track the container declares appears here, including ones no decoder
- * on this device can open — those as a disabled row saying so. Hiding them,
- * which is what this did, made a DTS-only Portuguese dub indistinguishable
- * from a release that simply has no Portuguese.
+ * on this device could be found for. Hiding those, which is what this did,
+ * made a DTS-only Portuguese dub indistinguishable from a release that simply
+ * has no Portuguese. They stay selectable, with the warning under them:
+ * the check only speaks for this box, and a receiver on the far end of the
+ * HDMI cable may decode exactly what the box cannot.
  */
 @Composable
 private fun AudioPickerOverlay(
     options: List<TrackInfo>,
     activeId: Int,
+    /** The selected track turned out to be undecodable and is playing silent. */
+    silenced: Boolean,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Same fix as SubtitlePickerOverlay: without this, focus stays on the
     // now-hidden "Áudio" OSD button and the d-pad has nothing to move.
-    //
-    // Aimed at the first *playable* row rather than the first row: an
-    // undecodable track is a disabled `clickable`, so it is not a focus target
-    // at all, and requesting focus on one throws. If nothing is playable —
-    // a file whose every audio track is exotic — there is no row to land on
-    // and focus stays put rather than crashing the sheet open.
     val firstRowFocus = remember { FocusRequester() }
-    val focusIndex = remember(options) {
-        options.indexOfFirst { it.playable }.takeIf { it >= 0 }
-    }
-    LaunchedEffect(focusIndex) { if (focusIndex != null) firstRowFocus.requestFocus() }
+    LaunchedEffect(Unit) { firstRowFocus.requestFocus() }
 
     Box(
         Modifier
@@ -1737,13 +1733,19 @@ private fun AudioPickerOverlay(
                     SubtitleRow(
                         label = option.displayLabel(),
                         selected = option.id == activeId,
-                        enabled = option.playable,
-                        supporting = if (option.playable) {
-                            null
-                        } else {
-                            stringResource(R.string.player_track_unsupported)
+                        // Reads back what actually happened, not what was
+                        // predicted: a track flagged undecodable that plays
+                        // anyway — over HDMI to a receiver — drops the warning
+                        // once it is the one running, and a track that really
+                        // failed says so instead of leaving silence unexplained.
+                        supporting = when {
+                            option.id == activeId && silenced ->
+                                stringResource(R.string.player_track_silenced)
+                            option.id == activeId -> null
+                            option.playable -> null
+                            else -> stringResource(R.string.player_track_unsupported)
                         },
-                        modifier = if (index == focusIndex) {
+                        modifier = if (index == 0) {
                             Modifier.focusRequester(firstRowFocus)
                         } else {
                             Modifier

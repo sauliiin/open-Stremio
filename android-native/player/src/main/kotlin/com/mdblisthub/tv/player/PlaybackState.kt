@@ -84,15 +84,16 @@ data class TrackInfo(
     /** Declared channel count, or null when the container did not say. */
     val channelCount: Int? = null,
     /**
-     * Whether any decoder on this device can play it.
+     * Whether a decoder for it was found when the track list was read.
      *
-     * Unplayable tracks are still listed. Dropping them silently is the worse
-     * failure: a file whose only Portuguese audio is DTS-HD then looks like a
-     * file with no Portuguese audio at all, and nothing on screen distinguishes
-     * "your box cannot decode this" from "the release does not have it". The UI
-     * must still refuse to *select* one — forcing a selection override onto a
-     * track with no decoder throws inside the renderer, and this controller
-     * reads a renderer error as "this mirror went bad" and swaps the stream.
+     * A warning, not a veto. Unplayable tracks are listed *and* selectable:
+     * dropping them silently made a file whose only Portuguese audio is DTS-HD
+     * look like a file with no Portuguese at all, and refusing the tap left no
+     * way to find out that a receiver downstream would have decoded it
+     * perfectly — `isTrackSupported` only ever answers for this box.
+     *
+     * Selecting one that really cannot be decoded costs a silent film, not a
+     * restart: see [PlaybackController.recoverFromDecoderFailure].
      */
     val playable: Boolean = true,
 )
@@ -131,6 +132,16 @@ data class PlaybackState(
     val audioTracks: List<TrackInfo> = emptyList(),
     val subtitleTracks: List<TrackInfo> = emptyList(),
     val currentAudioId: Int = NO_TRACK,
+    /**
+     * True when [currentAudioId] is a track this device turned out not to be
+     * able to decode, so the film is playing without sound.
+     *
+     * Not an error: the user asked for that track, the alternative was the
+     * cascade restarting the film on another mirror, and picking a different
+     * track undoes it. The UI owes them a line saying so — silence with no
+     * explanation is indistinguishable from a broken player.
+     */
+    val audioSilenced: Boolean = false,
     /** The container's own subtitle track, or [NO_TRACK]. Never on at the same
      *  time as [externalSubtitle] — see [PlaybackController.selectSubtitleTrack]. */
     val currentSubtitleId: Int = NO_TRACK,
