@@ -177,7 +177,8 @@
     <string name="player_scale_stretch">Stretch</string>
     <string name="player_track_language">%1$s track</string>
     <string name="player_track_index">Track %1$d</string>
-    <string name="player_track_unsupported">This device cannot decode this track</string>
+    <string name="player_track_unsupported">This device may not decode this track</string>
+    <string name="player_track_silenced">No decoder — playing without sound</string>
     <string name="player_track_channels_mono">Mono</string>
     <string name="player_track_channels_stereo">Stereo</string>
     <string name="player_track_channels">%1$d channels</string>

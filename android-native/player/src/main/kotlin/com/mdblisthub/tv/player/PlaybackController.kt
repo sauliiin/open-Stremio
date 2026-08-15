@@ -8,6 +8,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
@@ -181,7 +182,19 @@ class PlaybackController(
         // on cheap boxes for some HEVC and MKV profiles — surfaces as a
         // playback error, and the cascade throws away a link that the
         // secondary decoder would have played perfectly.
-        DefaultRenderersFactory(context.applicationContext).setEnableDecoderFallback(true),
+        DefaultRenderersFactory(context.applicationContext)
+            .setEnableDecoderFallback(true)
+            // Software audio decoding for the formats Android itself often has
+            // no decoder for — DTS above all, then TrueHD and E-AC3, which is
+            // what a Portuguese dub on a remux is usually encoded in.
+            //
+            // `_ON`, never `_PREFER`: extension renderers go *after* the
+            // MediaCodec ones, so hardware decoding and HDMI passthrough to a
+            // receiver both keep winning when they are available. FFmpeg is
+            // reached only where the alternative was silence. The renderer is
+            // found by name through reflection, so this line is inert if the
+            // `lib-decoder-ffmpeg` AAR is ever dropped from the build.
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON),
     )
         .setMediaSourceFactory(mediaSourceFactory)
         // The whole reason this app moved off mpv. mpv buffers by byte count,
@@ -385,6 +398,22 @@ class PlaybackController(
     private var subtitleOverrides: List<TrackSelectionOverride> = emptyList()
 
     /**
+     * The audio track the *user* asked for, as opposed to the one the track
+     * selector picked. [recoverFromDecoderFailure] only silences a track when
+     * one of these exists: a decoder error on a track nobody chose means the
+     * file itself is broken, which is the cascade's problem, not the picker's.
+     */
+    private var forcedAudioId: Int? = null
+
+    /**
+     * The forced track that turned out to have no decoder. Kept so
+     * [onTracksChanged] — which recomputes the selection from what the player
+     * actually enabled, and would otherwise report "none" — keeps showing the
+     * picker the row the user is looking at.
+     */
+    private var silencedAudioId: Int? = null
+
+    /**
      * Starts the cascade. `resumeAtPercent` is applied to whichever source
      * ends up working, not to the first one tried.
      *
@@ -418,6 +447,10 @@ class PlaybackController(
         manualMode = false
         committedStream = null
         committedRetries = 0
+        // Per-title, like everything above: the next film's track 2 has nothing
+        // to do with this one's, and a stale silence would mute it on sight.
+        forcedAudioId = null
+        silencedAudioId = null
         expectedRuntimeMs = expectedRuntimeMinutes
             ?.takeIf { it > 0 }
             ?.let { it * 60_000L }
@@ -706,6 +739,13 @@ class PlaybackController(
      * to the engine, so nothing about it is part of what just failed.
      */
     override fun onPlayerError(error: PlaybackException) {
+        // Before anything else, because everything below assumes the *source*
+        // is what went wrong. A track the user forced onto a decoder that
+        // cannot open it fails here too, and reading that as a dead mirror is
+        // how picking an audio track used to restart the film from a different
+        // source. See [recoverFromDecoderFailure].
+        if (recoverFromDecoderFailure(error)) return
+
         rememberPlaybackForFailover()
 
         // A source that has already produced a picture is never swapped out.
@@ -730,6 +770,49 @@ class PlaybackController(
         } else {
             tryAdvance()
         }
+    }
+
+    /**
+     * Handles the one failure that is about a *track* rather than about the
+     * link: the audio the user asked for has no decoder on this box.
+     *
+     * The film keeps playing, silently, and the picker keeps showing which
+     * track is the silent one. That is the whole contract — the alternative
+     * this replaces was the cascade tearing the source down and reopening a
+     * different mirror, which from the sofa looks like the film restarting
+     * because you touched the audio menu.
+     *
+     * Only counted as such when it lands on the audio renderer and the error
+     * is a decoder one; a decoder error on video is a genuinely broken stream
+     * and still belongs to the cascade. `prepare()` is what resumes playback —
+     * an [ExoPlaybackException] leaves the player idle — and it picks up at
+     * the current position with the audio renderer now disabled.
+     *
+     * Returns true when it took ownership of [error].
+     */
+    private fun recoverFromDecoderFailure(error: PlaybackException): Boolean {
+        val exo = error as? ExoPlaybackException ?: return false
+        if (exo.type != ExoPlaybackException.TYPE_RENDERER) return false
+        // No `rendererType` on this exception, only the `Format` the failing
+        // renderer was fed — the MIME prefix is the only way back to "was
+        // this the audio renderer" from here.
+        if (exo.rendererFormat?.sampleMimeType?.startsWith("audio/") != true) return false
+
+        val decoderFailure = error.errorCode in DECODER_ERROR_CODES
+        if (!decoderFailure) return false
+
+        // Nothing to fall back to if the box could not decode the track it
+        // chose by itself — that is a broken file, not a user's forced pick.
+        val forced = forcedAudioId ?: return false
+
+        silencedAudioId = forced
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+            .build()
+        _state.update { it.copy(currentAudioId = forced, audioSilenced = true, error = null) }
+        player.prepare()
+        return true
     }
 
     /**
@@ -768,7 +851,12 @@ class PlaybackController(
             it.copy(
                 audioTracks = audio.map { entry -> entry.first },
                 subtitleTracks = text.map { entry -> entry.first },
-                currentAudioId = audio.indexOfFirst { entry -> entry.third },
+                // A silenced track is enabled nowhere in the player, so the
+                // selection read back from it is "none". Reporting that would
+                // bounce the picker's tick off the row the user just chose and
+                // onto "no track", which reads as the choice not having taken.
+                currentAudioId = silencedAudioId
+                    ?: audio.indexOfFirst { entry -> entry.third },
                 currentSubtitleId = text.indexOfFirst { entry -> entry.third },
             )
         }
@@ -1121,19 +1209,32 @@ class PlaybackController(
         _state.update { it.copy(scaleType = next) }
     }
 
+    /**
+     * Switches audio, including to a track this device may not be able to
+     * decode.
+     *
+     * Nothing is refused here. A track that turns out to be undecodable fails
+     * in the renderer and is caught by [recoverFromDecoderFailure], which
+     * leaves the film playing without sound rather than tearing the source
+     * down — so trying one costs the user a silent film they can undo, not a
+     * restart. Guessing in advance would be worse than letting it try:
+     * `isTrackSupported` cannot see a receiver that will happily decode the
+     * DTS the box itself cannot.
+     */
     fun selectAudioTrack(id: Int) {
-        // The pickers list tracks this device has no decoder for, so that a
-        // missing dub is visibly missing rather than absent. Selecting one
-        // would throw in the renderer and be misread as a dead mirror, so the
-        // refusal lives here too and not only in the UI's disabled row.
-        if (_state.value.audioTracks.getOrNull(id)?.playable != true) return
-
         val override = audioOverrides.getOrNull(id) ?: return
+
+        forcedAudioId = id
+        silencedAudioId = null
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
+            // Undone explicitly: a previous pick may have silenced the renderer
+            // (see [recoverFromDecoderFailure]), and an override alone does not
+            // re-enable a track type that was switched off.
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
             .setOverrideForType(override)
             .build()
-        _state.update { it.copy(currentAudioId = id) }
+        _state.update { it.copy(currentAudioId = id, audioSilenced = false) }
     }
 
     /**
@@ -1394,6 +1495,19 @@ class PlaybackController(
          * each one, this is several minutes of patience.
          */
         const val COMMITTED_RETRY_LIMIT = 6
+
+        /**
+         * The errors that mean "this decoder could not open this format",
+         * as opposed to the far more common "the bytes stopped arriving".
+         * [recoverFromDecoderFailure] answers for these and only these.
+         */
+        val DECODER_ERROR_CODES = setOf(
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+            PlaybackException.ERROR_CODE_DECODING_FAILED,
+        )
 
         // The offset range itself lives in `PlaybackState.kt`, public, because
         // the sync bar has to draw exactly the range this clamps to.

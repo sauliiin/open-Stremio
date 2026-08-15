@@ -177,7 +177,8 @@
     <string name="player_scale_stretch">Esticar</string>
     <string name="player_track_language">Faixa %1$s</string>
     <string name="player_track_index">Faixa %1$d</string>
-    <string name="player_track_unsupported">Este aparelho não decodifica esta faixa</string>
+    <string name="player_track_unsupported">Este aparelho pode não decodificar esta faixa</string>
+    <string name="player_track_silenced">Sem decodificador — tocando sem som</string>
     <string name="player_track_channels_mono">Mono</string>
     <string name="player_track_channels_stereo">Estéreo</string>
     <string name="player_track_channels">%1$d canais</string>
