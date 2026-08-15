@@ -123,6 +123,13 @@ class DataGraph(context: Context) {
         media = media,
     )
     val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, auth, addons, scope)
+
+    init {
+        // Wired here rather than passed to `addons`'s constructor: the
+        // pusher is built on top of `addons`, not underneath it, so nothing
+        // can hand it over any earlier than this. See `AddonsRepository.onLocalChange`.
+        addons.onLocalChange = { firebaseSync.pushIfEnabled() }
+    }
     val wikipedia = WikipediaRepository(network.wikipedia, uiPreferences.language)
     val trailers = TrailerRepository(network.imdb)
     val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)

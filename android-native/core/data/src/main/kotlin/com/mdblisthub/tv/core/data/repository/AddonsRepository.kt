@@ -52,6 +52,24 @@ class AddonsRepository(
 ) {
     private val dao = database.addonDao()
 
+    /**
+     * Called after install, remove, or an import commits — anything that
+     * should propagate to the cloud. Late-bound because the object that
+     * actually knows how to push, `FirebaseSyncRepository`, is built on top
+     * of this one, not underneath it — same reason `DataGraph.imageWarmer` is
+     * a `var` rather than a constructor parameter. The no-op default means a
+     * mutation that runs before the graph finishes wiring itself simply
+     * pushes nothing, which is correct: nothing has told this repository
+     * sync is even possible yet.
+     *
+     * Deliberately not called from [merge] or [replaceAll] themselves: both
+     * are also how a *remote* change lands locally (`enable`'s join, `pull`),
+     * and pushing there would echo that same data straight back. The higher
+     * callers that mean a genuine local edit — [install], [remove],
+     * [importCollection] — call it themselves instead.
+     */
+    var onLocalChange: suspend () -> Unit = {}
+
     fun observeAddons(): Flow<List<Addon>> =
         dao.observeAddons().map { rows -> rows.map { it.toDomain() } }
 
@@ -165,10 +183,14 @@ class AddonsRepository(
 
         val entity = manifest.toEntity(base, System.currentTimeMillis())
         dao.upsert(listOf(entity))
+        onLocalChange()
         entity.toDomain()
     }
 
-    suspend fun remove(base: String) = dao.delete(base)
+    suspend fun remove(base: String) {
+        dao.delete(base)
+        onLocalChange()
+    }
 
     private suspend fun updateCatalogPreference(
         catalog: AddonCatalog,
@@ -243,6 +265,7 @@ class AddonsRepository(
         }
 
         merge(imported)
+        onLocalChange()
         return StremioImportReport(
             received = entries.size,
             imported = imported.map { it.name },
@@ -305,7 +328,8 @@ class AddonsRepository(
         val toRemove = current.filter { isMdblistCatalogAddon(it.base) }
         
         toRemove.forEach { dao.delete(it.base) }
-        
+        if (toRemove.isNotEmpty()) onLocalChange()
+
         toRemove.size
     }
 }

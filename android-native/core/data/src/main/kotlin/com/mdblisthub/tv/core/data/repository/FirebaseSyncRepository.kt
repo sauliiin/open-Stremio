@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonNull
@@ -28,6 +27,20 @@ import java.util.TimeZone
  * Cross-device addon sync over authenticated Firebase REST calls. Every list
  * lives below the Google UID and the database rules prevent one signed-in
  * account from reading or replacing another account's addons.
+ *
+ * The automatic push is triggered directly by `AddonsRepository` — see
+ * [pushIfEnabled] and `AddonsRepository.onLocalChange` — right after install,
+ * remove or an import commits, the same way Stremio's own sync fires
+ * `AddonCollectionSet` as a direct consequence of the action that changed the
+ * list rather than by noticing later that something did. The previous design
+ * watched Room's `observeAddons()` Flow instead and used a `applying` guard
+ * to tell "a local edit" apart from "the pull that was just applied" —
+ * workable, but only because Room's own change notification can lag a beat
+ * behind the DAO call that caused it, which is exactly the race that guard
+ * existed to paper over. Calling `pushIfEnabled` from the mutation itself
+ * removes the need to guess: a remote-applied change (`pull`, `enable`'s
+ * merge) never goes through `install`/`remove`/`importCollection`, so it has
+ * no path back to a push at all, guard or not.
  */
 class FirebaseSyncRepository(
     private val api: SyncApi,
@@ -47,55 +60,46 @@ class FirebaseSyncRepository(
     private val lastState = MutableStateFlow<String?>(null)
     val lastSync: StateFlow<String?> = lastState.asStateFlow()
 
-    /** Set while a pull is being applied, so it does not echo straight back. */
-    @Volatile private var applying = false
+    /** The in-flight (or most recently scheduled) automatic push, if any. */
     private var pushJob: Job? = null
 
-    init {
-        // Any local change — installed, removed, imported from Stremio —
-        // becomes a write, debounced so a bulk import is one request.
-        scope.launch {
-            combine(
-                store.firebaseSyncEnabled,
-                auth.googleAccount,
-                addons.observeAddons(),
-            ) { on, account, _ -> on to account?.uid }
-                .collect { (on, scheduledUid) ->
-                    if (!on || scheduledUid == null) {
-                        pushJob?.cancel()
-                        return@collect
-                    }
-                    if (applying) return@collect
-                    pushJob?.cancel()
-                    pushJob = scope.launch {
-                        delay(PUSH_DELAY_MS)
-                        busyState.value = true
-                        var lastFailure: Throwable? = null
-                        for ((attempt, retryDelay) in RETRY_DELAYS_MS.withIndex()) {
-                            if (retryDelay > 0) delay(retryDelay)
-                            try {
-                                val (uid, token) = auth.firebaseSession()
-                                check(uid == scheduledUid) {
-                                    "A conta Google mudou durante a sincronização."
-                                }
-                                write(uid, token, addons.entities().map { it.toSyncedDto() })
-                                failureState.value = null
-                                lastState.value = nowIso()
-                                busyState.value = false
-                                return@launch
-                            } catch (cancelled: CancellationException) {
-                                busyState.value = false
-                                throw cancelled
-                            } catch (error: Throwable) {
-                                lastFailure = error
-                                Log.w(TAG, "Falha no envio automático (tentativa ${attempt + 1}).", error)
-                            }
-                        }
-                        busyState.value = false
-                        failureState.value = lastFailure?.message
-                            ?: "Não foi possível sincronizar os addons."
-                    }
+    /**
+     * Called by `AddonsRepository` right after a local mutation commits.
+     * A no-op when sync is off, or for a device that never turned it on.
+     *
+     * Retries a few times before giving up — a phone that just installed an
+     * addon and lost Wi-Fi for a moment should not have to wait for the next
+     * local change before trying again. Superseded by cancelling and
+     * restarting rather than queuing: only the latest state is ever worth
+     * sending, so a second local change while the first push is still
+     * retrying should send the second's (newer) snapshot, not queue behind
+     * a stale one.
+     */
+    suspend fun pushIfEnabled() {
+        if (!store.firebaseSyncEnabled.first()) return
+
+        pushJob?.cancel()
+        pushJob = scope.launch {
+            busyState.value = true
+            var lastFailure: Throwable? = null
+            for ((attempt, retryDelay) in RETRY_DELAYS_MS.withIndex()) {
+                if (retryDelay > 0) delay(retryDelay)
+                try {
+                    writeCurrentAddons()
+                    failureState.value = null
+                    lastState.value = nowIso()
+                    busyState.value = false
+                    return@launch
+                } catch (cancelled: CancellationException) {
+                    busyState.value = false
+                    throw cancelled
+                } catch (error: Throwable) {
+                    lastFailure = error
+                    Log.w(TAG, "Falha no envio automático (tentativa ${attempt + 1}).", error)
                 }
+            }
+            busyState.value = false
+            failureState.value = lastFailure?.message ?: "Não foi possível sincronizar os addons."
         }
     }
 
@@ -107,20 +111,14 @@ class FirebaseSyncRepository(
         val (uid, token) = auth.firebaseSession()
         val remote = read(uid, token).orEmpty()
 
-        // The write-back has to sit inside the same guarded block as the
-        // merge: Room's change notification can lag a beat behind the DAO
-        // call returning, and closing the guard right after `merge()` leaves
-        // a window where that notification reaches the reactive pusher below
-        // and queues a redundant write.
-        applyLocally {
-            val fresh = addons.merge(remote)
-            write(uid, token, addons.entities().map { it.toSyncedDto() })
-            // Enable the reactive writer only after cloud and local data have
-            // been joined. Enabling first leaves a slow-read race where an
-            // empty local database can replace the user's cloud collection.
-            store.setFirebaseSyncEnabled(true)
-            fresh
-        }
+        val fresh = addons.merge(remote)
+        write(uid, token, addons.entities().map { it.toSyncedDto() })
+        // Enabled only after the join above lands: flipping it first would
+        // let a concurrent `pushIfEnabled` (from some unrelated local change
+        // racing this same call) read an empty or half-merged local list and
+        // overwrite the cloud collection this is in the middle of joining.
+        store.setFirebaseSyncEnabled(true)
+        fresh
     }
 
     suspend fun disable() {
@@ -151,16 +149,19 @@ class FirebaseSyncRepository(
         }
 
         val before = addons.entities().size
-        applyLocally { addons.replaceAll(remote) }
+        addons.replaceAll(remote)
         kotlin.math.abs(remote.size - before)
     }
 
     /** Writes this device's list out, replacing whatever was stored. */
-    suspend fun push(): Result<Int> = request {
+    suspend fun push(): Result<Int> = request { writeCurrentAddons() }
+
+    /** The write itself, shared by the manual button and [pushIfEnabled]'s retry loop. */
+    private suspend fun writeCurrentAddons(): Int {
         val (uid, token) = auth.firebaseSession()
         val entities = addons.entities()
         write(uid, token, entities.map { it.toSyncedDto() })
-        entities.size
+        return entities.size
     }
 
     private suspend fun read(uid: String, idToken: String): List<com.mdblisthub.tv.core.database.entity.AddonEntity>? {
@@ -187,20 +188,6 @@ class FirebaseSyncRepository(
 
     private fun url(uid: String) =
         "${ApiConfig.FIREBASE_BASE}${ApiConfig.FIREBASE_USERS_ROOT}/$uid/addons.json"
-
-    /**
-     * Runs a local mutation with the write-back guard held. The guard has to
-     * span the mutation itself, not just the call, or the reactive push above
-     * would send straight back what was only just read.
-     */
-    private suspend fun <T> applyLocally(mutate: suspend () -> T): T {
-        applying = true
-        try {
-            return mutate()
-        } finally {
-            applying = false
-        }
-    }
 
     private suspend fun request(call: suspend () -> Int): Result<Int> {
         busyState.value = true
@@ -230,8 +217,6 @@ class FirebaseSyncRepository(
 
     private companion object {
         const val TAG = "FirebaseAddonSync"
-        /** Collapses a burst of installs into a single write. */
-        const val PUSH_DELAY_MS = 1500L
         val RETRY_DELAYS_MS = longArrayOf(0L, 2_000L, 8_000L)
     }
 }
