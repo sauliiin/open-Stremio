@@ -49,10 +49,13 @@ data class ResumePoint(
         ScrobbleTarget(type, tmdbId, imdbId, season, episode)
 }
 
-/** The three mdblist buckets a title can sit in. */
+/**
+ * The three buckets a title can sit in.
+ *
+ * Carries no endpoints any more: mdblist and Trakt spell all three
+ * differently — Trakt's "watched" is not even a bucket but the play history —
+ * so each provider's `LibrarySource` owns its own paths and this stays the
+ * name the rest of the app reasons in.
+ */
 @Serializable
-enum class LibraryBucket(val readPath: String, val addPath: String, val removePath: String) {
-    WATCHLIST("watchlist/items", "watchlist/items/add", "watchlist/items/remove"),
-    WATCHED("sync/watched", "sync/watched", "sync/watched/remove"),
-    COLLECTION("sync/collection", "sync/collection", "sync/collection/remove"),
-}
+enum class LibraryBucket { WATCHLIST, WATCHED, COLLECTION }

@@ -11,3 +11,18 @@ package com.mdblisthub.tv.core.model
  * The order is the order the "tema" button cycles through.
  */
 enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY, PRIMEFLY }
+
+/**
+ * Who answers for the account's own library: watchlist, collection, watched,
+ * up next and the paused sessions behind "continue watching".
+ *
+ * One choice covering all five rather than one per row, because the five are
+ * a single coherent picture of what a person has and is watching — filling
+ * them from two accounts at once would put a title on the watchlist of one
+ * and the history of the other with nothing tying them together.
+ *
+ * Everything *else* still comes from mdblist regardless: the user's own
+ * lists, aggregated ratings, recommendations and search. Trakt is an
+ * alternative source for the personal library, not a replacement account.
+ */
+enum class LibraryProvider { MDBLIST, TRAKT }

@@ -26,6 +26,46 @@ object ApiConfig {
     const val FANART_TV_API_KEY = "a7ad21743fd710fccb738232f2fbdcfc"
 
     /**
+     * Trakt, the alternative source for the five account-owned home rows —
+     * watchlist, collection, watched, up next and continue watching. Which of
+     * the two answers them is a setting; see `UiPreferencesStore.libraryProvider`.
+     *
+     * Two hosts, not one: the device-code dance lives on `auth.` and
+     * everything else on `api.`. Sending an OAuth request to the API host
+     * answers 404, which is exactly the kind of failure that looks like a bad
+     * client id.
+     */
+    const val TRAKT_API_BASE = "https://api.trakt.tv/"
+    const val TRAKT_AUTH_BASE = "https://auth.trakt.tv/"
+    const val TRAKT_API_VERSION = "2"
+
+    /** Where the user types the code the device flow shows them. */
+    const val TRAKT_ACTIVATE_URL = "https://auth.trakt.tv/activate"
+
+    /**
+     * Not this project's own Trakt registration — creating a new one now
+     * requires Trakt VIP, and this app's own previous registration was
+     * deleted by Trakt at some point after it stopped being used. This is the
+     * client id/secret plugin.video.pov (a Kodi addon) ships as the default
+     * value of a hidden setting in its `settings.xml`, shared by every
+     * install of that addon the same way. Verified live before reuse — a
+     * `POST oauth/device/code` with just this id answers `200` with a real
+     * device code, not the `401 invalid_client` this app's deleted app now
+     * returns.
+     *
+     * Borrowing it carries the same risk any shared key does: it is another
+     * project's identity with the Trakt, revocable by Trakt or by that
+     * project at any time, for reasons this app has no visibility into and no
+     * control over. If Trakt calls start failing across the board, this is
+     * the first thing to check.
+     */
+    const val TRAKT_CLIENT_ID = "6bc29124c3d9466e06a3ed19a7b5976fcb28311008401e1ce04cf08196f8b16a"
+    const val TRAKT_CLIENT_SECRET = "99478842b17d44d7accafef45c6c1bbba235792753c195069ae149595cd3a919"
+
+    val traktConfigured: Boolean
+        get() = TRAKT_CLIENT_ID.isNotBlank() && TRAKT_CLIENT_SECRET.isNotBlank()
+
+    /**
      * OpenSubtitles.com's own API — a different service from the "OpenSubtitles
      * v3" Stremio addon of a similar name. Queried directly for [SubtitleMatcher]:
      * the Stremio subtitle protocol only guarantees `id`/`url`/`lang`, so a

@@ -30,11 +30,12 @@ import com.mdblisthub.tv.core.database.entity.ResumeEntity
         ResumeEntity::class,
         LibraryEntity::class,
     ],
-    // 9 separates landscape card art from the full-screen backdrop. Destructive
-    // migration is correct here for the same reason as always — every table is
-    // a cache with an upstream source of truth — and re-syncing is cheaper
-    // than the two full table scans the missing indices cost.
-    version = 9,
+    // 10 adds the provider-side session id to `resume_points`, which is how a
+    // Trakt paused session is dropped. Destructive migration is correct here
+    // for the same reason as always — every table is a cache with an upstream
+    // source of truth — and re-syncing is cheaper than the two full table
+    // scans the missing indices cost.
+    version = 10,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)

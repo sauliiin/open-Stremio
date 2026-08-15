@@ -122,6 +122,35 @@ object HttpClients {
         .addInterceptor(OpenSubtitlesHeadersInterceptor)
         .build()
 
+    /**
+     * Trakt. Derived from [metadata] for its connection pool, but with the
+     * disk cache off: everything this app reads from Trakt is live account
+     * state — what is on the watchlist right now, how far into a film the
+     * user got — and a cached answer there is simply a wrong one. The mdblist
+     * equivalents reach the same place by passing `Cache-Control: no-store`
+     * on each call; Trakt has no per-call credential to hang that off, so the
+     * client says it once.
+     *
+     * [authenticator] is what makes an expired token invisible above this
+     * layer — see [TraktAuthenticator]. Passed in rather than built here so
+     * the token seam stays in one place.
+     */
+    fun trakt(base: OkHttpClient, tokens: () -> TraktTokens): OkHttpClient = base.newBuilder()
+        .cache(null)
+        .addInterceptor(TraktHeadersInterceptor(tokens))
+        .authenticator(TraktAuthenticator(tokens))
+        .build()
+
+    /**
+     * The OAuth host. Same headers, no authenticator: these are the calls that
+     * *produce* tokens, and a `401` from one of them means the credentials are
+     * wrong, not stale — retrying with a refreshed token would be nonsense.
+     */
+    fun traktAuth(base: OkHttpClient, tokens: () -> TraktTokens): OkHttpClient = base.newBuilder()
+        .cache(null)
+        .addInterceptor(TraktHeadersInterceptor(tokens))
+        .build()
+
     /** Never serve a stale answer for something the user just asked to refresh. */
     val NO_CACHE: CacheControl = CacheControl.Builder().noCache().noStore().build()
 }

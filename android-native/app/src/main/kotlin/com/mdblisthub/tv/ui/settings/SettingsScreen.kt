@@ -36,10 +36,16 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.LibraryProvider
+import com.mdblisthub.tv.core.model.TraktAccount
+import com.mdblisthub.tv.core.model.TraktLinkFailure
+import com.mdblisthub.tv.core.model.TraktLinkState
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -70,14 +76,26 @@ data class SettingsUiState(
     val subtitleLanguage: String = "pt",
     val subtitleColor: String = "white",
     val audioLanguage: String = "en",
+    val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
+    val traktAccount: TraktAccount? = null,
+    /** False when the build ships no Trakt client id — see `ApiConfig`. */
+    val traktConfigured: Boolean = false,
 )
 
 class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
-    private val _state = MutableStateFlow(SettingsUiState())
+    private val _state = MutableStateFlow(SettingsUiState(traktConfigured = graph.traktAuth.configured))
     val state = _state.asStateFlow()
+
+    /** Non-null only while the device-link overlay is up. */
+    private val _traktLink = MutableStateFlow<TraktLinkState?>(null)
+    val traktLink = _traktLink.asStateFlow()
+
+    private var linkJob: Job? = null
 
     init {
         viewModelScope.launch {
+            // Nested rather than one call: `combine` has typed overloads up to
+            // five flows, and this needs seven.
             combine(
                 graph.uiPreferences.language,
                 graph.uiPreferences.subtitleAutoDownload,
@@ -86,9 +104,90 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 graph.uiPreferences.audioLanguage,
             ) { lang, subAuto, subLang, subColor, audioLang ->
                 SettingsUiState(lang, subAuto, subLang, subColor, audioLang)
-            }.collect {
-                _state.value = it
             }
+                .combine(graph.uiPreferences.libraryProvider) { partial, provider ->
+                    partial.copy(libraryProvider = provider)
+                }
+                .combine(graph.traktAuth.account) { partial, account ->
+                    partial.copy(
+                        traktAccount = account,
+                        traktConfigured = graph.traktAuth.configured,
+                    )
+                }
+                .collect { _state.value = it }
+        }
+    }
+
+    /**
+     * Picking Trakt with no account linked opens the link flow instead of
+     * saving a setting that could not mean anything yet — the switch is only
+     * a switch once there is something on the other side of it.
+     */
+    fun setLibraryProvider(provider: LibraryProvider) {
+        viewModelScope.launch {
+            if (provider == LibraryProvider.TRAKT && _state.value.traktAccount == null) {
+                beginTraktLink()
+                return@launch
+            }
+            graph.switchLibraryProvider(provider)
+            refreshLibraryRows()
+        }
+    }
+
+    fun beginTraktLink() {
+        if (linkJob?.isActive == true) return
+        if (!graph.traktAuth.configured) {
+            _traktLink.value = TraktLinkState.Failed(TraktLinkFailure.MISSING_CREDENTIALS)
+            return
+        }
+
+        _traktLink.value = TraktLinkState.Requesting
+        linkJob = viewModelScope.launch {
+            graph.traktAuth.startLink().fold(
+                onSuccess = { code ->
+                    graph.traktAuth.poll(code).collect { linkState ->
+                        _traktLink.value = linkState
+                        if (linkState is TraktLinkState.Linked) {
+                            // Connecting *is* the request to use Trakt; making
+                            // the user then pick the option they just went
+                            // through a device flow for would be asking twice.
+                            graph.switchLibraryProvider(LibraryProvider.TRAKT)
+                            refreshLibraryRows()
+                            delay(LINKED_VISIBLE_MS)
+                            _traktLink.value = null
+                        }
+                    }
+                },
+                onFailure = {
+                    _traktLink.value = TraktLinkState.Failed(TraktLinkFailure.UNAVAILABLE)
+                },
+            )
+        }
+    }
+
+    fun dismissTraktLink() {
+        linkJob?.cancel()
+        linkJob = null
+        _traktLink.value = null
+    }
+
+    fun unlinkTrakt() {
+        viewModelScope.launch {
+            graph.unlinkTrakt()
+            refreshLibraryRows()
+        }
+    }
+
+    /**
+     * On the graph's scope, not this ViewModel's: the point of refreshing here
+     * is that the change has already landed by the time the user navigates
+     * back to Home, and a scope that dies when Settings closes would cancel
+     * exactly the work that makes that true.
+     */
+    private fun refreshLibraryRows() {
+        graph.scope.launch {
+            graph.homeFeeds.refresh()
+            graph.playback.refreshResumePoints()
         }
     }
 
@@ -97,18 +196,25 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     fun setSubtitleLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleLanguage(lang) }
     fun setSubtitleColor(color: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleColor(color) }
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
+
+    private companion object {
+        /** Long enough to read "connected as @you" before the overlay closes. */
+        const val LINKED_VISIBLE_MS = 1_600L
+    }
 }
 
 @Composable
 fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
     val viewModel = hubViewModel { SettingsViewModel(graph) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    
+    val traktLink by viewModel.traktLink.collectAsStateWithLifecycle()
+
     var subtitlePickerOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
 
     BackHandler {
         when {
+            traktLink != null -> viewModel.dismissTraktLink()
             subtitlePickerOpen -> subtitlePickerOpen = false
             audioPickerOpen -> audioPickerOpen = false
             else -> onBack()
@@ -150,6 +256,42 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                             text = name,
                             primary = state.language == code,
                             onClick = { viewModel.setLanguage(code) }
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "library") {
+            SettingsCard(title = stringResource(R.string.settings_section_library)) {
+                SettingsRow(label = stringResource(R.string.settings_library_provider)) {
+                    val providers = listOf(
+                        LibraryProvider.MDBLIST to stringResource(R.string.settings_library_mdblist),
+                        LibraryProvider.TRAKT to stringResource(R.string.settings_library_trakt),
+                    )
+                    providers.forEach { (provider, name) ->
+                        HubButton(
+                            text = name,
+                            primary = state.libraryProvider == provider,
+                            onClick = { viewModel.setLibraryProvider(provider) },
+                        )
+                    }
+                }
+
+                SettingsRow(
+                    label = state.traktAccount?.handle
+                        ?: stringResource(R.string.settings_trakt_not_connected),
+                ) {
+                    if (state.traktAccount == null) {
+                        HubButton(
+                            text = stringResource(R.string.settings_trakt_connect),
+                            primary = true,
+                            onClick = viewModel::beginTraktLink,
+                        )
+                    } else {
+                        HubButton(
+                            text = stringResource(R.string.settings_trakt_disconnect),
+                            onClick = viewModel::unlinkTrakt,
                         )
                     }
                 }
@@ -227,6 +369,14 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
             languages = ALL_LANGUAGES,
             selectedCode = state.audioLanguage,
             onSelect = { viewModel.setAudioLanguage(it); audioPickerOpen = false },
+        )
+    }
+
+    traktLink?.let { link ->
+        TraktLinkOverlay(
+            state = link,
+            onRetry = viewModel::beginTraktLink,
+            onDismiss = viewModel::dismissTraktLink,
         )
     }
     }

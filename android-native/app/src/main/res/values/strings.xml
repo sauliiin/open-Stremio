@@ -220,6 +220,29 @@
     <string name="settings_on">Ligado</string>
     <string name="settings_off">Desligado</string>
 
+    <!-- Biblioteca: MDBList ou Trakt -->
+    <string name="settings_section_library">Biblioteca</string>
+    <string name="settings_library_provider">Watchlist, assistidos, coleção e continuar assistindo</string>
+    <string name="settings_library_mdblist">MDBList</string>
+    <string name="settings_library_trakt">Trakt</string>
+    <string name="settings_trakt_not_connected">Nenhuma conta Trakt conectada</string>
+    <string name="settings_trakt_connect">Conectar Trakt</string>
+    <string name="settings_trakt_disconnect">Desconectar</string>
+
+    <string name="trakt_link_title">Conectar ao Trakt</string>
+    <string name="trakt_link_requesting">Pedindo um código ao Trakt…</string>
+    <string name="trakt_link_instructions">Acesse %1$s e informe:</string>
+    <string name="trakt_link_expires">O código expira em %1$d:%2$02d</string>
+    <string name="trakt_link_linked">Conectado como %1$s</string>
+    <string name="trakt_link_cancel">Cancelar</string>
+    <string name="trakt_link_close">Fechar</string>
+    <string name="trakt_link_retry">Tentar de novo</string>
+    <string name="trakt_link_error_expired">O código expirou antes de ser aprovado. Peça um novo.</string>
+    <string name="trakt_link_error_denied">O acesso foi recusado no Trakt.</string>
+    <string name="trakt_link_error_unavailable">Não foi possível falar com o Trakt. Tente de novo.</string>
+    <string name="trakt_link_error_credentials">Este build não traz credenciais do Trakt.</string>
+    <string name="trakt_link_vip_limit_warning">Contas Trakt gratuitas conectam só um app de terceiros por vez.</string>
+
     <!-- Atualização automática via GitHub Releases -->
     <string name="update_title">Atualização do Open Stremio</string>
     <string name="update_available">A versão %1$s está disponível. Baixe agora o APK mais recente do GitHub.</string>

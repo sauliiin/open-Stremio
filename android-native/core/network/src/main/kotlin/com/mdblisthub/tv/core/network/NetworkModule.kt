@@ -70,6 +70,30 @@ class NetworkModule(context: Context) {
 
     val fanartTv: FanartTvApi = retrofit(ApiConfig.FANART_TV_BASE, metadataClient).create()
 
+    /**
+     * The Trakt credential, installed by the graph once the data layer that
+     * owns it exists — the same late-binding as `DataGraph.imageWarmer`, and
+     * for the same reason: the module that holds the token is built on top of
+     * this one, not underneath it.
+     *
+     * Left unset, every Trakt call goes out without an `Authorization` header
+     * and comes back `401`. That is the correct behaviour for a build with no
+     * account linked, and the library setting keeps mdblist selected until
+     * one is.
+     */
+    @Volatile
+    var traktTokens: TraktTokens = TraktTokens.Unlinked
+
+    /** No cache and a token-refreshing authenticator — see [HttpClients.trakt]. */
+    val traktClient: OkHttpClient = HttpClients.trakt(metadataClient) { traktTokens }
+
+    private val traktAuthClient: OkHttpClient = HttpClients.traktAuth(metadataClient) { traktTokens }
+
+    val trakt: TraktApi = retrofit(ApiConfig.TRAKT_API_BASE, traktClient).create()
+
+    /** A different host from [trakt] — see [ApiConfig.TRAKT_AUTH_BASE]. */
+    val traktAuth: TraktAuthApi = retrofit(ApiConfig.TRAKT_AUTH_BASE, traktAuthClient).create()
+
     private fun retrofit(base: String, client: OkHttpClient): Retrofit =
         Retrofit.Builder()
             .baseUrl(base)

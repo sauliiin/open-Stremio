@@ -31,6 +31,14 @@ interface PlaybackDao {
     @Query("DELETE FROM resume_points")
     suspend fun clearResumePoints()
 
+    /**
+     * One row, by key. The entity rather than the domain type on purpose: the
+     * caller wants `playbackId`, which is a provider detail deliberately kept
+     * out of [com.mdblisthub.tv.core.model.ResumePoint].
+     */
+    @Query("SELECT * FROM resume_points WHERE `key` = :key")
+    suspend fun resumePoint(key: String): ResumeEntity?
+
     @Query("DELETE FROM resume_points WHERE `key` = :key")
     suspend fun deleteResumePoint(key: String)
 

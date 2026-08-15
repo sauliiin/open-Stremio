@@ -1,7 +1,10 @@
 package com.mdblisthub.tv.core.network
 
+import okhttp3.Authenticator
 import okhttp3.Interceptor
+import okhttp3.Request
 import okhttp3.Response
+import okhttp3.Route
 import java.util.concurrent.TimeUnit
 
 internal object UserAgentInterceptor : Interceptor {
@@ -33,6 +36,63 @@ internal object OpenSubtitlesHeadersInterceptor : Interceptor {
 }
 
 
+
+/**
+ * Carries the Trakt credentials, so no method on [TraktApi] has to take one.
+ *
+ * Unlike mdblist — where the key is a query parameter on every call — Trakt
+ * wants three headers: the application's own id, the API version, and the
+ * user's bearer token. The first two are required even on the unauthenticated
+ * OAuth calls, which is why this is attached to both Trakt clients.
+ *
+ * [tokens] is read per request rather than captured once: the graph installs
+ * the real implementation after the network module is built, and the token
+ * behind it changes on every link, refresh and unlink.
+ */
+internal class TraktHeadersInterceptor(private val tokens: () -> TraktTokens) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request().newBuilder()
+            .header("trakt-api-key", ApiConfig.TRAKT_CLIENT_ID)
+            .header("trakt-api-version", ApiConfig.TRAKT_API_VERSION)
+            .apply {
+                // The OAuth host has no bearer to send — the whole point of
+                // those calls is to obtain one — and an unlinked account has
+                // none either.
+                tokens().accessToken()
+                    .takeIf { it.isNotBlank() }
+                    ?.let { header("Authorization", "Bearer $it") }
+            }
+            .build()
+        return chain.proceed(request)
+    }
+}
+
+/**
+ * Renews the token once when Trakt rejects it, then replays the request.
+ *
+ * A Trakt access token lives seven days, so an app opened weekly is always
+ * one request away from a `401`. Handling it here rather than in each
+ * repository means a refresh is invisible: the call that triggered it
+ * completes normally and nothing above the HTTP layer learns it happened.
+ *
+ * Exactly one retry. Returning a request that fails the same way again would
+ * have OkHttp call this once more, and a refresh token is single use — a loop
+ * would spend the whole chain of them and end with the account unlinked.
+ */
+internal class TraktAuthenticator(private val tokens: () -> TraktTokens) : Authenticator {
+    override fun authenticate(route: Route?, response: Response): Request? {
+        if (response.priorResponse != null) return null
+
+        val rejected = response.request.header("Authorization")
+            ?.removePrefix("Bearer ")
+            .orEmpty()
+        val fresh = tokens().refreshed(rejected) ?: return null
+
+        return response.request.newBuilder()
+            .header("Authorization", "Bearer $fresh")
+            .build()
+    }
+}
 
 /**
  * Gives cacheable answers a lifetime they did not ask for.

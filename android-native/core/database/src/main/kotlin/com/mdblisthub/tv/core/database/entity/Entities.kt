@@ -179,7 +179,7 @@ data class AddonEntity(
     val addedAt: Long,
 )
 
-/** A part-watched title, mirrored from mdblist so the row paints offline. */
+/** A part-watched title, mirrored from the library provider so the row paints offline. */
 @Entity(tableName = "resume_points")
 data class ResumeEntity(
     @PrimaryKey val key: String,
@@ -196,6 +196,15 @@ data class ResumeEntity(
     val progress: Float,
     val updatedAt: String?,
     val fetchedAt: Long,
+    /**
+     * The session's own id at the provider, when it has one.
+     *
+     * Only Trakt needs it: dropping a paused session there is
+     * `DELETE /sync/playback/{id}` against the *session*, not the title, and
+     * that id exists nowhere else in this app. mdblist clears by scrobbling
+     * the title itself and leaves this null.
+     */
+    @ColumnInfo(defaultValue = "NULL") val playbackId: Long? = null,
 )
 
 /** Watchlist / watched / collection membership, so the buttons paint instantly. */
