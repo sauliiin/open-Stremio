@@ -130,7 +130,7 @@ class DataGraph(context: Context) {
         // can hand it over any earlier than this. See `AddonsRepository.onLocalChange`.
         addons.onLocalChange = { firebaseSync.pushIfEnabled() }
     }
-    val wikipedia = WikipediaRepository(network.wikipedia, uiPreferences.language)
+    val wikipedia = WikipediaRepository(network.wikipedia, network.tmdb, uiPreferences.language)
     val trailers = TrailerRepository(network.imdb)
     val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)
 

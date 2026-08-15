@@ -2,6 +2,7 @@ package com.mdblisthub.tv.core.network
 
 import com.mdblisthub.tv.core.network.dto.TmdbDetailDto
 import com.mdblisthub.tv.core.network.dto.TmdbPageDto
+import com.mdblisthub.tv.core.network.dto.TmdbPersonDto
 import com.mdblisthub.tv.core.network.dto.TmdbSeasonDto
 import com.mdblisthub.tv.core.network.dto.TmdbFindDto
 import retrofit2.http.GET
@@ -60,6 +61,14 @@ interface TmdbApi {
         @Query("language") language: String,
         @Query("external_source") externalSource: String = "imdb_id",
     ): TmdbFindDto
+
+    /** Fallback source for the cast popup's bio, and the only source for a person's birthday. */
+    @GET("person/{id}")
+    suspend fun person(
+        @Path("id") personId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+    ): TmdbPersonDto
 
     @GET("search/keyword")
     suspend fun searchKeyword(

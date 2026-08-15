@@ -191,6 +191,16 @@ data class TmdbReleaseCountryDto(
 data class TmdbReleaseDateDto(val certification: String = "")
 
 @Serializable
+data class TmdbPersonDto(
+    val id: Int = 0,
+    val name: String = "",
+    val biography: String? = null,
+    val birthday: String? = null,
+    val deathday: String? = null,
+    @SerialName("profile_path") val profilePath: String? = null,
+)
+
+@Serializable
 data class TmdbKeywordPageDto(val results: List<TmdbKeywordDto> = emptyList())
 
 @Serializable

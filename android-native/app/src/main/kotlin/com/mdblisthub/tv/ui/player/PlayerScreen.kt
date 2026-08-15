@@ -21,6 +21,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,10 +29,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -40,11 +44,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.isActive
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,6 +94,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -100,6 +103,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.SubtitleOption
@@ -112,7 +116,6 @@ import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.TrackInfo
-import com.mdblisthub.tv.player.VideoScaleType
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlin.math.roundToInt
@@ -195,6 +198,7 @@ fun PlayerScreen(
     }
 
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val castPreview by viewModel.castPreview.collectAsStateWithLifecycle()
     val playback by viewModel.controller.state.collectAsStateWithLifecycle()
     
     val subtitleColorString by viewModel.subtitleColor.collectAsStateWithLifecycle()
@@ -220,6 +224,7 @@ fun PlayerScreen(
     var subtitlePickerOpen by remember { mutableStateOf(false) }
     var subtitleSyncOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
+    var castRailOpen by remember { mutableStateOf(false) }
     val overlayOpen = subtitlePickerOpen || subtitleSyncOpen || audioPickerOpen
 
     /**
@@ -244,7 +249,7 @@ fun PlayerScreen(
 
     // Paused: the OSD has nothing to hide behind, so it stays up.
     // Buffering no longer forces the OSD visible to prevent flashing during micro-stutters.
-    val osdVisible = !osdExpired || playback.phase == PlaybackPhase.PAUSED
+    val osdVisible = !osdExpired || playback.phase == PlaybackPhase.PAUSED || castRailOpen
 
     LaunchedEffect(osdVisibleUntil) {
         osdExpired = false
@@ -305,6 +310,11 @@ fun PlayerScreen(
             }
             audioPickerOpen -> {
                 audioPickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            }
+            castRailOpen -> {
+                castRailOpen = false
                 wantsPlayFocus = true
                 poke()
             }
@@ -508,25 +518,48 @@ fun PlayerScreen(
             ExternalSubtitleOverlay(
                 text = subtitleCue,
                 liftForOsd = osdOnScreen,
+                liftForCast = castRailOpen,
                 color = parsedSubtitleColor,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
 
         if (osdOnScreen) {
-            PlayerOsd(
+            PlayerTitlePlate(
                 title = ui.title,
-                subtitle = ui.episodeLabel,
+                date = ui.episodeLabel,
+                logoUrl = ui.logoUrl,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+            PlayerOsd(
                 positionMs = playback.positionMs,
                 durationMs = playback.durationMs,
                 playing = playback.isPlaying,
-                scaleLabel = playback.scaleType.label(),
                 subtitleActive = playback.externalSubtitle != null ||
                     playback.currentSubtitleId != NO_TRACK,
                 onTogglePlay = { viewModel.controller.togglePlayPause(); poke() },
                 onCycleScale = { viewModel.controller.cycleScale(); poke() },
-                onOpenSubtitles = { subtitlePickerOpen = true; poke() },
-                onOpenAudio = { audioPickerOpen = true; poke() },
+                onOpenSubtitles = {
+                    castRailOpen = false
+                    subtitlePickerOpen = true
+                    poke()
+                },
+                onOpenAudio = {
+                    castRailOpen = false
+                    audioPickerOpen = true
+                    poke()
+                },
+                cast = ui.cast,
+                castRailOpen = castRailOpen,
+                castPreview = castPreview,
+                onToggleCast = {
+                    castRailOpen = !castRailOpen
+                    poke()
+                },
+                onPreviewCast = { member ->
+                    viewModel.previewCast(member)
+                    poke()
+                },
                 onControlsFocusChanged = { controlsFocused = it },
                 playButtonFocusRequester = playButtonFocusRequester,
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -942,11 +975,16 @@ private fun SourceRow(
 private fun ExternalSubtitleOverlay(
     text: String,
     liftForOsd: Boolean,
+    liftForCast: Boolean,
     modifier: Modifier = Modifier,
     color: Color = Color.Yellow,
 ) {
     val bottomPadding by animateDpAsState(
-        if (liftForOsd) 168.dp else 40.dp,
+        when {
+            liftForCast -> 350.dp
+            liftForOsd -> 168.dp
+            else -> 40.dp
+        },
         focusTween(),
         label = "subtitle-lift",
     )
@@ -973,26 +1011,25 @@ private fun ExternalSubtitleOverlay(
 
 @Composable
 private fun PlayerOsd(
-    title: String,
-    subtitle: String?,
     positionMs: Long,
     durationMs: Long,
     playing: Boolean,
-    scaleLabel: String,
     subtitleActive: Boolean,
     onTogglePlay: () -> Unit,
     onCycleScale: () -> Unit,
     onOpenSubtitles: () -> Unit,
     onOpenAudio: () -> Unit,
+    cast: List<CastMember>,
+    castRailOpen: Boolean,
+    castPreview: PlayerCastPreviewState,
+    onToggleCast: () -> Unit,
+    onPreviewCast: (CastMember) -> Unit,
     onControlsFocusChanged: (Boolean) -> Unit,
     playButtonFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
-    // The seek bar and the button row hand focus back and forth on up/down
-    // rather than leaving it to Compose's default spatial search: the bar is
-    // a thin 6dp target sitting well below the buttons, exactly the kind of
-    // geometry that search picks the wrong neighbour for.
     val progressBarFocusRequester = remember { FocusRequester() }
+    val firstFlatControlFocusRequester = remember { FocusRequester() }
 
     Column(
         modifier = modifier
@@ -1002,63 +1039,17 @@ private fun PlayerOsd(
                     listOf(HubColors.Background.copy(alpha = 0f), HubColors.Background.copy(alpha = 0.94f))
                 )
             )
-            .padding(horizontal = 24.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(horizontal = 28.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
-            subtitle?.let {
-                Text(it, style = MaterialTheme.typography.titleMedium, color = HubColors.TextDim)
-            }
-        }
-
-        // ---------------------------------------------------------- controls
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(28.dp),
-                modifier = Modifier
-                    // Tracked so the screen's key handler knows when to hand
-                    // left/right to focus movement between these buttons
-                    // instead of using them as seek shortcuts.
-                    .onFocusChanged { onControlsFocusChanged(it.hasFocus) }
-                    // Bubbles up from whichever button is actually focused,
-                    // so every button gets this without repeating it four
-                    // times.
-                    .onKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-                            progressBarFocusRequester.requestFocus()
-                            true
-                        } else {
-                            false
-                        }
-                    },
-            ) {
-                OsdIconButton(
-                    icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = stringResource(if (playing) R.string.player_pause else R.string.player_play),
-                    onClick = onTogglePlay,
-                    modifier = Modifier.focusRequester(playButtonFocusRequester),
-                )
-                OsdIconButton(
-                    icon = Icons.Filled.Subtitles,
-                    contentDescription = stringResource(R.string.player_subtitles),
-                    onClick = onOpenSubtitles,
-                    active = subtitleActive,
-                )
-                OsdIconButton(
-                    icon = Icons.Filled.Audiotrack,
-                    contentDescription = stringResource(R.string.player_audio),
-                    onClick = onOpenAudio,
-                )
-                OsdIconButton(
-                    icon = Icons.Filled.AspectRatio,
-                    contentDescription = stringResource(R.string.player_scale, scaleLabel),
-                    onClick = onCycleScale,
-                )
-            }
+        if (castRailOpen) {
+            CastRail(
+                cast = cast,
+                preview = castPreview,
+                onPreview = onPreviewCast,
+                onControlsFocusChanged = onControlsFocusChanged,
+                onMoveDown = { progressBarFocusRequester.requestFocus() },
+            )
         }
 
         val progressBarInteraction = remember { MutableInteractionSource() }
@@ -1074,130 +1065,430 @@ private fun PlayerOsd(
             label = "progress-bar-glow",
         )
 
-        // A ring around the track, not just a colour swap on the fill: the
-        // fill is a thin sliver at the very start of playback, and a colour
-        // change alone on almost-no-area is exactly the kind of cue this
-        // session's OSD buttons already learned reads as "not evident enough"
-        // from a couch. The ring stays legible regardless of how much of the
-        // bar is actually filled in.
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(progressBarHeight)
-                .clip(RoundedCornerShape(6.dp))
-                .background(HubColors.Border)
-                .border(
-                    width = progressBarGlow,
-                    color = if (progressBarFocused) HubColors.Accent else HubColors.Border.copy(alpha = 0f),
-                    shape = RoundedCornerShape(6.dp),
-                )
-                .focusRequester(progressBarFocusRequester)
-                .focusable(interactionSource = progressBarInteraction)
-                .onKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                        playButtonFocusRequester.requestFocus()
-                        true
-                    } else {
-                        false
-                    }
-                },
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(0.8f)
+                .align(Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val fraction = if (durationMs > 0) {
-                (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
+            TimelinePlayButton(
+                playing = playing,
+                onClick = onTogglePlay,
+                modifier = Modifier
+                    .focusRequester(playButtonFocusRequester)
+                    .onFocusChanged { onControlsFocusChanged(it.hasFocus) }
+                    .onKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                        when (event.key) {
+                            Key.DirectionRight -> progressBarFocusRequester.requestFocus()
+                            Key.DirectionDown -> firstFlatControlFocusRequester.requestFocus()
+                            else -> false
+                        }
+                    },
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = formatTime(positionMs),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
+                ),
+                color = HubColors.Text,
+            )
             Box(
                 Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(fraction)
+                    .weight(1f)
+                    .height(progressBarHeight)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(if (progressBarFocused) HubColors.AccentSoft else HubColors.Accent),
+                    .background(HubColors.Border)
+                    .border(
+                        width = progressBarGlow,
+                        color = if (progressBarFocused) HubColors.Accent else Color.Transparent,
+                        shape = RoundedCornerShape(6.dp),
+                    )
+                    .focusRequester(progressBarFocusRequester)
+                    .focusable(interactionSource = progressBarInteraction)
+                    .onKeyEvent { event ->
+                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                        when (event.key) {
+                            Key.DirectionUp -> playButtonFocusRequester.requestFocus()
+                            Key.DirectionDown -> firstFlatControlFocusRequester.requestFocus()
+                            else -> false
+                        }
+                    },
+            ) {
+                val fraction = if (durationMs > 0) {
+                    (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                } else 0f
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(fraction)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (progressBarFocused) HubColors.AccentSoft else HubColors.Accent),
+                )
+            }
+            Text(
+                text = formatTime((durationMs - positionMs).coerceAtLeast(0L)),
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
+                ),
+                color = HubColors.TextDim,
             )
         }
 
         Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset(y = (-4).dp)
+                .onFocusChanged { onControlsFocusChanged(it.hasFocus) }
+                .onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+                        progressBarFocusRequester.requestFocus(); true
+                    } else false
+                },
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "${formatTime(positionMs)} / ${formatTime(durationMs)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = HubColors.TextDim,
+            FlatOsdButton(
+                label = stringResource(R.string.player_subtitles),
+                onClick = onOpenSubtitles,
+                active = subtitleActive,
+                modifier = Modifier.focusRequester(firstFlatControlFocusRequester),
             )
-            Text(
-                text = scaleLabel,
-                style = MaterialTheme.typography.labelSmall,
-                color = HubColors.TextFaint,
+            FlatOsdButton(
+                label = stringResource(R.string.player_audio_short),
+                onClick = onOpenAudio,
+            )
+            FlatOsdButton(
+                label = stringResource(R.string.player_scale_short),
+                onClick = onCycleScale,
+            )
+            FlatOsdButton(
+                label = stringResource(R.string.player_cast),
+                onClick = onToggleCast,
+                active = castRailOpen,
+                enabled = cast.isNotEmpty(),
             )
         }
     }
 }
 
-/**
- * A circular control that reads the same whether it is pressed with a thumb
- * or a D-pad OK: focus and touch both land on the same target, sized for a
- * fingertip first since that is what most of this app's testing has been on.
- *
- * Every OSD button — play, legenda, áudio, esticar — shares this one size, so
- * play does not read as more important than the controls beside it and the
- * row scans evenly left to right.
- *
- * Every property that changes with focus — scale, background, border —
- * animates on the same [FOCUS_TWEEN], so walking the row with left/right
- * reads as one continuous slide from button to button rather than a series
- * of snaps. `.scale()` is applied outside the `.size()`/`.clip()` chain
- * specifically so growing to 1.15x never breaks the circle back into an
- * ellipse.
- */
+/** Title identity anchored halfway down the left edge of the picture. */
 @Composable
-private fun OsdIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
+private fun PlayerTitlePlate(
+    title: String,
+    date: String?,
+    logoUrl: String?,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .padding(start = 40.dp)
+            .widthIn(max = 380.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        if (!logoUrl.isNullOrBlank()) {
+            AsyncImage(
+                model = logoUrl,
+                contentDescription = title,
+                contentScale = ContentScale.Fit,
+                alignment = Alignment.CenterStart,
+                modifier = Modifier
+                    .width(256.dp)
+                    .heightIn(max = 76.dp),
+            )
+        } else {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineLarge,
+                color = HubColors.Text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        date?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.titleMedium,
+                color = HubColors.TextDim,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimelinePlayButton(
+    playing: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    active: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-
-    val scale by animateFloatAsState(if (focused) 1.15f else 1f, focusTween(), label = "osd-scale")
-    val background by animateColorAsState(
-        when {
-            focused -> HubColors.Accent
-            active -> HubColors.Accent.copy(alpha = 0.28f)
-            else -> HubColors.Surface.copy(alpha = 0.7f)
-        },
-        focusTween(),
-        label = "osd-background",
-    )
-    val borderColor by animateColorAsState(
-        when {
-            focused -> HubColors.Accent
-            active -> HubColors.Accent.copy(alpha = 0.6f)
-            else -> HubColors.Border
-        },
-        focusTween(),
-        label = "osd-border-color",
-    )
-    val borderWidth by animateDpAsState(if (focused) 2.dp else 1.dp, focusTween(), label = "osd-border-width")
+    val scale by animateFloatAsState(if (focused) 1.13f else 1f, focusTween(), label = "play-scale")
 
     Box(
         modifier = modifier
             .scale(scale)
-            .size(48.dp)
+            .size(50.dp)
             .clip(CircleShape)
-            .background(background)
-            .border(width = borderWidth, color = borderColor, shape = CircleShape)
+            .background(if (focused) Color.White else HubColors.Accent)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = if (focused || active) HubColors.Text else HubColors.TextDim,
-            modifier = Modifier.size(24.dp),
+            imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            contentDescription = stringResource(if (playing) R.string.player_pause else R.string.player_play),
+            tint = HubColors.Background,
+            modifier = Modifier.size(28.dp),
         )
+    }
+}
+
+@Composable
+private fun FlatOsdButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = false,
+    enabled: Boolean = true,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val background by animateColorAsState(
+        when {
+            focused && enabled -> Color.White
+            active -> HubColors.Accent.copy(alpha = 0.22f)
+            else -> HubColors.Surface.copy(alpha = 0.52f)
+        },
+        focusTween(),
+        label = "flat-control-background",
+    )
+    val foreground = when {
+        !enabled -> HubColors.TextFaint.copy(alpha = 0.45f)
+        focused -> HubColors.Background
+        active -> HubColors.AccentSoft
+        else -> HubColors.TextDim
+    }
+
+    Box(
+        modifier = Modifier
+            .width(88.dp)
+            .height(27.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = modifier
+                .width(75.dp)
+                .height(27.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(background)
+                .border(
+                    width = 1.dp,
+                    color = when {
+                        focused && enabled -> Color.White
+                        active -> HubColors.Accent
+                        else -> HubColors.Border
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                )
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                ),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = foreground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** D-pad focus is the TV equivalent of hover; touch selects the same portrait. */
+@Composable
+private fun CastRail(
+    cast: List<CastMember>,
+    preview: PlayerCastPreviewState,
+    onPreview: (CastMember) -> Unit,
+    onControlsFocusChanged: (Boolean) -> Unit,
+    onMoveDown: () -> Unit,
+) {
+    val firstCastFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(cast) {
+        val first = cast.firstOrNull() ?: return@LaunchedEffect
+        onPreview(first)
+        repeat(FOCUS_RESTORE_ATTEMPTS) {
+            withFrameNanos { }
+            if (firstCastFocusRequester.requestFocus()) return@LaunchedEffect
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(HubColors.Surface.copy(alpha = 0.88f))
+            .border(1.dp, HubColors.Border.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+            .padding(vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        CastBiographyCard(preview)
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(66.dp)
+                .onFocusChanged { onControlsFocusChanged(it.hasFocus) }
+                .onKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+                        onMoveDown(); true
+                    } else false
+                },
+            contentPadding = PaddingValues(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items(cast.take(16), key = { it.id }) { member ->
+                CastBubble(
+                    member = member,
+                    selected = preview.member?.id == member.id,
+                    onPreview = { onPreview(member) },
+                    modifier = if (member.id == cast.firstOrNull()?.id) {
+                        Modifier.focusRequester(firstCastFocusRequester)
+                    } else Modifier,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CastBiographyCard(preview: PlayerCastPreviewState) {
+    val member = preview.member
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 76.dp)
+            .padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(HubColors.SurfaceStrong),
+            contentAlignment = Alignment.Center,
+        ) {
+            val photo = member?.profileUrl ?: preview.summary?.thumbnailUrl
+            if (photo != null) {
+                AsyncImage(
+                    model = photo,
+                    contentDescription = member?.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(Icons.Filled.Person, null, tint = HubColors.TextFaint, modifier = Modifier.size(28.dp))
+            }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+                text = member?.name ?: stringResource(R.string.player_cast),
+                style = MaterialTheme.typography.titleMedium,
+                color = HubColors.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            member?.character?.let { role ->
+                Text(
+                    text = role,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HubColors.AccentSoft,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            when {
+                preview.loading -> HubSpinner(size = 22.dp)
+                preview.summary != null -> Text(
+                    text = preview.summary.extract,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = HubColors.TextDim,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                preview.unavailable && member != null -> Text(
+                    text = stringResource(R.string.detail_wikipedia_error, member.name),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = HubColors.TextFaint,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CastBubble(
+    member: CastMember,
+    selected: Boolean,
+    onPreview: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val bubbleScale by animateFloatAsState(
+        if (focused) 1.12f else 1f,
+        focusTween(),
+        label = "cast-bubble-scale",
+    )
+    val borderWidth by animateDpAsState(
+        if (focused || selected) 3.dp else 1.dp,
+        focusTween(),
+        label = "cast-bubble-border",
+    )
+
+    Box(
+        modifier = modifier
+            .scale(bubbleScale)
+            .size(54.dp)
+            .clip(CircleShape)
+            .background(HubColors.SurfaceStrong)
+            .border(
+                borderWidth,
+                if (focused || selected) HubColors.Accent else HubColors.Border,
+                CircleShape,
+            )
+            .onFocusChanged { if (it.isFocused) onPreview() }
+            .clickable(interactionSource = interaction, indication = null, onClick = onPreview),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (member.profileUrl != null) {
+            AsyncImage(
+                model = member.profileUrl,
+                contentDescription = member.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                Icons.Filled.Person,
+                member.name,
+                tint = HubColors.TextFaint,
+                modifier = Modifier.size(25.dp),
+            )
+        }
     }
 }
 
@@ -1790,16 +2081,6 @@ private fun formatSubtitleOffset(ms: Long): String {
         else -> "+$magnitude"
     }
 }
-
-/** The human name for a scale mode — see the note in `PlaybackState`. */
-@Composable
-private fun VideoScaleType.label(): String = stringResource(
-    when (this) {
-        VideoScaleType.FIT -> R.string.player_scale_fit
-        VideoScaleType.ZOOM -> R.string.player_scale_zoom
-        VideoScaleType.STRETCH -> R.string.player_scale_stretch
-    },
-)
 
 /**
  * What a track is called, from what the container declared — its own label

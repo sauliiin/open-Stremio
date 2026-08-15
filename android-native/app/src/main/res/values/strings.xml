@@ -43,7 +43,7 @@
     <string name="detail_studio">Estúdio: %1$s</string>
     <string name="detail_wikipedia">Ver na Wikipedia</string>
     <string name="detail_close">Fechar</string>
-    <string name="detail_wikipedia_error">Não foi encontrada biografia para %1$s na Wikipedia</string>
+    <string name="detail_wikipedia_error">Não foi encontrada biografia para %1$s</string>
     <string name="detail_seasons">Temporadas</string>
     <string name="detail_season_number">T%1$d</string>
     <string name="detail_recommendations">Parecidos</string>
@@ -163,6 +163,9 @@
     <string name="player_pause">Pausar</string>
     <string name="player_subtitles">Legenda</string>
     <string name="player_audio">Faixa de áudio</string>
+    <string name="player_audio_short">Áudio</string>
+    <string name="player_scale_short">Esticar</string>
+    <string name="player_cast">Elenco</string>
     <string name="player_no_subtitle">Sem legenda</string>
     <string name="player_subtitle_sync">Sincronizar legenda</string>
     <string name="player_subtitle_sync_disabled">Sincronizar legenda — selecione uma legenda</string>

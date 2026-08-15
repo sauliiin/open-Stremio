@@ -63,8 +63,26 @@ internal object HeapBudget {
      * The point below which playback stutters regardless, so there is no
      * reason to go under it — if the device cannot afford even this, a smaller
      * buffer would not save it either.
+     *
+     * Raised from 24MB after devices with 1.5–2.5GB of total RAM kept
+     * rebuffering on high-bitrate remuxes: at ~25Mbps, 24MB is only ~8s of
+     * forward buffer, well under what a normal network hiccup drains.
+     *
+     * Deliberately pushed almost up to [PREFERRED_MIN_BYTES] rather than to
+     * some smaller compromise. Set this close enough to `PREFERRED_MIN_BYTES`
+     * and `targetBufferBytes`'s floor collapses to effectively
+     * `min(PREFERRED_MIN_BYTES, maxMemory() / 3)` on tight devices — i.e. the
+     * *heap* ceiling the rest of this file already treats as the real risk
+     * line (a third of the heap, leaving two thirds for Compose/Coil/decoders)
+     * becomes the only thing still standing between this floor and an OOM,
+     * instead of a second, more conservative floor underneath it. That is the
+     * trade: this stops yielding to a low *free-RAM* reading (the
+     * low-memory-killer's own signal) on the tightest boxes, and leans on the
+     * heap math alone. Remeasure on an actual 1.5GB device if OOMs or process
+     * kills show up where they did not before — this is intentionally right
+     * at that edge, not short of it.
      */
-    private const val ABSOLUTE_MIN_BYTES = 24L * 1024 * 1024
+    private const val ABSOLUTE_MIN_BYTES = 88L * 1024 * 1024
 
     /**
      * Above this the extra buffer buys nothing a viewer can perceive.

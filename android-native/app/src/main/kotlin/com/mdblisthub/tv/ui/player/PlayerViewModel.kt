@@ -5,11 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
+import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
+import com.mdblisthub.tv.core.model.WikipediaLookup
 import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
@@ -34,8 +37,17 @@ data class PlayerUiState(
     /** Set only while the addons are being asked, before the cascade starts. */
     val searching: Boolean = true,
     val subtitles: List<SubtitleOption> = emptyList(),
+    val cast: List<CastMember> = emptyList(),
     val noAddons: Boolean = false,
     val missingImdbId: Boolean = false,
+)
+
+/** The compact biography card that follows focus in the player's cast rail. */
+data class PlayerCastPreviewState(
+    val member: CastMember? = null,
+    val loading: Boolean = false,
+    val summary: PersonSummary? = null,
+    val unavailable: Boolean = false,
 )
 
 /**
@@ -76,6 +88,11 @@ class PlayerViewModel(
     private val _ui = MutableStateFlow(PlayerUiState())
     val ui: StateFlow<PlayerUiState> = _ui.asStateFlow()
 
+    private val _castPreview = MutableStateFlow(PlayerCastPreviewState())
+    val castPreview: StateFlow<PlayerCastPreviewState> = _castPreview.asStateFlow()
+    private val castSummaryCache = mutableMapOf<Int, PersonSummary?>()
+    private var castPreviewJob: Job? = null
+
     val subtitleColor: StateFlow<String> = graph.uiPreferences.subtitleColor
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "white")
 
@@ -109,7 +126,9 @@ class PlayerViewModel(
         // Kept running past the cascade below — it is what upgrades the veil
         // from the card's poster to a real backdrop and clearlogo.
         val hydration = viewModelScope.async {
-            graph.media.ensureDetail(type, tmdbId)
+            // Cast is now visible during playback. Complete hydration still
+            // runs beside source discovery and never delays the video.
+            graph.media.ensureCompleteDetail(type, tmdbId)
             graph.media.cachedDetail(type, tmdbId)
         }
 
@@ -175,7 +194,41 @@ class PlayerViewModel(
                 },
                 logoUrl = detail?.logoUrl ?: it.logoUrl,
                 overview = detail?.overview ?: it.overview,
+                cast = detail?.cast?.takeIf { members -> members.isNotEmpty() } ?: it.cast,
             )
+        }
+    }
+
+    /** Loads the biography selected by D-pad focus or touch, with session cache. */
+    fun previewCast(member: CastMember) {
+        if (_castPreview.value.member?.id == member.id &&
+            (_castPreview.value.loading || _castPreview.value.summary != null || _castPreview.value.unavailable)
+        ) return
+
+        if (castSummaryCache.containsKey(member.id)) {
+            val cached = castSummaryCache[member.id]
+            _castPreview.value = PlayerCastPreviewState(
+                member = member,
+                summary = cached,
+                unavailable = cached == null,
+            )
+            return
+        }
+
+        castPreviewJob?.cancel()
+        _castPreview.value = PlayerCastPreviewState(member = member, loading = true)
+        castPreviewJob = viewModelScope.launch {
+            val lookup = graph.wikipedia.summaryFor(member.id, member.name)
+            val summary = (lookup as? WikipediaLookup.Found)?.summary
+            castSummaryCache[member.id] = summary
+            _castPreview.update { current ->
+                if (current.member?.id != member.id) current
+                else PlayerCastPreviewState(
+                    member = member,
+                    summary = summary,
+                    unavailable = lookup is WikipediaLookup.NotFound,
+                )
+            }
         }
     }
 

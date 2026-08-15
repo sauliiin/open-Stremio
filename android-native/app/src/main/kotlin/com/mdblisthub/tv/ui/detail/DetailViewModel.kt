@@ -140,13 +140,14 @@ class DetailViewModel(
 
     /**
      * Opens the popup immediately, in a loading state, then fills it in once
-     * Wikipedia answers — the name is all a cast credit carries, so there is
-     * nothing faster to show first.
+     * Wikipedia (or its TMDB fallback) answers — the credit already carries
+     * both the name and the TMDB person id, so there is nothing faster to
+     * show first.
      */
     fun openCast(member: CastMember) {
         _castBio.value = CastBioState(member = member, loading = true)
         viewModelScope.launch {
-            val result = graph.wikipedia.summaryFor(member.name)
+            val result = graph.wikipedia.summaryFor(member.id, member.name)
             _castBio.update {
                 // The popup may have been closed, or another member opened,
                 // while this was in flight — a stale answer should not
@@ -157,9 +158,12 @@ class DetailViewModel(
                     is WikipediaLookup.NotFound -> it.copy(
                         loading = false,
                         summary = null,
-                        // The reason is shown, not just swallowed, so a real
-                        // failure (network, parsing) reads differently from
-                        // an actor who genuinely has no Wikipedia article.
+                        // Reached only once both Wikipedia and its TMDB
+                        // fallback have nothing — the reason itself is not
+                        // shown, just logged (see WikipediaRepository), since
+                        // a real failure (network, parsing) and an actor who
+                        // genuinely has no bio anywhere both read the same
+                        // to the person looking at the popup.
                         error = "WIKIPEDIA_NOT_FOUND",
                     )
                 }

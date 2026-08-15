@@ -43,7 +43,7 @@
     <string name="detail_studio">Studio: %1$s</string>
     <string name="detail_wikipedia">View on Wikipedia</string>
     <string name="detail_close">Close</string>
-    <string name="detail_wikipedia_error">No Wikipedia biography found for %1$s</string>
+    <string name="detail_wikipedia_error">No biography found for %1$s</string>
     <string name="detail_seasons">Seasons</string>
     <string name="detail_season_number">S%1$d</string>
     <string name="detail_recommendations">Similar</string>
@@ -163,6 +163,9 @@
     <string name="player_pause">Pause</string>
     <string name="player_subtitles">Subtitles</string>
     <string name="player_audio">Audio track</string>
+    <string name="player_audio_short">Audio</string>
+    <string name="player_scale_short">Stretch</string>
+    <string name="player_cast">Cast</string>
     <string name="player_no_subtitle">No subtitles</string>
     <string name="player_subtitle_sync">Sync subtitles</string>
     <string name="player_subtitle_sync_disabled">Sync subtitles — pick a subtitle first</string>
