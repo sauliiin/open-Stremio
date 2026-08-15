@@ -60,6 +60,7 @@ fun HubNavHost(graph: DataGraph) {
     LaunchedEffect(Unit) {
         graph.auth.restore()
         graph.listPreferencesSync.restore()
+        graph.firebaseSync.restore()
         graph.scheduler.syncNow()
         restored = true
     }

@@ -104,6 +104,40 @@ class FirebaseSyncRepository(
     }
 
     /**
+     * Brings this device in line with the cloud at startup, when sync is on.
+     *
+     * Without this, a device only ever learned about another device's addons
+     * if someone opened Addons and pressed "Baixar" by hand: `pull` had
+     * exactly one caller, that button. Installing an addon on the television
+     * pushed it correctly and the phone simply never looked, which reads as
+     * "sync is broken" and effectively was.
+     *
+     * The cloud wins here, deliberately. `push` writes the whole list, so the
+     * stored copy is the account's state, not a partial delta — the same
+     * model Stremio uses, where signing in re-fetches the addon collection and
+     * the account is the source of truth. An empty stored node is the one
+     * exception: it means no device has ever pushed, so this one seeds it
+     * instead of wiping itself against nothing.
+     *
+     * Failures are swallowed on purpose. This runs before the first frame; a
+     * device that opens offline should start with its cached addons, not an
+     * error, and the next start or an explicit "Baixar" will catch it up.
+     */
+    suspend fun restore() {
+        if (!store.firebaseSyncEnabled.first()) return
+        runCatching {
+            val (uid, token) = auth.firebaseSession()
+            val remote = read(uid, token)
+            if (remote == null) {
+                write(uid, token, addons.entities().map { it.toSyncedDto() })
+            } else {
+                addons.replaceAll(remote)
+            }
+            lastState.value = nowIso()
+        }.onFailure { Log.w(TAG, "Falha ao restaurar addons na abertura.", it) }
+    }
+
+    /**
      * Turns sync on by joining the two lists: whatever is stored plus
      * whatever this device already had, pushed back so both sides agree.
      */

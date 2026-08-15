@@ -290,6 +290,12 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                     launch { graph.lists.refreshLists(force = true) }
                     launch { graph.homeFeeds.refresh() }
                     launch { graph.playback.refreshResumePoints() }
+                    // Addons installed on another device land here too, not
+                    // only on a cold start: this is the same "account activity
+                    // changed elsewhere" case as the rows above, and without
+                    // it a television left open never sees what the phone just
+                    // installed.
+                    launch { graph.firebaseSync.restore() }
                 }
                 graph.scheduler.hydrateSoon()
             } finally {
