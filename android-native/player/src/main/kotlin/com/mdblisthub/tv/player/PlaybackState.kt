@@ -70,13 +70,42 @@ enum class PlaybackPhase {
  * [label] and [language] are whatever the container declared, both nullable
  * and neither invented here. A track with no label and no language code needs
  * a name like "Track 2", and inventing that in this module would mean writing
- * it in one fixed language — so the UI composes it instead.
+ * it in one fixed language — so the UI composes it instead. [mimeType] and
+ * [channelCount] ride along for the same reason: what tells two same-labelled
+ * tracks apart is their codec and channel layout, but "AC3 5.1" is a phrase
+ * assembled next to the word "Estéreo", which only the UI can translate.
  */
 data class TrackInfo(
     val id: Int,
     val label: String? = null,
     val language: String? = null,
+    /** Container sample MIME — `audio/ac3`, `audio/vnd.dts` — or null. */
+    val mimeType: String? = null,
+    /** Declared channel count, or null when the container did not say. */
+    val channelCount: Int? = null,
+    /**
+     * Whether any decoder on this device can play it.
+     *
+     * Unplayable tracks are still listed. Dropping them silently is the worse
+     * failure: a file whose only Portuguese audio is DTS-HD then looks like a
+     * file with no Portuguese audio at all, and nothing on screen distinguishes
+     * "your box cannot decode this" from "the release does not have it". The UI
+     * must still refuse to *select* one — forcing a selection override onto a
+     * track with no decoder throws inside the renderer, and this controller
+     * reads a renderer error as "this mirror went bad" and swaps the stream.
+     */
+    val playable: Boolean = true,
 )
+
+/**
+ * "No track of this type is selected" — what [PlaybackState.currentSubtitleId]
+ * and [PlaybackState.currentAudioId] hold when nothing is on.
+ *
+ * Named rather than a bare -1 because it is now something callers *pass*:
+ * turning the container's captions off is `selectSubtitleTrack(NO_TRACK)`,
+ * and `selectSubtitleTrack(-1)` at a call site reads like a bug.
+ */
+const val NO_TRACK = -1
 
 /**
  * How far the subtitle offset reaches in either direction.
@@ -101,8 +130,10 @@ data class PlaybackState(
     val durationMs: Long = 0,
     val audioTracks: List<TrackInfo> = emptyList(),
     val subtitleTracks: List<TrackInfo> = emptyList(),
-    val currentAudioId: Int = -1,
-    val currentSubtitleId: Int = -1,
+    val currentAudioId: Int = NO_TRACK,
+    /** The container's own subtitle track, or [NO_TRACK]. Never on at the same
+     *  time as [externalSubtitle] — see [PlaybackController.selectSubtitleTrack]. */
+    val currentSubtitleId: Int = NO_TRACK,
     val externalSubtitle: SubtitleOption? = null,
     /** Signed subtitle shift: negative shows cues earlier, positive later. */
     val subtitleOffsetMs: Long = 0,

@@ -167,6 +167,8 @@
     <string name="player_subtitle_sync">Sincronizar legenda</string>
     <string name="player_subtitle_sync_disabled">Sincronizar legenda — selecione uma legenda</string>
     <string name="player_subtitle_sync_value">Sincronizar legenda  %1$s</string>
+    <string name="player_subtitle_sync_embedded">Sincronizar legenda — só vale para legenda de addon</string>
+    <string name="player_subtitle_embedded">Do arquivo</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Arraste ou use ◀ ▶  •  OK conclui</string>
     <string name="player_scale">Esticar: %1$s</string>
@@ -175,6 +177,10 @@
     <string name="player_scale_stretch">Esticar</string>
     <string name="player_track_language">Faixa %1$s</string>
     <string name="player_track_index">Faixa %1$d</string>
+    <string name="player_track_unsupported">Este aparelho não decodifica esta faixa</string>
+    <string name="player_track_channels_mono">Mono</string>
+    <string name="player_track_channels_stereo">Estéreo</string>
+    <string name="player_track_channels">%1$d canais</string>
 
     <!-- Player: motivos de falha -->
     <string name="player_error_no_candidates">Nenhum addon devolveu um link reproduzível para este título.</string>

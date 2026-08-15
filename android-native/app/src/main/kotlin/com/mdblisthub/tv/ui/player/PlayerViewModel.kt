@@ -10,6 +10,7 @@ import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.SubtitleOption
+import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
 import kotlinx.coroutines.Job
@@ -17,7 +18,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -249,6 +249,22 @@ class PlayerViewModel(
     }
 
     /**
+     * The same picker's other half: a subtitle the container already carries,
+     * which needs neither a download nor a parse — the controller hands the
+     * track straight to the player's own renderer.
+     *
+     * Cancelling [subtitleFetchJob] is the part that is easy to miss. An addon
+     * subtitle already in flight would otherwise finish afterwards and replace
+     * this one, and the picker would sit there showing a choice the player had
+     * silently thrown away.
+     */
+    fun selectEmbeddedSubtitle(id: Int) {
+        subtitleChosenByUser = true
+        subtitleFetchJob?.cancel()
+        controller.selectSubtitleTrack(id)
+    }
+
+    /**
      * Downloads and parses the file before handing it to the controller,
      * which only ever holds cues, never a URL — see `PlaybackController`.
      * The previous request is cancelled outright rather than raced: a user
@@ -258,6 +274,11 @@ class PlayerViewModel(
     private fun applySubtitle(option: SubtitleOption?) {
         subtitleFetchJob?.cancel()
         if (option == null) {
+            // "Sem legenda" has to mean *neither* kind. Clearing only the
+            // external one left a container track — which ExoPlayer may have
+            // switched on by itself — still drawing captions over a film the
+            // user had just asked to have none.
+            controller.selectSubtitleTrack(NO_TRACK)
             controller.selectExternalSubtitle(null, null)
             return
         }
@@ -275,17 +296,54 @@ class PlayerViewModel(
      * a convenience, not an override.
      */
     private suspend fun autoSelectSubtitle() {
-        val (playback, uiState) = combine(controller.state, ui, ::Pair)
-            .first { (playback, uiState) -> playback.canShowVideo && uiState.subtitles.isNotEmpty() }
+        // Waits on the container's track list, not on the addon results: the
+        // two arrive at very different times, and the embedded pass below is
+        // ready long before any addon answers. `audioTracks` being non-empty is
+        // what says the list has actually been read — the same signal
+        // [autoSelectAudio] waits on, and necessary because `canShowVideo` is
+        // already true while buffering, before any track is known.
+        val playback = controller.state
+            .first { it.canShowVideo && it.audioTracks.isNotEmpty() }
 
         if (subtitleChosenByUser) return
 
+        val preferredLang = graph.uiPreferences.subtitleLanguage.first()
+
+        // A subtitle the file already carries beats an addon match in the same
+        // language, and is tried first for two reasons: it costs no download,
+        // and it was cut against this exact release — which is the failure an
+        // addon subtitle has most often, and the reason the sync bar exists.
+        //
+        // The language code is compared with `startsWith` so "pt" matches
+        // "pt-BR", the way `SubtitleMatcher` does it; the label is a
+        // `contains` because it is free text, the way [autoSelectAudio] does
+        // it. A track with no decoder is skipped — it is in the list to be
+        // seen, not to be chosen.
+        val embedded = playback.subtitleTracks.indexOfFirst { track ->
+            track.playable && (
+                track.language?.lowercase()?.startsWith(preferredLang) == true ||
+                    track.label?.lowercase()?.contains(preferredLang) == true
+                )
+        }
+        if (embedded >= 0) {
+            // Straight to the controller, not through [selectEmbeddedSubtitle]:
+            // that one records a *user* choice, and this is the convenience
+            // that a user choice is supposed to be allowed to override.
+            controller.selectSubtitleTrack(embedded)
+            return
+        }
+
+        // Only the addon half is a download, so only it answers to the setting.
         val autoDownload = graph.uiPreferences.subtitleAutoDownload.first()
         if (!autoDownload) return
 
-        val preferredLang = graph.uiPreferences.subtitleLanguage.first()
+        val uiState = ui.first { it.subtitles.isNotEmpty() }
+        if (subtitleChosenByUser) return
 
-        val playingRelease = playback.activeStream
+        // Re-read rather than reused from above: the cascade may have moved to
+        // a different candidate while the addons were still answering, and the
+        // release a subtitle is matched against has to be the one playing now.
+        val playingRelease = controller.state.value.activeStream
             ?.let { listOfNotNull(it.title, it.filename).joinToString(" ") }
         SubtitleMatcher.bestMatch(uiState.subtitles, playingRelease, preferredLang)?.let(::applySubtitle)
     }
@@ -299,8 +357,14 @@ class PlayerViewModel(
         // Both the container's own label and its language code are candidates,
         // and both are optional — a track that declares neither cannot be
         // matched against a language preference at all.
+        //
+        // `playable` first: the track list now includes formats this device has
+        // no decoder for, so the preferred language can match one, and auto-
+        // selecting it would fail playback outright. Falling back to whatever
+        // the container chose by default is the right outcome there — the
+        // picker still shows the user why their language was skipped.
         val trackIndex = playback.audioTracks.indexOfFirst { track ->
-            listOfNotNull(track.label, track.language)
+            track.playable && listOfNotNull(track.label, track.language)
                 .any { it.lowercase().contains(preferredLang) }
         }
 

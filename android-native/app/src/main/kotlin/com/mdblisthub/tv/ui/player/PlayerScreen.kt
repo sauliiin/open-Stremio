@@ -108,6 +108,7 @@ import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.player.ExoVideoSurface
 import com.mdblisthub.tv.player.MAX_SUBTITLE_OFFSET_MS
+import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.TrackInfo
@@ -520,7 +521,8 @@ fun PlayerScreen(
                 durationMs = playback.durationMs,
                 playing = playback.isPlaying,
                 scaleLabel = playback.scaleType.label(),
-                subtitleActive = playback.externalSubtitle != null,
+                subtitleActive = playback.externalSubtitle != null ||
+                    playback.currentSubtitleId != NO_TRACK,
                 onTogglePlay = { viewModel.controller.togglePlayPause(); poke() },
                 onCycleScale = { viewModel.controller.cycleScale(); poke() },
                 onOpenSubtitles = { subtitlePickerOpen = true; poke() },
@@ -535,7 +537,9 @@ fun PlayerScreen(
     if (subtitlePickerOpen) {
         SubtitlePickerOverlay(
             options = ui.subtitles,
+            embedded = playback.subtitleTracks,
             active = playback.externalSubtitle,
+            activeEmbeddedId = playback.currentSubtitleId,
             offsetMs = playback.subtitleOffsetMs,
             onOpenSync = {
                 subtitlePickerOpen = false
@@ -544,6 +548,12 @@ fun PlayerScreen(
             },
             onSelect = { option ->
                 viewModel.selectSubtitle(option)
+                subtitlePickerOpen = false
+                wantsPlayFocus = true
+                poke()
+            },
+            onSelectEmbedded = { id ->
+                viewModel.selectEmbeddedSubtitle(id)
                 subtitlePickerOpen = false
                 wantsPlayFocus = true
                 poke()
@@ -1196,10 +1206,19 @@ private fun <T> focusTween(): FiniteAnimationSpec<T> = tween(durationMillis = 20
 @Composable
 private fun SubtitlePickerOverlay(
     options: List<SubtitleOption>,
+    /**
+     * The container's own subtitle tracks, listed above the addons' because
+     * they need no download and are cut for the release actually playing.
+     * Each row says where it came from, since "Português" from the file and
+     * "Português" from OpenSubtitles are otherwise the same row twice.
+     */
+    embedded: List<TrackInfo>,
     active: SubtitleOption?,
+    activeEmbeddedId: Int,
     offsetMs: Long,
     onOpenSync: () -> Unit,
     onSelect: (SubtitleOption?) -> Unit,
+    onSelectEmbedded: (Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Opening the sheet does not move focus on its own — it was left sitting
@@ -1240,13 +1259,19 @@ private fun SubtitlePickerOverlay(
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
                 item(key = "sync") {
                     SubtitleRow(
-                        label = if (active == null) {
-                            stringResource(R.string.player_subtitle_sync_disabled)
-                        } else {
-                            stringResource(
+                        // The offset shifts cues this app parses and draws
+                        // itself. A container track is drawn by the player's
+                        // own renderer and cannot be moved, so it gets a
+                        // reason of its own — "selecione uma legenda" in front
+                        // of a plainly selected subtitle reads as a bug.
+                        label = when {
+                            active != null -> stringResource(
                                 R.string.player_subtitle_sync_value,
                                 formatSubtitleOffset(offsetMs),
                             )
+                            activeEmbeddedId != NO_TRACK ->
+                                stringResource(R.string.player_subtitle_sync_embedded)
+                            else -> stringResource(R.string.player_subtitle_sync_disabled)
                         },
                         selected = offsetMs != 0L,
                         enabled = active != null,
@@ -1261,7 +1286,7 @@ private fun SubtitlePickerOverlay(
                 item(key = "none") {
                     SubtitleRow(
                         label = stringResource(R.string.player_no_subtitle),
-                        selected = active == null,
+                        selected = active == null && activeEmbeddedId == NO_TRACK,
                         modifier = if (active == null) {
                             Modifier.focusRequester(firstRowFocus)
                         } else {
@@ -1270,7 +1295,27 @@ private fun SubtitlePickerOverlay(
                         onClick = { onSelect(null) },
                     )
                 }
-                items(options, key = { it.key }) { option ->
+                // Prefixed keys, not the bare id: a track index and an addon
+                // option's key are unrelated namespaces sharing one LazyColumn,
+                // and a collision between them is a crash.
+                items(embedded, key = { "embedded-${it.id}" }) { track ->
+                    SubtitleRow(
+                        label = stringResource(
+                            R.string.player_subtitle_option,
+                            track.displayLabel(),
+                            stringResource(R.string.player_subtitle_embedded),
+                        ),
+                        selected = track.id == activeEmbeddedId,
+                        enabled = track.playable,
+                        supporting = if (track.playable) {
+                            null
+                        } else {
+                            stringResource(R.string.player_track_unsupported)
+                        },
+                        onClick = { onSelectEmbedded(track.id) },
+                    )
+                }
+                items(options, key = { "addon-${it.key}" }) { option ->
                     SubtitleRow(
                         label = stringResource(R.string.player_subtitle_option, option.label, option.addon),
                         selected = active?.key == option.key,
@@ -1289,11 +1334,17 @@ private fun SubtitleRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    /**
+     * A second, quieter line under [label] — why a row is greyed out, when
+     * being greyed out on its own would read as a bug. Kept out of [label]
+     * so the reason cannot elbow the track's actual name off the row.
+     */
+    supporting: String? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
 
-    Row(
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .clickable(
@@ -1320,6 +1371,13 @@ private fun SubtitleRow(
                 else -> HubColors.TextDim
             },
         )
+        if (supporting != null) {
+            Text(
+                text = supporting,
+                style = MaterialTheme.typography.bodySmall,
+                color = HubColors.TextFaint,
+            )
+        }
     }
 }
 
@@ -1624,6 +1682,11 @@ private fun offsetAt(x: Float, width: Float, insetPx: Float): Long {
  * Same sheet as [SubtitlePickerOverlay], one list over: libVLC's own audio
  * tracks rather than an addon's subtitle options, so there is no "nenhuma"
  * row — a file always has at least one audio track playing.
+ *
+ * Every track the container declares appears here, including ones no decoder
+ * on this device can open — those as a disabled row saying so. Hiding them,
+ * which is what this did, made a DTS-only Portuguese dub indistinguishable
+ * from a release that simply has no Portuguese.
  */
 @Composable
 private fun AudioPickerOverlay(
@@ -1634,8 +1697,17 @@ private fun AudioPickerOverlay(
 ) {
     // Same fix as SubtitlePickerOverlay: without this, focus stays on the
     // now-hidden "Áudio" OSD button and the d-pad has nothing to move.
+    //
+    // Aimed at the first *playable* row rather than the first row: an
+    // undecodable track is a disabled `clickable`, so it is not a focus target
+    // at all, and requesting focus on one throws. If nothing is playable —
+    // a file whose every audio track is exotic — there is no row to land on
+    // and focus stays put rather than crashing the sheet open.
     val firstRowFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { firstRowFocus.requestFocus() }
+    val focusIndex = remember(options) {
+        options.indexOfFirst { it.playable }.takeIf { it >= 0 }
+    }
+    LaunchedEffect(focusIndex) { if (focusIndex != null) firstRowFocus.requestFocus() }
 
     Box(
         Modifier
@@ -1665,7 +1737,17 @@ private fun AudioPickerOverlay(
                     SubtitleRow(
                         label = option.displayLabel(),
                         selected = option.id == activeId,
-                        modifier = if (index == 0) Modifier.focusRequester(firstRowFocus) else Modifier,
+                        enabled = option.playable,
+                        supporting = if (option.playable) {
+                            null
+                        } else {
+                            stringResource(R.string.player_track_unsupported)
+                        },
+                        modifier = if (index == focusIndex) {
+                            Modifier.focusRequester(firstRowFocus)
+                        } else {
+                            Modifier
+                        },
                         onClick = { onSelect(option.id) },
                     )
                 }
@@ -1719,18 +1801,103 @@ private fun VideoScaleType.label(): String = stringResource(
 
 /**
  * What a track is called, from what the container declared — its own label
- * first, then its language code, and only then a positional fallback.
+ * first, then its language, and only then a positional fallback — followed by
+ * the codec and channel layout.
+ *
+ * The technical half is what makes the list usable on the files people
+ * actually play. A remux typically labels nothing, so every track came out as
+ * "Faixa POR" / "Faixa ENG"; two Portuguese tracks — the dub in 5.1 and the
+ * original in stereo — were then the same string twice, and the only way to
+ * tell them apart was to pick one and listen.
  */
 @Composable
 private fun TrackInfo.displayLabel(): String {
-    val declared = label?.takeIf { it.isNotBlank() }
-    if (declared != null) return declared
+    val name = label?.takeIf { it.isNotBlank() }
+        ?: languageName()
+        ?: stringResource(R.string.player_track_index, id + 1)
 
-    val code = language?.takeIf { it.isNotBlank() }
-    return if (code != null) {
-        stringResource(R.string.player_track_language, code.uppercase())
-    } else {
-        stringResource(R.string.player_track_index, id + 1)
+    val codec = codecName()
+    val detail = listOfNotNull(codec, channelName()).joinToString(" ")
+
+    // A container that spelled the codec into its own label already said this
+    // — "Português 5.1 AC3 · AC3 5.1" reads as a bug rather than as detail.
+    val alreadySaid = codec != null && name.contains(codec, ignoreCase = true)
+
+    return if (detail.isEmpty() || alreadySaid) name else "$name · $detail"
+}
+
+/**
+ * The track's language in the language the app is running in — "Português",
+ * not "POR".
+ *
+ * Media3 normalizes [TrackInfo.language] to a BCP-47 tag, so the ISO 639-2
+ * codes containers carry ("por", "ger") arrive here already folded to their
+ * two-letter form and resolve. When one does not, `getDisplayLanguage` hands
+ * the code straight back, and that is the case the uppercased fallback covers
+ * — printing a raw "qaa" as if it were a language name would be worse than
+ * admitting it is a code.
+ */
+@Composable
+private fun TrackInfo.languageName(): String? {
+    val code = language?.takeIf { it.isNotBlank() } ?: return null
+    val uiTag = androidx.compose.ui.text.intl.Locale.current.toLanguageTag()
+    val resolved = remember(code, uiTag) {
+        java.util.Locale.forLanguageTag(code)
+            .getDisplayLanguage(java.util.Locale.forLanguageTag(uiTag))
+            .takeIf { it.isNotBlank() && !it.equals(code, ignoreCase = true) }
+            ?.replaceFirstChar { it.uppercase() }
+    }
+    return resolved ?: stringResource(R.string.player_track_language, code.uppercase())
+}
+
+/**
+ * The short name people recognize for a sample MIME type.
+ *
+ * Audio only: this same [TrackInfo] carries embedded subtitle tracks too, and
+ * appending "SUBRIP" to a caption's name is noise, not detail. The `else`
+ * branch keeps an unmapped audio codec readable rather than dropping it —
+ * new formats appear faster than this list is updated.
+ */
+private fun TrackInfo.codecName(): String? {
+    val mime = mimeType?.lowercase()?.takeIf { it.startsWith("audio/") } ?: return null
+    return when (mime) {
+        "audio/mp4a-latm", "audio/aac" -> "AAC"
+        "audio/mpeg", "audio/mpeg-l1", "audio/mpeg-l2" -> "MP3"
+        "audio/ac3" -> "AC3"
+        "audio/eac3" -> "EAC3"
+        "audio/eac3-joc" -> "EAC3 JOC"
+        "audio/ac4" -> "AC-4"
+        "audio/true-hd" -> "TrueHD"
+        "audio/vnd.dts" -> "DTS"
+        "audio/vnd.dts.hd" -> "DTS-HD"
+        "audio/vnd.dts.uhd" -> "DTS:X"
+        "audio/opus" -> "Opus"
+        "audio/vorbis" -> "Vorbis"
+        "audio/flac", "audio/x-flac" -> "FLAC"
+        "audio/alac" -> "ALAC"
+        "audio/raw", "audio/wav", "audio/x-wav" -> "PCM"
+        else -> mime.removePrefix("audio/").removePrefix("x-").removePrefix("vnd.").uppercase()
+    }
+}
+
+/**
+ * The channel layout as a listener would name it. Only the layouts a film
+ * actually ships in get a name of their own; the rest fall back to a count,
+ * which is still enough to tell two tracks apart.
+ */
+@Composable
+private fun TrackInfo.channelName(): String? {
+    val count = channelCount ?: return null
+    return when (count) {
+        1 -> stringResource(R.string.player_track_channels_mono)
+        2 -> stringResource(R.string.player_track_channels_stereo)
+        3 -> "2.1"
+        4 -> "4.0"
+        5 -> "5.0"
+        6 -> "5.1"
+        7 -> "6.1"
+        8 -> "7.1"
+        else -> stringResource(R.string.player_track_channels, count)
     }
 }
 

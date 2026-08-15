@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -783,7 +784,6 @@ class PlaybackController(
         for (group in tracks.groups) {
             if (group.type != trackType) continue
             for (i in 0 until group.length) {
-                if (!group.isTrackSupported(i)) continue
                 val format = group.getTrackFormat(i)
                 val index = out.size
 
@@ -794,7 +794,24 @@ class PlaybackController(
                     // language its author chose, and the fallback for a track
                     // that has neither label nor language code is a sentence,
                     // which belongs in the UI.
-                    TrackInfo(id = index, label = format.label, language = format.language),
+                    TrackInfo(
+                        id = index,
+                        label = format.label,
+                        language = format.language,
+                        mimeType = format.sampleMimeType,
+                        channelCount = format.channelCount.takeIf { it != Format.NO_VALUE },
+                        // A format that merely *exceeds* a decoder's limits
+                        // still counts as playable: the decoder exists, and
+                        // forcing the override is how someone feeding an AVR
+                        // gets the track their setup can actually handle.
+                        // Only FORMAT_UNSUPPORTED_* — no decoder at all — is
+                        // off limits, and even that is listed rather than
+                        // hidden. See [TrackInfo.playable].
+                        playable = group.isTrackSupported(
+                            i,
+                            /* allowExceedsCapabilities = */ true,
+                        ),
+                    ),
                     TrackSelectionOverride(group.mediaTrackGroup, i),
                     group.isTrackSelected(i),
                 )
@@ -1105,6 +1122,12 @@ class PlaybackController(
     }
 
     fun selectAudioTrack(id: Int) {
+        // The pickers list tracks this device has no decoder for, so that a
+        // missing dub is visibly missing rather than absent. Selecting one
+        // would throw in the renderer and be misread as a dead mirror, so the
+        // refusal lives here too and not only in the UI's disabled row.
+        if (_state.value.audioTracks.getOrNull(id)?.playable != true) return
+
         val override = audioOverrides.getOrNull(id) ?: return
         player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
@@ -1113,18 +1136,36 @@ class PlaybackController(
         _state.update { it.copy(currentAudioId = id) }
     }
 
+    /**
+     * Turns on one of the container's own subtitle tracks — drawn by
+     * `PlayerView`'s subtitle renderer, not by this app's overlay, so none of
+     * [adjustSubtitleOffset] applies to it. [NO_TRACK], or any id with no
+     * track behind it, turns the text renderer off.
+     */
     fun selectSubtitleTrack(id: Int) {
+        val track = _state.value.subtitleTracks.getOrNull(id)
+
+        // Same refusal as [selectAudioTrack]: a caption format with no decoder
+        // is listed so the user can see the release has it, but forcing the
+        // selection on would throw inside the renderer.
+        if (track != null && !track.playable) return
+
+        val override = track?.let { subtitleOverrides.getOrNull(id) }
         val params = player.trackSelectionParameters.buildUpon()
-        val override = subtitleOverrides.getOrNull(id)
 
         if (override == null) {
             params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
         } else {
             params.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).setOverrideForType(override)
+
+            // One subtitle at a time — see [selectExternalSubtitle]. Cleared
+            // before the state update below, since that call does not touch
+            // `currentSubtitleId` and so cannot undo what is set here.
+            selectExternalSubtitle(null, null)
         }
 
         player.trackSelectionParameters = params.build()
-        _state.update { it.copy(currentSubtitleId = id) }
+        _state.update { it.copy(currentSubtitleId = if (override == null) NO_TRACK else id) }
     }
 
     /**
@@ -1139,6 +1180,15 @@ class PlaybackController(
         // an explicit clear, not a crash or a stuck loading spinner.
         val resolvedTrack = track.takeIf { option != null }
         subtitleTrack = resolvedTrack
+
+        // One subtitle at a time. The container's captions are drawn by
+        // `PlayerView` and an addon's by this app's own overlay, and nothing
+        // downstream knows the other exists — so turning an addon subtitle on
+        // over a container track ExoPlayer had already selected by itself (it
+        // does that for any track flagged DEFAULT) stacked two lines of text
+        // on top of each other. No recursion back here: the branch below only
+        // runs for a real track, and this clears with a null one.
+        if (resolvedTrack != null) selectSubtitleTrack(NO_TRACK)
 
         _state.update {
             it.copy(
