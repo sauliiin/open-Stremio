@@ -143,7 +143,9 @@ fun MediaRow(
 
     Column(
         modifier.fillMaxWidth().alpha(if (isEditMode && hidden) 0.5f else 1f),
-        verticalArrangement = Arrangement.spacedBy(if (HubColors.isPrimefly) 6.dp else 10.dp),
+        verticalArrangement = Arrangement.spacedBy(
+            if (HubColors.isPrimefly || HubColors.isCyberpunk) 6.dp else 10.dp,
+        ),
     ) {
         Row(
             modifier = Modifier.padding(start = HubDimens.ScreenPaddingHorizontal),
@@ -151,7 +153,11 @@ fun MediaRow(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (HubColors.isCyberpunk) {
+                    MaterialTheme.typography.titleMedium
+                } else {
+                    MaterialTheme.typography.titleLarge
+                },
                 color = HubColors.Text,
             )
             

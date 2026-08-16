@@ -135,6 +135,9 @@ private val RowPivotScroll = object : BringIntoViewSpec {
             // the viewport top and every preceding shelf remains clipped.
             HubColors.isPrimefly -> 0.11f * containerSize
             HubColors.isNetflixy -> 0.18f * containerSize
+            // Parks the focused shelf higher so it and the next two shelves
+            // remain fully visible together on the TV viewport.
+            HubColors.isCyberpunk -> 0.16f * containerSize
             else -> ROW_PIVOT * containerSize
         }
 
@@ -569,7 +572,11 @@ fun HomeScreen(
                         // screen together instead of one full row plus a sliver of
                         // the next.
                         verticalArrangement = Arrangement.spacedBy(
-                            if (HubColors.isPrimefly) 6.dp else 14.dp,
+                            when {
+                                HubColors.isPrimefly -> 6.dp
+                                HubColors.isCyberpunk -> 8.dp
+                                else -> 14.dp
+                            },
                         ),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             // Primefly positions the whole viewport instead;

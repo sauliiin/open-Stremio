@@ -10,7 +10,6 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.common.TrackSelectionOverride
-import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
@@ -43,10 +42,6 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Plays a title, deciding on its own which link to use — until it can't.
@@ -93,9 +88,7 @@ class PlaybackController(
     callFactory: okhttp3.Call.Factory? = null,
 ) : Player.Listener {
 
-    /** Retained for [probeDurationMs], which mints its own throwaway data-source factory per attempt. */
     private val appContext = context.applicationContext
-    private val callFactory = callFactory
 
     /**
      * Per-candidate headers land here rather than on the MediaItem: some
@@ -327,36 +320,6 @@ class PlaybackController(
      */
     private val decoyIndices = mutableSetOf<Int>()
 
-    /**
-     * Bounds how many background decoy pre-checks (see [launchDecoyProbe])
-     * run at once. Each one only demuxes far enough to learn a duration —
-     * both audio and video tracks disabled, so no decoder is ever touched —
-     * but it still opens a real connection to the mirror, and a set-top box
-     * has no business opening dozens of those simultaneously.
-     */
-    private val decoyProbeSemaphore = Semaphore(DECOY_PROBE_CONCURRENCY)
-
-    /**
-     * Parent of every in-flight [launchDecoyProbe] job for the *current*
-     * title. [play] replaces it (via [stopInternal]) before starting a new
-     * cascade, so a probe left over from the previous title can never land
-     * in this one's [decoyIndices] — those are queue positions, and the
-     * queue itself is rebuilt from empty on every [play] call.
-     */
-    private var decoyProbeParentJob: Job? = null
-
-    /**
-     * Decoys hit back to back, without a real source in between.
-     *
-     * One decoy means one dead mirror. Several in a row means the debrid
-     * provider itself is refusing everything — rate limiting, most often —
-     * and the placeholder is the same clip no matter which candidate asks for
-     * it. Walking sixty more candidates cannot fix that; it just spends a
-     * minute arriving at the same wall, so the streak is what turns "try the
-     * next one" into "stop and say what is actually wrong".
-     */
-    private var decoyStreak = 0
-
     private var watchdog: Job? = null
     private var ticker: Job? = null
 
@@ -439,11 +402,6 @@ class PlaybackController(
         queueIndex = -1
         passes = 0
         decoyIndices.clear()
-        decoyStreak = 0
-        // A fresh child of `scope`'s own job, not a bare `Job()`: parenting
-        // it under the class's job is what makes `release()` cancelling
-        // everything on `scope` also reach probes in flight for this title.
-        decoyProbeParentJob = Job(scope.coroutineContext[Job])
         manualMode = false
         committedStream = null
         committedRetries = 0
@@ -471,20 +429,12 @@ class PlaybackController(
                 .catch { }
                 .collect { stream ->
                     queue += stream
-                    val index = queue.size - 1
                     _state.update {
                         it.copy(
                             candidateCount = queue.size,
                             availableSources = if (selectManually) queue.toList() else it.availableSources,
                         )
                     }
-                    // Runs alongside, not instead of, the sequential real
-                    // cascade below — see [launchDecoyProbe]. Candidate 0
-                    // gets both a real open and a probe at once, which is
-                    // redundant but harmless; every candidate behind it
-                    // benefits from already knowing the answer by the time
-                    // tryAdvance reaches it.
-                    launchDecoyProbe(stream, index)
                     if (!selectManually && awaitingCandidate) {
                         awaitingCandidate = false
                         tryAdvance()
@@ -622,15 +572,9 @@ class PlaybackController(
         watchdog?.cancel()
         ticker?.cancel()
         candidatesJob?.cancel()
-        // The user is choosing by hand now, so a background verdict on any
-        // other candidate is moot — and it would otherwise keep opening
-        // connections for a queue that has already been given up on.
-        decoyProbeParentJob?.cancel()
-        decoyProbeParentJob = null
         candidatesCollecting = false
         awaitingCandidate = false
         manualMode = true
-        decoyStreak = 0
         committedStream = null
         committedRetries = 0
 
@@ -911,10 +855,6 @@ class PlaybackController(
     private fun onReady() {
         if (isDecoy()) return rejectDecoy()
 
-        // A real source proves the provider is answering properly after all,
-        // so any run of decoys before it was mirror-by-mirror bad luck rather
-        // than the provider being down.
-        decoyStreak = 0
         watchdog?.cancel()
         watchdog = null
 
@@ -996,91 +936,7 @@ class PlaybackController(
         val expected = expectedRuntimeMs ?: return false
         val duration = player.duration
         if (duration <= 0) return false
-        return isDecoyDuration(duration, expected)
-    }
-
-    /** The comparison itself, shared with [launchDecoyProbe] so both agree on what a decoy is. */
-    private fun isDecoyDuration(durationMs: Long, expectedMs: Long): Boolean =
-        durationMs < expectedMs * DECOY_MAX_FRACTION && durationMs < DECOY_ABSOLUTE_CAP_MS
-
-    /**
-     * Fires a bounded, background-only check of whether [stream] is a decoy,
-     * so [tryAdvance] can skip it via [decoyIndices] without ever paying for
-     * a full [open] + [watchAttempt] cycle on it.
-     *
-     * This only ever *adds* to [decoyIndices] — a probe that times out, fails
-     * to open, or can't determine a duration proves nothing, so the candidate
-     * is left for the real cascade to judge on its own. False negatives here
-     * just mean the old sequential behaviour for that one candidate; a false
-     * positive would mean silently never trying a good source, which is why
-     * this is conservative about calling anything a decoy.
-     */
-    private fun launchDecoyProbe(stream: PlayableStream, index: Int) {
-        val expected = expectedRuntimeMs ?: return
-        if (stream.url == null) return
-        val parent = decoyProbeParentJob ?: return
-        scope.launch(parent) {
-            val duration = decoyProbeSemaphore.withPermit { probeDurationMs(stream) }
-            if (duration != null && isDecoyDuration(duration, expected)) {
-                decoyIndices += index
-            }
-        }
-    }
-
-    /**
-     * Opens [stream] far enough to read a container duration and nothing
-     * more: both track types disabled, so no decoder — hardware or software —
-     * is ever allocated, which is what makes running several of these at
-     * once safe on a box that can only decode one real picture at a time.
-     *
-     * A fresh [HttpDataSource.Factory] per call rather than reusing
-     * [httpDataSourceFactory]: that one is mutated in place for every
-     * candidate the real player opens (see [open]), and two attempts
-     * touching the same factory's default headers at once would race.
-     */
-    private suspend fun probeDurationMs(stream: PlayableStream): Long? {
-        val url = stream.url ?: return null
-        return withTimeoutOrNull(DECOY_PROBE_TIMEOUT_MS) {
-            val probeHttpFactory: HttpDataSource.Factory = callFactory
-                ?.let { OkHttpDataSource.Factory(it) }
-                ?: DefaultHttpDataSource.Factory()
-                    .setAllowCrossProtocolRedirects(true)
-                    .setConnectTimeoutMs(DECOY_PROBE_TIMEOUT_MS.toInt())
-                    .setReadTimeoutMs(DECOY_PROBE_TIMEOUT_MS.toInt())
-            probeHttpFactory.setDefaultRequestProperties(stream.headers)
-
-            val probePlayer = ExoPlayer.Builder(appContext)
-                .setMediaSourceFactory(DefaultMediaSourceFactory(probeHttpFactory))
-                .build()
-                .apply {
-                    trackSelectionParameters = TrackSelectionParameters.Builder(appContext)
-                        .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
-                        .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
-                        .build()
-                }
-
-            try {
-                suspendCancellableCoroutine { continuation ->
-                    val listener = object : Player.Listener {
-                        override fun onPlaybackStateChanged(playbackState: Int) {
-                            if (playbackState == Player.STATE_READY && continuation.isActive) {
-                                continuation.resumeWith(Result.success(probePlayer.duration.takeIf { it > 0 }))
-                            }
-                        }
-
-                        override fun onPlayerError(error: PlaybackException) {
-                            if (continuation.isActive) continuation.resumeWith(Result.success(null))
-                        }
-                    }
-                    probePlayer.addListener(listener)
-                    probePlayer.setMediaItem(MediaItem.fromUri(url))
-                    probePlayer.playWhenReady = false
-                    probePlayer.prepare()
-                }
-            } finally {
-                probePlayer.release()
-            }
-        }
+        return duration < expected * DECOY_MAX_FRACTION && duration < DECOY_ABSOLUTE_CAP_MS
     }
 
     /** Drops the current candidate and moves on, without disturbing the resume point. */
@@ -1094,12 +950,6 @@ class PlaybackController(
         }
 
         decoyIndices += queueIndex
-        decoyStreak++
-
-        if (decoyStreak >= DECOY_STREAK_LIMIT) {
-            fail(PlaybackFailure.DecoyStreak)
-            return
-        }
 
         // `resumeApplied` is deliberately left alone: nothing was watched, so
         // whatever resume point the user had is still owed to the next
@@ -1380,12 +1230,10 @@ class PlaybackController(
         ticker?.cancel()
         candidatesJob?.cancel()
         subtitleTicker?.cancel()
-        decoyProbeParentJob?.cancel()
         watchdog = null
         ticker = null
         candidatesJob = null
         subtitleTicker = null
-        decoyProbeParentJob = null
         candidatesCollecting = false
         awaitingCandidate = false
         committedStream = null
@@ -1436,28 +1284,6 @@ class PlaybackController(
         const val DECOY_MAX_FRACTION = 0.5
         const val DECOY_ABSOLUTE_CAP_MS = 15 * 60_000L
 
-        /**
-         * How many background [probeDurationMs] calls run at once.
-         *
-         * Bounded the same way as the repository's own reachability probe
-         * (see `StreamsRepository.PROBE_CONCURRENCY`) and for the same
-         * reason: each one opens a real connection to a mirror, just without
-         * ever touching a decoder, so this is a network/CPU ceiling, not a
-         * decoder one.
-         */
-        const val DECOY_PROBE_CONCURRENCY = 8
-
-        /**
-         * How long a single duration probe is allowed before it counts as
-         * inconclusive rather than a decoy or a clean bill of health — see
-         * [launchDecoyProbe]. Shorter than a real [ATTEMPT_HARD_CAP_MS]
-         * attempt: reading a container's duration needs far less of it
-         * downloaded than actually buffering for playback does.
-         */
-        const val DECOY_PROBE_TIMEOUT_MS = 12_000L
-
-        /** Decoys in a row that mean the provider, not the mirror, is the problem. */
-        const val DECOY_STREAK_LIMIT = 3
         const val MAX_PASSES = 2
 
         /** Position polling while the OSD is up — see [startTicker]. */

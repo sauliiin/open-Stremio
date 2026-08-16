@@ -41,8 +41,16 @@ object HubDimens {
     /** Primefly follows a streaming-service shelf: wide 16:9 art instead of posters. */
     // Primefly cards are 15% smaller than the previous 166.4 × 93.6 dp,
     // while preserving the authored 16:9 landscape ratio.
-    val PosterWidth get() = if (HubColors.isPrimefly) 141.44.dp else 88.8.dp
-    val PosterHeight get() = if (HubColors.isPrimefly) 79.56.dp else 133.2.dp
+    val PosterWidth get() = when {
+        HubColors.isPrimefly -> 141.44.dp
+        HubColors.isCyberpunk -> 71.04.dp
+        else -> 88.8.dp
+    }
+    val PosterHeight get() = when {
+        HubColors.isPrimefly -> 79.56.dp
+        HubColors.isCyberpunk -> 106.56.dp
+        else -> 133.2.dp
+    }
 }
 
 @Composable

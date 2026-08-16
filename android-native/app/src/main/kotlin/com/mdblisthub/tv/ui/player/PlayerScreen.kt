@@ -1096,7 +1096,7 @@ private fun PlayerOsd(
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
                 ),
-                color = HubColors.Text,
+                color = if (HubColors.isCyberpunk) HubColors.Accent else HubColors.Text,
             )
             Box(
                 Modifier
@@ -1136,7 +1136,7 @@ private fun PlayerOsd(
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
                 ),
-                color = HubColors.TextDim,
+                color = if (HubColors.isCyberpunk) HubColors.Accent else HubColors.TextDim,
             )
         }
         }
