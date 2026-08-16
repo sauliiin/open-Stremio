@@ -40,7 +40,7 @@ object ApiConfig {
     const val TRAKT_API_VERSION = "2"
 
     /** Where the user types the code the device flow shows them. */
-    const val TRAKT_ACTIVATE_URL = "https://auth.trakt.tv/activate"
+    const val TRAKT_ACTIVATE_URL = "https://trakt.tv/activate"
 
     /**
      * Not this project's own Trakt registration — creating a new one now

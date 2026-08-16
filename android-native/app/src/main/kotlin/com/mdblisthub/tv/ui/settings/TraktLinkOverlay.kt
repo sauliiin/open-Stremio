@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -118,42 +120,52 @@ fun TraktLinkOverlay(
                             label = "trakt-link-color",
                         )
 
-                        // The whole line is one tap target / D-pad stop, not
-                        // just the URL inside it: on a TV box with no browser
-                        // this does nothing useful anyway, and on one that has
-                        // one it saves typing the address by hand on top of
-                        // the code. `clickable` already answers both a touch
-                        // tap and, once focused, a D-pad OK — the same wiring
-                        // every `HubButton` in this dialog relies on.
-                        Text(
-                            stringResource(
-                                R.string.trakt_link_instructions,
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                stringResource(R.string.trakt_link_instruction_prefix),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = HubColors.TextDim,
+                            )
+                            // Only the address is a tap target / D-pad stop;
+                            // the surrounding instruction remains plain text.
+                            Text(
                                 state.code.verificationUrl.removePrefix("https://"),
-                            ),
-                            style = MaterialTheme.typography.bodyLarge.copy(textDecoration = TextDecoration.Underline),
-                            color = linkColor,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.clickable(
-                                interactionSource = linkInteraction,
-                                indication = null,
-                                onClick = { openUrl(context, state.code.verificationUrl) },
-                            ),
-                        )
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    textDecoration = TextDecoration.Underline,
+                                ),
+                                color = linkColor,
+                                modifier = Modifier.clickable(
+                                    interactionSource = linkInteraction,
+                                    indication = null,
+                                    onClick = { openUrl(context, state.code.verificationUrl) },
+                                ),
+                            )
+                            Text(
+                                stringResource(R.string.trakt_link_instruction_suffix),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = HubColors.TextDim,
+                            )
+                        }
 
                         // Wide letter spacing and a large size on purpose: this
                         // is what the whole flow reduces to, read off a screen
                         // several metres away and copied character by
                         // character, where `0`/`O` and `1`/`I` are the whole
                         // difficulty.
-                        Text(
-                            state.code.userCode,
-                            style = MaterialTheme.typography.displayMedium.copy(
-                                fontSize = 48.sp,
-                                letterSpacing = 8.sp,
-                            ),
-                            color = HubColors.Text,
-                            textAlign = TextAlign.Center,
-                        )
+                        SelectionContainer {
+                            Text(
+                                state.code.userCode,
+                                style = MaterialTheme.typography.displayMedium.copy(
+                                    fontSize = 48.sp,
+                                    letterSpacing = 8.sp,
+                                ),
+                                color = HubColors.Text,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
 
                         Text(
                             stringResource(

@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
@@ -192,10 +193,14 @@ fun PosterCard(
                 ScoreBadge(
                     score = score,
                     modifier = Modifier.align(Alignment.BottomStart).padding(
-                        start = 6.dp,
-                        end = 6.dp,
-                        top = 6.dp,
-                        bottom = if (watched != null) 18.dp else 6.dp,
+                        start = if (HubColors.isCyberpunk) 0.dp else 6.dp,
+                        end = if (HubColors.isCyberpunk) 0.dp else 6.dp,
+                        top = if (HubColors.isCyberpunk) 0.dp else 6.dp,
+                        bottom = when {
+                            HubColors.isCyberpunk -> 0.dp
+                            watched != null -> 18.dp
+                            else -> 6.dp
+                        },
                     ),
                 )
             }
@@ -204,7 +209,12 @@ fun PosterCard(
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .padding(
+                            start = if (HubColors.isCyberpunk && item.score?.let { it > 0 } == true) 36.dp else 8.dp,
+                            end = 8.dp,
+                            top = 8.dp,
+                            bottom = 8.dp,
+                        )
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(RoundedCornerShape(2.dp))
@@ -223,7 +233,11 @@ fun PosterCard(
 
         Text(
             text = displayTitle,
-            style = MaterialTheme.typography.labelLarge,
+            style = if (HubColors.isCyberpunk) {
+                MaterialTheme.typography.labelSmall
+            } else {
+                MaterialTheme.typography.labelLarge
+            },
             color = titleColor,
             minLines = 2,
             maxLines = 2,
@@ -247,7 +261,10 @@ private fun ScoreBadge(score: Int, modifier: Modifier = Modifier) {
     val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 6.dp
     Box(
         modifier
-            .size(width = 40.dp, height = 22.dp)
+            .size(
+                width = if (HubColors.isCyberpunk) 32.dp else 40.dp,
+                height = if (HubColors.isCyberpunk) 18.dp else 22.dp,
+            )
             .clip(RoundedCornerShape(cornerRadius))
             .background(
                 Brush.verticalGradient(
@@ -258,7 +275,11 @@ private fun ScoreBadge(score: Int, modifier: Modifier = Modifier) {
     ) {
         Text(
             text = remember(score) { String.format(ScoreLocale, "%.1f", score / 10.0) },
-            style = MaterialTheme.typography.labelSmall,
+            style = if (HubColors.isCyberpunk) {
+                MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp)
+            } else {
+                MaterialTheme.typography.labelSmall
+            },
             color = HubColors.Imdb,
         )
     }

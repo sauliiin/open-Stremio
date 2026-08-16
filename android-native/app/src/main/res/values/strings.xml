@@ -241,7 +241,8 @@
 
     <string name="trakt_link_title">Conectar ao Trakt</string>
     <string name="trakt_link_requesting">Pedindo um código ao Trakt…</string>
-    <string name="trakt_link_instructions">Acesse %1$s e informe:</string>
+    <string name="trakt_link_instruction_prefix">Acesse</string>
+    <string name="trakt_link_instruction_suffix">e informe:</string>
     <string name="trakt_link_expires">O código expira em %1$d:%2$02d</string>
     <string name="trakt_link_linked">Conectado como %1$s</string>
     <string name="trakt_link_cancel">Cancelar</string>

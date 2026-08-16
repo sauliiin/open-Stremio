@@ -56,7 +56,9 @@ class TraktAuthRepository(
         check(dto.deviceCode.isNotBlank() && dto.userCode.isNotBlank()) { "Trakt devolveu códigos vazios." }
         TraktDeviceCode(
             userCode = dto.userCode,
-            verificationUrl = dto.verificationUrl.ifBlank { ApiConfig.TRAKT_ACTIVATE_URL },
+            // Include the code in Trakt's public activation URL so opening the
+            // link takes the user directly to the matching activation flow.
+            verificationUrl = "${ApiConfig.TRAKT_ACTIVATE_URL}/${dto.userCode.trim()}",
             deviceCode = dto.deviceCode,
             intervalSeconds = dto.interval.coerceAtLeast(1),
             expiresInSeconds = dto.expiresIn.coerceAtLeast(1),
