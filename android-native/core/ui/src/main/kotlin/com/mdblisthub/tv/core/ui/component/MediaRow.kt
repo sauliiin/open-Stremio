@@ -14,8 +14,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalDensity
@@ -120,8 +122,17 @@ fun MediaRow(
     /** Held OK on a card — see [PosterCard]. Indexed for the same reason as above. */
     onItemLongClickIndexed: ((Int, MediaItem) -> Unit)? = null,
     progressPercent: ((Int, MediaItem) -> Float?)? = null,
+    requestInitialFocus: Boolean = false,
+    onInitialFocusHandled: () -> Unit = {},
 ) {
     if (items.isEmpty() && !isEditMode) return
+
+    val initialFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(requestInitialFocus) {
+        if (requestInitialFocus && initialFocusRequester.requestFocus()) {
+            onInitialFocusHandled()
+        }
+    }
 
     val horizontalInsetPx = with(LocalDensity.current) {
         HubDimens.ScreenPaddingHorizontal.toPx()
@@ -234,6 +245,9 @@ fun MediaRow(
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(
                         item = item,
+                        initialFocusRequester = initialFocusRequester.takeIf {
+                            requestInitialFocus && index == 0
+                        },
                         onClick = {
                             onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
                         },

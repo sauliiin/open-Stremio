@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.text.BasicTextField
@@ -127,17 +128,21 @@ private sealed interface EditableListTarget {
  * the part Compose could not supply.
  */
 @OptIn(ExperimentalFoundationApi::class)
-private val RowPivotScroll = object : BringIntoViewSpec {
+private class RowPivotScroll(
+    private val variant: HubThemeVariant,
+    private val normalFirstRowOffsetPx: Float,
+) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         val pivot = when {
+            variant == HubThemeVariant.NORMAL -> normalFirstRowOffsetPx
             // The focused child is the card, not the whole shelf. This offset
             // equals the shelf heading plus its gap, so that heading lands at
             // the viewport top and every preceding shelf remains clipped.
-            HubColors.isPrimefly -> 0.11f * containerSize
-            HubColors.isNetflixy -> 0.18f * containerSize
+            variant == HubThemeVariant.PRIMEFLY -> 0.11f * containerSize
+            variant == HubThemeVariant.NETFLIXY -> 0.18f * containerSize
             // Parks the focused shelf higher so it and the next two shelves
             // remain fully visible together on the TV viewport.
-            HubColors.isCyberpunk -> 0.06f * containerSize
+            variant == HubThemeVariant.CYBERPUNK -> 0.06f * containerSize
             else -> ROW_PIVOT * containerSize
         }
 
@@ -188,10 +193,19 @@ fun HomeScreen(
     val deletedListIds by graph.session.deletedListIds.collectAsStateWithLifecycle(initialValue = emptySet())
     val scope = rememberCoroutineScope()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val isNormalTheme = HubColors.variant == HubThemeVariant.NORMAL
+    var initialNormalFocusPending by remember { mutableStateOf(false) }
 
-    DisposableEffect(lifecycleOwner, viewModel) {
+    LaunchedEffect(isNormalTheme) {
+        initialNormalFocusPending = isNormalTheme
+    }
+
+    DisposableEffect(lifecycleOwner, viewModel, isNormalTheme) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshDynamicRows()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshDynamicRows()
+                if (isNormalTheme) initialNormalFocusPending = true
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -257,6 +271,11 @@ fun HomeScreen(
     var deleteTarget by remember { mutableStateOf<EditableListTarget?>(null) }
     var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
+    val normalFirstRowOffsetPx = with(LocalDensity.current) { 36.dp.toPx() }
+    val rowPivotScroll = remember(HubColors.variant, normalFirstRowOffsetPx) {
+        RowPivotScroll(HubColors.variant, normalFirstRowOffsetPx)
+    }
+    val onInitialNormalFocusHandled = { initialNormalFocusPending = false }
 
     resumeRemovalTarget?.let { point ->
         Dialog(onDismissRequest = { resumeRemovalTarget = null }) {
@@ -545,13 +564,17 @@ fun HomeScreen(
             }
 
             Column(Modifier.fillMaxSize()) {
-                if (HubColors.isNetflixy || HubColors.isPrimefly) {
+                if (isNormalTheme) {
+                    Box(Modifier.fillMaxWidth().height(76.dp)) {
+                        HeroPanel(viewModel)
+                    }
+                } else if (HubColors.isNetflixy || HubColors.isPrimefly) {
                     Box(Modifier.weight(1f)) {
                         HeroPanel(viewModel)
                     }
                 }
 
-                CompositionLocalProvider(LocalBringIntoViewSpec provides RowPivotScroll) {
+                CompositionLocalProvider(LocalBringIntoViewSpec provides rowPivotScroll) {
                     LazyColumn(
                         modifier = when {
                             HubColors.isPrimefly -> Modifier
@@ -564,6 +587,10 @@ fun HomeScreen(
                             HubColors.isNetflixy -> Modifier
                                 .fillMaxWidth()
                                 .height(264.dp)
+                                .clipToBounds()
+                            isNormalTheme -> Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
                                 .clipToBounds()
                             else -> Modifier.fillMaxSize()
                         },
@@ -587,8 +614,8 @@ fun HomeScreen(
                             bottom = HubDimens.ScreenPaddingVertical * 8,
                         ),
                     ) {
-                        // Netflixy and Primefly keep the hero fixed above the shelves.
-                        if (!HubColors.isNetflixy && !HubColors.isPrimefly) {
+                        // Normal joins the themes whose hero is fixed above the shelves.
+                        if (!HubColors.isNetflixy && !HubColors.isPrimefly && !isNormalTheme) {
                             item(key = "hero") {
                                 HeroPanel(viewModel)
                             }
@@ -618,6 +645,8 @@ fun HomeScreen(
                                 resumeRemovalTarget = resumePoints.getOrNull(index)
                             },
                             progressPercent = { index, _ -> resumePoints.getOrNull(index)?.progress },
+                            requestInitialFocus = isNormalTheme && initialNormalFocusPending && !isEditMode,
+                            onInitialFocusHandled = onInitialNormalFocusHandled,
                         )
                     }
                 }
@@ -632,6 +661,11 @@ fun HomeScreen(
                         }
                     },
                 ) { index, row ->
+                    val requestInitialFocus = isNormalTheme &&
+                        initialNormalFocusPending &&
+                        !isEditMode &&
+                        resumePoints.isEmpty() &&
+                        index == 0
                     when (row) {
                         is HomeMediaRow.Mdblist -> {
                             val list = row.list
@@ -656,6 +690,8 @@ fun HomeScreen(
                                 onItemClick = onOpenTitle,
                                 onItemFocused = viewModel::onFocused,
                                 onReachedEnd = { viewModel.loadMore(list.id) },
+                                requestInitialFocus = requestInitialFocus,
+                                onInitialFocusHandled = onInitialNormalFocusHandled,
                             )
                         }
                         is HomeMediaRow.Stremio -> {
@@ -684,6 +720,8 @@ fun HomeScreen(
                                 onEnsure = { viewModel.ensureCatalog(catalog) },
                                 onItemClick = openCatalogItem,
                                 onItemFocused = viewModel::onFocused,
+                                requestInitialFocus = requestInitialFocus,
+                                onInitialFocusHandled = onInitialNormalFocusHandled,
                             )
                         }
                         is HomeMediaRow.Feed -> {
@@ -721,6 +759,8 @@ fun HomeScreen(
                                     }
                                 },
                                 onItemFocused = viewModel::onFocused,
+                                requestInitialFocus = requestInitialFocus,
+                                onInitialFocusHandled = onInitialNormalFocusHandled,
                             )
                         }
                     }
@@ -729,12 +769,21 @@ fun HomeScreen(
                 // "Porque você assistiu" — always last, since it is built from
                 // the five most recent watches rather than an MDBList row.
                 if (!isEditMode) {
-                    items(becauseYouWatched, key = { "byw-${it.seedTitle}" }) { row ->
+                    itemsIndexed(
+                        becauseYouWatched,
+                        key = { _, row -> "byw-${row.seedTitle}" },
+                    ) { index, row ->
                         MediaRow(
                             title = stringResource(R.string.home_because_you_watched, row.seedTitle),
                             items = row.items,
                             onItemClick = onOpenTitle,
                             onItemFocused = viewModel::onFocused,
+                            requestInitialFocus = isNormalTheme &&
+                                initialNormalFocusPending &&
+                                resumePoints.isEmpty() &&
+                                homeRows.isEmpty() &&
+                                index == 0,
+                            onInitialFocusHandled = onInitialNormalFocusHandled,
                         )
                     }
                 }
@@ -760,6 +809,8 @@ private fun AddonCatalogRow(
     onEnsure: () -> Unit,
     onItemClick: (MediaItem) -> Unit,
     onItemFocused: (MediaItem) -> Unit,
+    requestInitialFocus: Boolean = false,
+    onInitialFocusHandled: () -> Unit = {},
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
     LaunchedEffect(catalog.addonBase, catalog.key) { onEnsure() }
@@ -777,6 +828,8 @@ private fun AddonCatalogRow(
         onDelete = onDelete,
         onItemClick = onItemClick,
         onItemFocused = onItemFocused,
+        requestInitialFocus = requestInitialFocus,
+        onInitialFocusHandled = onInitialFocusHandled,
     )
 }
 
@@ -819,6 +872,8 @@ private fun ListRow(
     onItemClick: (MediaItem) -> Unit,
     onItemFocused: (MediaItem) -> Unit,
     onReachedEnd: () -> Unit,
+    requestInitialFocus: Boolean = false,
+    onInitialFocusHandled: () -> Unit = {},
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
 
@@ -839,6 +894,8 @@ private fun ListRow(
         onItemClick = onItemClick,
         onItemFocused = onItemFocused,
         onReachedEnd = onReachedEnd,
+        requestInitialFocus = requestInitialFocus,
+        onInitialFocusHandled = onInitialFocusHandled,
     )
 }
 

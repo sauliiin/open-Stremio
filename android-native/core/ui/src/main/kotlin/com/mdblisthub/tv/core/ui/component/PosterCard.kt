@@ -32,6 +32,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -66,6 +68,7 @@ fun PosterCard(
     item: MediaItem,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    initialFocusRequester: FocusRequester? = null,
     onFocused: (MediaItem) -> Unit = {},
     progressPercent: Float? = null,
     /**
@@ -139,6 +142,9 @@ fun PosterCard(
                     if (!HubColors.isCyberpunk || !focused) {
                         it.border(width = borderWidth, color = borderColor, shape = RoundedCornerShape(cornerRadius))
                     } else it
+                }
+                .let {
+                    if (initialFocusRequester != null) it.focusRequester(initialFocusRequester) else it
                 }
                 // `clickable` is what makes it focusable *and* what turns the
                 // remote's centre key into a click; adding `focusable` beside
