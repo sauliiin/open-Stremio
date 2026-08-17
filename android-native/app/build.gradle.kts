@@ -16,8 +16,8 @@ android {
         applicationId = "mdblist_hub.apk.S84"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 16
-        versionName = "0.9.9"
+        versionCode = 17
+        versionName = "1.0.3"
 
         // x86 (32-bit) is back on the list deliberately: the emulator this
         // app is tested on reports exactly that ABI, and without a native
