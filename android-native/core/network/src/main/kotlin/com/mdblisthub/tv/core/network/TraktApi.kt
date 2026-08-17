@@ -76,7 +76,7 @@ interface TraktApi {
      * detail screen's "watched" button reads. Not paginated in the way the
      * others are — Trakt returns the account's full set here.
      */
-    @GET("sync/watched/{type}")
+    @GET("sync/watched/{type}?extended=full")
     suspend fun watched(@Path("type") type: String): List<TraktWatchedItemDto>
 
     @GET("sync/progress/up_next")

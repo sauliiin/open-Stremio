@@ -18,6 +18,7 @@ import com.mdblisthub.tv.core.database.entity.ListItemEntity
 import com.mdblisthub.tv.core.database.entity.MediaDetailEntity
 import com.mdblisthub.tv.core.database.entity.MediaEntity
 import com.mdblisthub.tv.core.database.entity.ResumeEntity
+import com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity
 
 @Database(
     entities = [
@@ -29,13 +30,14 @@ import com.mdblisthub.tv.core.database.entity.ResumeEntity
         AddonEntity::class,
         ResumeEntity::class,
         LibraryEntity::class,
+        WatchedEpisodeEntity::class,
     ],
     // 10 adds the provider-side session id to `resume_points`, which is how a
     // Trakt paused session is dropped. Destructive migration is correct here
     // for the same reason as always — every table is a cache with an upstream
     // source of truth — and re-syncing is cheaper than the two full table
     // scans the missing indices cost.
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -59,6 +61,7 @@ abstract class HubDatabase : RoomDatabase() {
         mediaDao().clearMedia()
         playbackDao().clearResumePoints()
         playbackDao().clearLibrary()
+        playbackDao().clearWatchedEpisodes()
     }
 
     companion object {

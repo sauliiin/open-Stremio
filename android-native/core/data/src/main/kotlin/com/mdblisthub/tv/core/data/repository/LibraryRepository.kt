@@ -9,6 +9,7 @@ import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.MediaType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Watchlist, watched and collection.
@@ -30,6 +31,14 @@ class LibraryRepository(
     fun observeMembership(bucket: LibraryBucket, tmdbId: Int): Flow<Boolean> =
         dao.observeMembership(bucket.name, tmdbId)
 
+    fun observeBucket(bucket: LibraryBucket): Flow<Set<Int>> =
+        dao.observeBucket(bucket.name).map { it.toSet() }
+
+    fun observeWatchedEpisodes(): Flow<Set<String>> =
+        dao.observeWatchedEpisodes().map { list ->
+            list.map { "${it.showTmdbId}:${it.seasonNumber}:${it.episodeNumber}" }.toSet()
+        }
+
     suspend fun refresh(bucket: LibraryBucket, force: Boolean = false): Result<Unit> = runCatching {
         if (!force && !CachePolicy.isStale(lastFetch[bucket], CachePolicy.LIBRARY_MS)) {
             return@runCatching
@@ -39,8 +48,14 @@ class LibraryRepository(
         // Null means "no account to ask" — a session without an mdblist key, or
         // an unlinked Trakt. Leaving the cache untouched there is the point:
         // clearing it would blank every button the moment a token expires.
-        val ids = source().membership(bucket) ?: return@runCatching
-        dao.replaceBucket(bucket.name, ids.map { LibraryEntity(bucket.name, it, now) })
+        val syncResult = source().membership(bucket) ?: return@runCatching
+        dao.replaceBucket(bucket.name, syncResult.titleIds.map { LibraryEntity(bucket.name, it, now) })
+        if (bucket == LibraryBucket.WATCHED) {
+            val epEntities = syncResult.episodeIds.map { 
+                com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity(it.showTmdbId, it.seasonNumber, it.episodeNumber) 
+            }
+            dao.replaceWatchedEpisodes(epEntities)
+        }
         lastFetch[bucket] = now
     }
 

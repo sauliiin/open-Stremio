@@ -67,4 +67,21 @@ interface PlaybackDao {
 
     @Query("DELETE FROM library")
     suspend fun clearLibrary()
+
+    // ------------------------------------------------------------- watched episodes
+
+    @Query("SELECT * FROM watched_episodes")
+    fun observeWatchedEpisodes(): Flow<List<com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity>>
+
+    @Transaction
+    suspend fun replaceWatchedEpisodes(entries: List<com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity>) {
+        clearWatchedEpisodes()
+        upsertWatchedEpisodes(entries)
+    }
+
+    @Upsert
+    suspend fun upsertWatchedEpisodes(entries: List<com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity>)
+
+    @Query("DELETE FROM watched_episodes")
+    suspend fun clearWatchedEpisodes()
 }

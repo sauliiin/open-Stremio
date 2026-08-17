@@ -122,6 +122,7 @@ fun MediaRow(
     /** Held OK on a card — see [PosterCard]. Indexed for the same reason as above. */
     onItemLongClickIndexed: ((Int, MediaItem) -> Unit)? = null,
     progressPercent: ((Int, MediaItem) -> Float?)? = null,
+    isWatched: ((Int, MediaItem) -> Boolean)? = null,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
 ) {
@@ -259,6 +260,7 @@ fun MediaRow(
                             if (focused.key == items.lastOrNull()?.key) onReachedEnd()
                         },
                         progressPercent = progressPercent?.invoke(index, item),
+                        isWatched = isWatched?.invoke(index, item) ?: false,
                         onLongClick = onItemLongClickIndexed?.let { handler ->
                             { handler(index, item) }
                         },

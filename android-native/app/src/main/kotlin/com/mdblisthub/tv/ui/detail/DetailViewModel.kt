@@ -71,6 +71,9 @@ class DetailViewModel(
         .flatMapLatest { graph.media.observeEpisodes(tmdbId, it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val watchedEpisodes: StateFlow<Set<String>> = graph.library.observeWatchedEpisodes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     /**
      * Whole-title membership across all three buckets. A show's "watched"
      * marks the series, the same as the web build — mdblist has no

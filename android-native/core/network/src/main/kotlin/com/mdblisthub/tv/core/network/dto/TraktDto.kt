@@ -183,6 +183,20 @@ data class TraktWatchedItemDto(
     @SerialName("last_watched_at") val lastWatchedAt: String? = null,
     val movie: TraktTitleDto? = null,
     val show: TraktTitleDto? = null,
+    val seasons: List<TraktWatchedSeasonDto>? = null,
+)
+
+@Serializable
+data class TraktWatchedSeasonDto(
+    val number: Int,
+    val episodes: List<TraktWatchedEpisodeDto>? = null,
+)
+
+@Serializable
+data class TraktWatchedEpisodeDto(
+    val number: Int,
+    val plays: Int = 0,
+    @SerialName("last_watched_at") val lastWatchedAt: String? = null,
 )
 
 /** `/sync/progress/up_next`. */

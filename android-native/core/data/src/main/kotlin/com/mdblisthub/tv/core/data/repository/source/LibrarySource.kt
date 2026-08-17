@@ -20,6 +20,13 @@ import com.mdblisthub.tv.core.network.dto.TraktWriteItemDto
  * `LibraryRepository`, which is the same for both providers and has no reason
  * to be written twice.
  */
+data class WatchedEpisodeId(val showTmdbId: Int, val seasonNumber: Int, val episodeNumber: Int)
+
+data class LibrarySyncResult(
+    val titleIds: List<Int>,
+    val episodeIds: List<WatchedEpisodeId> = emptyList()
+)
+
 interface LibrarySource {
 
     /**
@@ -28,7 +35,7 @@ interface LibrarySource {
      * Null means "leave what is cached alone"; an empty list means the bucket
      * really is empty and the cache should be emptied with it.
      */
-    suspend fun membership(bucket: LibraryBucket): List<Int>?
+    suspend fun membership(bucket: LibraryBucket): LibrarySyncResult?
 
     /** Adds or removes one title. Throws with a readable message on failure. */
     suspend fun write(
@@ -53,10 +60,24 @@ class MdblistLibrarySource(
     private val session: SessionStore,
 ) : LibrarySource {
 
-    override suspend fun membership(bucket: LibraryBucket): List<Int>? {
+    override suspend fun membership(bucket: LibraryBucket): LibrarySyncResult? {
         val key = session.currentKey()
         if (key.isBlank()) return null
-        return api.bucket("$ROOT${bucket.readPath}", key).tmdbIds()
+        val response = api.bucket("$ROOT${bucket.readPath}", key)
+        val titleIds = response.tmdbIds()
+        
+        // MDBList sync/watched JSON returns a flat array of episodes at the top level
+        val episodeIds = if (bucket == LibraryBucket.WATCHED) {
+            response.episodes.mapNotNull { entry ->
+                val ep = entry.episode ?: return@mapNotNull null
+                val showTmdbId = ep.show?.ids?.tmdb ?: return@mapNotNull null
+                val seasonNum = ep.season ?: return@mapNotNull null
+                val episodeNum = ep.number ?: return@mapNotNull null
+                WatchedEpisodeId(showTmdbId, seasonNum, episodeNum)
+            }
+        } else emptyList()
+        
+        return LibrarySyncResult(titleIds, episodeIds)
     }
 
     override suspend fun write(
@@ -126,27 +147,47 @@ class TraktLibrarySource(
     private val tokens: TraktTokenStore,
 ) : LibrarySource {
 
-    override suspend fun membership(bucket: LibraryBucket): List<Int>? {
+    override suspend fun membership(bucket: LibraryBucket): LibrarySyncResult? {
         if (!tokens.isLinked()) return null
 
         return when (bucket) {
             LibraryBucket.WATCHLIST ->
-                paged { page -> api.watchlist(type = "movies", limit = PAGE, page = page) }
-                    .mapNotNull { it.movie?.ids?.tmdb } +
+                LibrarySyncResult(
+                    paged { page -> api.watchlist(type = "movies", limit = PAGE, page = page) }
+                        .mapNotNull { it.movie?.ids?.tmdb } +
                     paged { page -> api.watchlist(type = "shows", limit = PAGE, page = page) }
                         .mapNotNull { it.show?.ids?.tmdb }
+                )
 
             LibraryBucket.COLLECTION ->
-                paged { page -> api.collection(type = "movies", limit = PAGE, page = page) }
-                    .mapNotNull { it.movie?.ids?.tmdb } +
+                LibrarySyncResult(
+                    paged { page -> api.collection(type = "movies", limit = PAGE, page = page) }
+                        .mapNotNull { it.movie?.ids?.tmdb } +
                     paged { page -> api.collection(type = "shows", limit = PAGE, page = page) }
                         .mapNotNull { it.show?.ids?.tmdb }
+                )
 
             // Not paginated: this endpoint answers with the account's whole
             // watched set in one response.
-            LibraryBucket.WATCHED ->
-                api.watched("movies").mapNotNull { it.movie?.ids?.tmdb } +
-                    api.watched("shows").mapNotNull { it.show?.ids?.tmdb }
+            LibraryBucket.WATCHED -> {
+                try {
+                    val movies = api.watched("movies").mapNotNull { it.movie?.ids?.tmdb }
+                    val showsDto = api.watched("shows")
+                    val shows = showsDto.mapNotNull { it.show?.ids?.tmdb }
+                    val episodes = showsDto.flatMap { showDto ->
+                        val showTmdbId = showDto.show?.ids?.tmdb ?: return@flatMap emptyList()
+                        showDto.seasons?.flatMap { season ->
+                            season.episodes?.map { ep ->
+                                WatchedEpisodeId(showTmdbId, season.number, ep.number)
+                            } ?: emptyList()
+                        } ?: emptyList()
+                    }
+                    LibrarySyncResult(movies + shows, episodes)
+                } catch (e: Exception) {
+                    android.util.Log.e("TraktLibrarySource", "Failed to sync watched", e)
+                    throw e
+                }
+            }
         }
     }
 

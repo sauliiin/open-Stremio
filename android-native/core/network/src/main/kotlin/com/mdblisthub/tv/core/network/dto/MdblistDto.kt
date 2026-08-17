@@ -123,6 +123,20 @@ data class BucketEntryDto(
 )
 
 @Serializable
+data class BucketEpisodeEntryDto(
+    @SerialName("last_watched_at") val lastWatchedAt: String? = null,
+    val episode: BucketEpisodeDto? = null,
+)
+
+@Serializable
+data class BucketEpisodeDto(
+    val season: Int? = null,
+    val number: Int? = null,
+    val ids: MdbIdsDto? = null,
+    val show: BucketTitleDto? = null,
+)
+
+@Serializable
 data class BucketTitleDto(
     val title: String? = null,
     val year: Int? = null,
@@ -135,6 +149,7 @@ data class BucketTitleDto(
 data class BucketResponseDto(
     val movies: List<BucketEntryDto> = emptyList(),
     val shows: List<BucketEntryDto> = emptyList(),
+    val episodes: List<BucketEpisodeEntryDto> = emptyList(),
 ) {
     fun tmdbIds(): List<Int> = (movies + shows).mapNotNull {
         it.movie?.ids?.tmdb ?: it.show?.ids?.tmdb ?: it.ids?.tmdb ?: it.id

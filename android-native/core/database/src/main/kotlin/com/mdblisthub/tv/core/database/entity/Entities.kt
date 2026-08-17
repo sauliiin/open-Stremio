@@ -217,3 +217,14 @@ data class LibraryEntity(
     val tmdbId: Int,
     @ColumnInfo(defaultValue = "0") val fetchedAt: Long,
 )
+
+/** Episodes that have been watched, specifically from Trakt. */
+@Entity(
+    tableName = "watched_episodes",
+    primaryKeys = ["showTmdbId", "seasonNumber", "episodeNumber"]
+)
+data class WatchedEpisodeEntity(
+    val showTmdbId: Int,
+    val seasonNumber: Int,
+    val episodeNumber: Int,
+)

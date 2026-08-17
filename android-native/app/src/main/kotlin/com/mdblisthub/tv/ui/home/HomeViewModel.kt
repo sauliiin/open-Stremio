@@ -90,6 +90,12 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     val resumePoints: StateFlow<List<ResumePoint>> = graph.playback.resumePoints
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val watchedIds: StateFlow<Set<Int>> = graph.library.observeBucket(com.mdblisthub.tv.core.model.LibraryBucket.WATCHED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    val watchedEpisodes: StateFlow<Set<String>> = graph.library.observeWatchedEpisodes()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     fun toggleEditMode() {
         _isEditMode.value = !_isEditMode.value
     }
@@ -290,6 +296,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                     launch { graph.lists.refreshLists(force = true) }
                     launch { graph.homeFeeds.refresh() }
                     launch { graph.playback.refreshResumePoints() }
+                    launch { graph.library.refresh(com.mdblisthub.tv.core.model.LibraryBucket.WATCHED) }
                     // Addons installed on another device land here too, not
                     // only on a cold start: this is the same "account activity
                     // changed elsewhere" case as the rows above, and without

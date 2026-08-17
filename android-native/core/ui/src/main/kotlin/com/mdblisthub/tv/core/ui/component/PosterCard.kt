@@ -78,6 +78,7 @@ fun PosterCard(
      * worse than one that does not react at all.
      */
     onLongClick: (() -> Unit)? = null,
+    isWatched: Boolean = false,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -208,6 +209,24 @@ fun PosterCard(
                             else -> 6.dp
                         },
                     ),
+                )
+            }
+
+
+            if (isWatched) {
+                WatchedBadge(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(
+                            end = if (HubColors.isCyberpunk) 4.dp else 8.dp,
+                            bottom = when {
+                                HubColors.isCyberpunk && watched != null -> 20.dp
+                                HubColors.isCyberpunk -> 4.dp
+                                watched != null -> 20.dp
+                                else -> 8.dp
+                            }
+                        ),
+                    size = 16.dp
                 )
             }
 

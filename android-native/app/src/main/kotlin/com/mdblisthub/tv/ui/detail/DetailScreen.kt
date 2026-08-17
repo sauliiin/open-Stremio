@@ -12,6 +12,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -72,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 import coil3.compose.AsyncImage
@@ -113,6 +115,7 @@ fun DetailScreen(
     val detail by viewModel.detail.collectAsStateWithLifecycle()
     val season by viewModel.season.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
+    val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
     val library by viewModel.library.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
@@ -384,6 +387,8 @@ fun DetailScreen(
                 item(key = "episodes") {
                     EpisodeRow(
                         episodes = episodes,
+                        watchedEpisodes = watchedEpisodes,
+                        showTmdbId = tmdbId,
                         onPlay = { ep -> onPlay(ep.seasonNumber, ep.episodeNumber) },
                     )
                 }
@@ -439,7 +444,12 @@ fun DetailScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
+private fun EpisodeRow(
+    episodes: List<Episode>,
+    watchedEpisodes: Set<String>,
+    showTmdbId: Int,
+    onPlay: (Episode) -> Unit
+) {
     if (episodes.isEmpty()) return
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -500,7 +510,8 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    episode.stillUrl?.let {
+                    Box {
+                        episode.stillUrl?.let {
                         AsyncImage(
                             model = it,
                             contentDescription = episode.name,
@@ -510,6 +521,15 @@ private fun EpisodeRow(episodes: List<Episode>, onPlay: (Episode) -> Unit) {
                                 .height(132.dp)
                                 .clip(RoundedCornerShape(8.dp)),
                         )
+                    }
+                        if (watchedEpisodes.contains("${showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}")) {
+                            com.mdblisthub.tv.core.ui.component.WatchedBadge(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 10.dp, bottom = 10.dp),
+                                size = 22.dp
+                            )
+                        }
                     }
                     Text(
                         text = "${episode.episodeNumber}. ${episode.name}",
