@@ -1,12 +1,33 @@
-*.iml
+# Build output
+build/
 .gradle/
-/local.properties
-/.idea/
-.DS_Store
-/build
-*/build
-*/*/build
+.kotlin/
+*.apk
+*.aab
 /captures
 .externalNativeBuild
 .cxx
+
+# The Kotlin language server (VS Code / Eclipse) compiles into `bin/` beside
+# `src/`. It was tracked once, which meant a second, stale copy of every model
+# file sat in the repo waiting to drift out of step with the real source.
+bin/
+
+# Local machine configuration — SDK paths differ per checkout, and a committed
+# one breaks the build for everyone else.
 local.properties
+
+# Signing material. Nothing here should ever reach a remote.
+*.jks
+*.keystore
+keystore.properties
+
+# IDEs
+/.idea/
+*.iml
+.vscode/*
+!.vscode/settings.json
+
+# System files
+.DS_Store
+Thumbs.db

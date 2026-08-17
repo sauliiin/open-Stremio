@@ -35,6 +35,19 @@ internal sealed interface HomeMediaRow {
     data class Stremio(val catalog: AddonCatalog, override val position: Int) : HomeMediaRow
 }
 
+/**
+ * A request to keep a just-moved row in view, at the index it moved to.
+ *
+ * The index is the row's position within `homeRows`; the screen adds whatever
+ * fixed items sit above the row list before scrolling.
+ *
+ * [id] exists only so that moving the *same* row twice in a row still counts
+ * as a new request: a `StateFlow` drops a value equal to the one it already
+ * holds, and without the counter the second press of "move down" would be
+ * published, deduplicated, and never acted on.
+ */
+internal data class HomeRowReveal(val rowIndex: Int, val id: Long)
+
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class HomeViewModel(private val graph: DataGraph) : ViewModel() {
 
@@ -52,6 +65,24 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     private val exhaustedLists = mutableSetOf<Long>()
     private val moveMutex = Mutex()
     private var dynamicRefreshJob: Job? = null
+
+    /**
+     * The row a reorder just moved, for the screen to scroll back into view.
+     *
+     * Reordering writes through Room/DataStore and comes back as a new
+     * `homeRows`, and a `LazyColumn` keeps its scroll anchored to whatever was
+     * at the top rather than to the item that moved — so with rows this tall
+     * the moved one routinely lands outside the viewport and the reorder looks
+     * like it did nothing. Naming it here is what lets the screen follow it.
+     */
+    private val _rowToReveal = MutableStateFlow<HomeRowReveal?>(null)
+    internal val rowToReveal: StateFlow<HomeRowReveal?> = _rowToReveal.asStateFlow()
+    private var rowRevealCounter = 0L
+
+    /** Called by the screen once it has scrolled to [rowToReveal]. */
+    internal fun onRowRevealed() {
+        _rowToReveal.value = null
+    }
 
     private val _initialSyncComplete = MutableStateFlow(false)
     val initialSyncComplete: StateFlow<Boolean> = _initialSyncComplete.asStateFlow()
@@ -175,6 +206,19 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
             // Dropping key-repeat events here is safer than queueing snapshots
             // built from stale positions and applying them after the first move.
             if (!moveMutex.tryLock()) return@launch
+
+            // Announced here — after the lock, so a dropped repeat never moves
+            // the viewport for a reorder that did not happen, but *before* the
+            // write, deliberately. The new order has to travel through
+            // DataStore/Room and come back as a fresh `homeRows`, and waiting
+            // for that would race the emission: the screen would run its scroll
+            // against the old order and follow the row to where it used to be.
+            // The destination index is already known, and scrolling a
+            // `LazyColumn` to an index does not require the item to be there
+            // yet — the viewport moves at once and the rows settle into it.
+            rowRevealCounter++
+            _rowToReveal.value = HomeRowReveal(target, rowRevealCounter)
+
             try {
                 runCatching {
                     graph.lists.setPositions(

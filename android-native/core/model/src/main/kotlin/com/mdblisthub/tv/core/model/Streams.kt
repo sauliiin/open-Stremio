@@ -30,6 +30,15 @@ data class PlayableStream(
     val detail: String? = null,
     val quality: String? = null,
     val size: String? = null,
+    /**
+     * `behaviorHints.videoSize`, when the addon sent one — the protocol's own
+     * field for the size of *this file*, in bytes.
+     *
+     * Kept beside [size] rather than replacing it because the two answer
+     * different questions: [size] is a label for a human and is scraped from
+     * free text, this is a number for a decision. See [sizeBytes].
+     */
+    val sizeBytesHint: Long? = null,
     val url: String? = null,
     val externalUrl: String? = null,
     val kind: StreamKind = StreamKind.DIRECT,
@@ -42,7 +51,34 @@ data class PlayableStream(
     val headers: Map<String, String> = emptyMap(),
 ) {
     val playable: Boolean get() = kind == StreamKind.DIRECT && !url.isNullOrBlank()
+
+    /**
+     * Advertised size in bytes — what the probe checks a mirror's real response
+     * against.
+     *
+     * [sizeBytesHint] first, always. Falling back to re-parsing [size] is a
+     * last resort because that string was itself scraped out of the addon's
+     * free-text label, and the number it yields is whatever figure appeared
+     * first in that text — for a season pack, typically the size of the *pack*
+     * rather than of the episode the link actually serves. Judging a mirror
+     * against that rejects a perfectly good file for being a fraction of
+     * something it was never supposed to match.
+     */
+    val sizeBytes: Long?
+        get() {
+            sizeBytesHint?.takeIf { it > 0 }?.let { return it }
+            val match = STREAM_SIZE.matchEntire(size?.trim().orEmpty()) ?: return null
+            val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
+            val multiplier = if (match.groupValues[2].equals("GB", ignoreCase = true)) {
+                1024.0 * 1024.0 * 1024.0
+            } else {
+                1024.0 * 1024.0
+            }
+            return (amount * multiplier).toLong().takeIf { it > 0 }
+        }
 }
+
+private val STREAM_SIZE = Regex("""(\d+(?:[.,]\d+)?)\s*(GB|MB)""", RegexOption.IGNORE_CASE)
 
 /** The result of fanning a stream request out over every installed addon. */
 @Serializable

@@ -151,3 +151,12 @@ esses dois é uma mudança única e coordenada.
 
 Kotlin 2.4 exige R8 9.1.29 ou superior. O `settings.gradle.kts` fixa esse R8
 compatível enquanto o projeto permanece no AGP 8.13.
+
+## Licença
+
+GPL-3.0 — ver [LICENSE](../LICENSE).
+
+O APK distribui `player/libs/media3-decoder-ffmpeg-1.11.0.aar`, uma build local
+do módulo `decoder_ffmpeg` do Media3. O FFmpeg que ele embute é LGPL/GPL e o
+Google não o publica no Maven por causa disso; as obrigações dessa licença
+acompanham qualquer redistribuição do APK.

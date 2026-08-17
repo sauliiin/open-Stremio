@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
@@ -197,6 +198,45 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val isNormalTheme = HubColors.variant == HubThemeVariant.NORMAL
     var initialNormalFocusPending by remember { mutableStateOf(false) }
+
+    // Hoisted so the reorder-reveal below can convert a row index into a
+    // `LazyColumn` index. These two decide how many fixed items sit above the
+    // row list, and stating them once is what keeps that arithmetic from
+    // drifting out of step with the items themselves.
+    val hasHeroItem = !HubColors.isNetflixy && !HubColors.isPrimefly && !isNormalTheme
+    val hasResumeItem = resumePoints.isNotEmpty() && !isEditMode
+    val homeListState = rememberLazyListState()
+    val rowToReveal by viewModel.rowToReveal.collectAsStateWithLifecycle()
+
+    /**
+     * Follows a row that edit mode just moved.
+     *
+     * Without this the reorder appears to do nothing: the write lands, the
+     * rows come back in the new order, but a `LazyColumn` anchors its scroll to
+     * whatever was at the top — and these rows are a poster carousel tall, so
+     * only one or two fit at 10-foot sizing. The moved row leaves the viewport,
+     * and the only way to see where it went is to scroll after it, which is
+     * exactly the work reordering was supposed to save. On the remote it costs
+     * more than a scroll: a row that leaves the viewport is disposed, and the
+     * D-pad focus sitting on its arrow button goes with it.
+     *
+     * Scrolls only when the destination is not already fully on screen, so a
+     * move between two visible rows stays where it is instead of snapping.
+     */
+    LaunchedEffect(rowToReveal) {
+        val reveal = rowToReveal ?: return@LaunchedEffect
+        val leading = (if (hasHeroItem) 1 else 0) + (if (hasResumeItem) 1 else 0)
+        val targetIndex = leading + reveal.rowIndex
+        val layout = homeListState.layoutInfo
+        val visible = layout.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+        val fullyVisible = visible != null &&
+            visible.offset >= layout.viewportStartOffset &&
+            visible.offset + visible.size <= layout.viewportEndOffset
+        if (!fullyVisible) {
+            homeListState.animateScrollToItem(targetIndex)
+        }
+        viewModel.onRowRevealed()
+    }
 
     LaunchedEffect(isNormalTheme) {
         initialNormalFocusPending = isNormalTheme
@@ -578,6 +618,7 @@ fun HomeScreen(
 
                 CompositionLocalProvider(LocalBringIntoViewSpec provides rowPivotScroll) {
                     LazyColumn(
+                        state = homeListState,
                         modifier = when {
                             HubColors.isPrimefly -> Modifier
                                 .fillMaxWidth()
@@ -617,13 +658,13 @@ fun HomeScreen(
                         ),
                     ) {
                         // Normal joins the themes whose hero is fixed above the shelves.
-                        if (!HubColors.isNetflixy && !HubColors.isPrimefly && !isNormalTheme) {
+                        if (hasHeroItem) {
                             item(key = "hero") {
                                 HeroPanel(viewModel)
                             }
                         }
 
-                if (resumePoints.isNotEmpty() && !isEditMode) {
+                if (hasResumeItem) {
                     item(key = "resume") {
                         MediaRow(
                             title = stringResource(R.string.home_resume_row),

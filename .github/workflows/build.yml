@@ -1,0 +1,57 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the run still in flight. Android
+# builds are slow enough that queueing them behind each other means feedback
+# arrives after the next commit has already landed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # The Gradle project is not at the repository root — see the README. The
+    # Capacitor wrapper in `android/` belongs to a different app and is not
+    # built here.
+    defaults:
+      run:
+        working-directory: android-native
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: android-native
+
+      - name: Assemble, test and lint
+        run: ./gradlew --no-daemon assembleDebug testDebugUnitTest lintDebug
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-results
+          path: android-native/app/build/reports/lint-results-*.html
+          if-no-files-found: ignore
+
+      - name: Upload debug APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apks
+          path: android-native/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore

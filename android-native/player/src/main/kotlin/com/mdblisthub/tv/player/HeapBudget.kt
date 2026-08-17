@@ -56,7 +56,14 @@ internal object HeapBudget {
      */
     private const val RAM_SHARE = 0.55
 
-    /** What a healthy device should get, when both limits allow it. */
+    /**
+     * What a healthy device should get, when both limits allow it.
+     *
+     * Now equal to [ABSOLUTE_MIN_BYTES], which means it no longer decides
+     * anything on its own — see there. Kept as a separate name so lowering the
+     * absolute floor again restores the two-tier behaviour without having to
+     * restructure `targetBufferBytes`.
+     */
     private const val PREFERRED_MIN_BYTES = 128L * 1024 * 1024
 
     /**
@@ -66,23 +73,33 @@ internal object HeapBudget {
      *
      * Raised from 24MB after devices with 1.5–2.5GB of total RAM kept
      * rebuffering on high-bitrate remuxes: at ~25Mbps, 24MB is only ~8s of
-     * forward buffer, well under what a normal network hiccup drains.
+     * forward buffer, well under what a normal network hiccup drains. Then to
+     * 88MB, then 112MB, and now to [PREFERRED_MIN_BYTES] itself.
      *
-     * Deliberately pushed almost up to [PREFERRED_MIN_BYTES] rather than to
-     * some smaller compromise. Set this close enough to `PREFERRED_MIN_BYTES`
-     * and `targetBufferBytes`'s floor collapses to effectively
-     * `min(PREFERRED_MIN_BYTES, maxMemory() / 3)` on tight devices — i.e. the
-     * *heap* ceiling the rest of this file already treats as the real risk
-     * line (a third of the heap, leaving two thirds for Compose/Coil/decoders)
-     * becomes the only thing still standing between this floor and an OOM,
-     * instead of a second, more conservative floor underneath it. That is the
-     * trade: this stops yielding to a low *free-RAM* reading (the
-     * low-memory-killer's own signal) on the tightest boxes, and leans on the
-     * heap math alone. Remeasure on an actual 1.5GB device if OOMs or process
-     * kills show up where they did not before — this is intentionally right
-     * at that edge, not short of it.
+     * **At this value the floor stops being measured at all.** Read
+     * [targetBufferBytes]: the trailing `coerceAtLeast` is applied *after* the
+     * `minOf`, so with this constant equal to `PREFERRED_MIN_BYTES` both of the
+     * other two inputs — the preferred floor and `maxMemory() / 3`, the heap
+     * ceiling the rest of this file treats as the real risk line — can never
+     * lower the result. The floor is now flatly 128MB on every device. On a
+     * 256MB heap (`largeHeap` on a modest box) that is half the heap spent on
+     * buffer, with Compose, Coil and the decoders sharing the other half.
+     *
+     * That is the trade, and it is on purpose: below this the high-bitrate
+     * remuxes that prompted the change stutter regardless, so yielding to
+     * either measured limit simply moves the failure from OOM to unwatchable.
+     * What makes it defensible is [MemoryPressure] — the runtime valve that
+     * stops the buffer growing once the platform says it is reclaiming. If that
+     * valve ever stops working, this number is immediately too high.
+     *
+     * Remeasure on an actual 1.5GB device if OOMs or process kills show up
+     * where they did not before — this is past the edge the measurements were
+     * defending, not short of it. The knob to turn first is this constant
+     * (40–64MB was the original safe range, 112MB the previous setting);
+     * dropping the trailing `coerceAtLeast` instead hands the decision back to
+     * `maxMemory() / 3`.
      */
-    private const val ABSOLUTE_MIN_BYTES = 112L * 1024 * 1024
+    private const val ABSOLUTE_MIN_BYTES = 128L * 1024 * 1024
 
     /**
      * Above this the extra buffer buys nothing a viewer can perceive.
@@ -159,9 +176,12 @@ internal object HeapBudget {
         // its RAM, and each gets the buffer it can actually back.
         val allowance = minOf(heapAllowance, ramAllowance)
 
-        // The preferred floor is itself capped by both limits: pushing a
-        // buffer up to 96MB on a device that just told us it cannot spare that
-        // would defeat the point of measuring at all.
+        // The `minOf` caps the preferred floor by both measured limits, and the
+        // trailing `coerceAtLeast` then overrides that result — deliberately,
+        // see ABSOLUTE_MIN_BYTES. With the two constants now equal, the
+        // override always wins and this whole expression evaluates to
+        // ABSOLUTE_MIN_BYTES on every device; the `minOf` is kept because
+        // lowering that constant brings the measured limits straight back.
         val floor = minOf(
             PREFERRED_MIN_BYTES,
             Runtime.getRuntime().maxMemory() / 3,

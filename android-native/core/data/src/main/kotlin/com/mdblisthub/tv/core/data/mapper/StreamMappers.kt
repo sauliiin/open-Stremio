@@ -44,6 +44,12 @@ fun StremioStreamDto.toPlayable(addon: Addon, index: Int): PlayableStream {
         detail = detail,
         quality = qualityOf(label),
         size = sizeOf(label, behaviorHints?.videoSize),
+        // Carried separately from the display string above, which prefers
+        // whatever size the addon wrote into its label. That text is the right
+        // thing to *show* — it is what the user sees on the source list — but
+        // the wrong thing to *measure* against, so the protocol's own per-file
+        // number is kept intact here. See `PlayableStream.sizeBytes`.
+        sizeBytesHint = behaviorHints?.videoSize?.takeIf { it > 0 },
         filename = behaviorHints?.filename,
         headers = behaviorHints?.proxyHeaders?.request.orEmpty(),
     )

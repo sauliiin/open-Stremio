@@ -170,6 +170,15 @@ class StreamsRepository(
         val ranked = withContext(Dispatchers.Default) { firstWave.rankForPlayback() }
         val seen = ranked.mapNotNullTo(mutableSetOf()) { it.url }
 
+        // One gate for the whole call, not one per batch. Since the late
+        // batches below probe concurrently, a semaphore built inside
+        // `sendProbed` would bound each batch to PROBE_CONCURRENCY and the call
+        // to nothing at all — a dozen addons answering late would mean a dozen
+        // times that many sockets open at once on a set-top box. These probes
+        // are synchronous OkHttp calls, which are exempt from the client
+        // dispatcher's own limits, so this is the only thing bounding them.
+        val gate = Semaphore(PROBE_CONCURRENCY)
+
         if (ranked.isNotEmpty()) {
             // The best-ranked candidate goes out unprobed, immediately.
             // Actually opening it in the player is a stricter test than a range
@@ -178,22 +187,39 @@ class StreamsRepository(
             // endpoints in particular routinely refuse a two-byte request,
             // then stream fine.
             send(ranked.first())
-            sendProbed(ranked.drop(1))
+            sendProbed(ranked.drop(1), gate)
         }
 
         // Everything that arrived after the window closed, appended behind the
         // first wave rather than dropped. The controller's queue is
         // append-only for exactly this reason, so a late addon is still usable
         // as fallback material without disturbing a cascade already running.
+        //
+        // `launch`, not a plain call, and that is the whole point of this loop
+        // now. `sendProbed` suspends until every probe in its batch has
+        // resolved, so awaiting it here made each late addon wait out the one
+        // before it: five slow addons meant five probe timeouts end to end,
+        // ~17s of the cascade sitting on `awaitingCandidate` while candidates
+        // it could have tried were queued behind a host that was never going to
+        // answer. Probing the batches concurrently costs nothing — they all
+        // share the one `gate` above, so the socket count is bounded exactly as
+        // before — and `channelFlow` will not close the channel until these
+        // children finish.
+        //
+        // Rank order within each batch is untouched; only the order *between*
+        // late addons becomes arrival-driven, which is what it already was.
         while (true) {
             val result = inbox.receiveCatching()
             if (result.isClosed) break
             val batch = result.getOrNull()
             if (batch.isNullOrEmpty()) continue
+            // `seen` stays on this loop's thread. The filtering has to happen
+            // here rather than inside the launched child, or two batches
+            // arriving together could both pass the same URL through.
             val late = withContext(Dispatchers.Default) {
                 batch.rankForPlayback().filter { it.url != null && seen.add(it.url!!) }
             }
-            sendProbed(late)
+            launch { sendProbed(late, gate) }
         }
     }
 
@@ -202,12 +228,15 @@ class StreamsRepository(
      * never dropping — whatever flunks: a failed probe is weak evidence, for
      * the same reason the top candidate skips the probe entirely.
      */
-    private suspend fun ProducerScope<PlayableStream>.sendProbed(streams: List<PlayableStream>) {
+    private suspend fun ProducerScope<PlayableStream>.sendProbed(
+        streams: List<PlayableStream>,
+        // Passed in rather than built here, because `candidates` may be running
+        // several of these at once and the socket bound has to hold across all
+        // of them. See where it is constructed.
+        gate: Semaphore,
+    ) {
         if (streams.isEmpty()) return
 
-        // Bounded so a title with forty mirrors does not open forty sockets at
-        // once on a set-top box; eight is enough to keep the queue moving.
-        val gate = Semaphore(PROBE_CONCURRENCY)
         val probes = streams.map { stream ->
             async { stream to gate.withPermit { isReachable(stream) } }
         }
@@ -229,7 +258,37 @@ class StreamsRepository(
                     .header("Range", "bytes=0-1")
                     .apply { stream.headers.forEach { (key, value) -> header(key, value) } }
                     .build()
-                probeClient.newCall(request).execute().use { it.code < 400 }
+                probeClient.newCall(request).execute().use { response ->
+                    if (response.code >= 400) return@use false
+
+                    // A removed link often returns HTTP 200 with an HTML/JSON
+                    // notice. Treating only the status as validation is what
+                    // let those through as healthy, so the cascade ranked a
+                    // dead mirror above a working one.
+                    val contentType = response.header("Content-Type")
+                        ?.substringBefore(';')
+                        ?.trim()
+                        ?.lowercase()
+                    if (contentType == "text/html" || contentType == "application/json") {
+                        return@use false
+                    }
+
+                    // Progressive removal notices may still be real videos.
+                    // Their actual file is tiny compared with the size the
+                    // addon advertised for the film, and a range response
+                    // exposes that total without downloading the file.
+                    val expectedBytes = stream.sizeBytes
+                    val actualBytes = response.header("Content-Range")
+                        ?.substringAfterLast('/')
+                        ?.toLongOrNull()
+                        ?: response.body.contentLength().takeIf { response.code == 200 && it > 0 }
+                    val adaptiveManifest = contentType?.contains("mpegurl") == true ||
+                        contentType == "application/dash+xml" ||
+                        url.substringBefore('?').endsWith(".m3u8", ignoreCase = true) ||
+                        url.substringBefore('?').endsWith(".mpd", ignoreCase = true)
+                    adaptiveManifest || expectedBytes == null || actualBytes == null ||
+                        actualBytes >= expectedBytes * MIN_EXPECTED_SIZE_FRACTION
+                }
             }.getOrDefault(false)
         }
     }
@@ -362,6 +421,16 @@ class StreamsRepository(
         const val PROBE_TIMEOUT_MS = 3_500L
         const val SUBTITLE_TIMEOUT_MS = 15_000L
         const val PROBE_CONCURRENCY = 16
+
+        /**
+         * How small a mirror's real file may be, against the size the addon
+         * advertised, before the probe stops believing it is the film.
+         *
+         * Loose on purpose — a quarter. The thing this catches is a removal
+         * notice of a few megabytes standing in for a feature of several
+         * gigabytes, and nothing legitimate lands anywhere near the line.
+         */
+        const val MIN_EXPECTED_SIZE_FRACTION = 0.25
 
         /**
          * How long the first wave is allowed to gather before the best of it
