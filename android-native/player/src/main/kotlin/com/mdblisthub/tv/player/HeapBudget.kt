@@ -49,15 +49,15 @@ internal object HeapBudget {
      *
      * Lower than the heap share on purpose. Heap headroom is ours alone; free
      * RAM is shared with every other process on the box, and taking a large
-     * slice of it is how an app gets itself killed while backgrounded. Half of
-     * what the platform itself calls spare — i.e. what is left *above* the
-     * low-memory killer's own threshold — is the most that can be justified
+     * slice of it is how an app gets itself killed while backgrounded. Just over
+     * half of what the platform itself calls spare — i.e. what is left *above*
+     * the low-memory killer's own threshold — is the most that can be justified
      * against that risk.
      */
-    private const val RAM_SHARE = 0.50
+    private const val RAM_SHARE = 0.55
 
     /** What a healthy device should get, when both limits allow it. */
-    private const val PREFERRED_MIN_BYTES = 96L * 1024 * 1024
+    private const val PREFERRED_MIN_BYTES = 128L * 1024 * 1024
 
     /**
      * The point below which playback stutters regardless, so there is no
@@ -82,7 +82,7 @@ internal object HeapBudget {
      * kills show up where they did not before — this is intentionally right
      * at that edge, not short of it.
      */
-    private const val ABSOLUTE_MIN_BYTES = 88L * 1024 * 1024
+    private const val ABSOLUTE_MIN_BYTES = 112L * 1024 * 1024
 
     /**
      * Above this the extra buffer buys nothing a viewer can perceive.

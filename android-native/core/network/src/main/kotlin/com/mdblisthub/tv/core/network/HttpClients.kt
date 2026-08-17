@@ -55,8 +55,12 @@ object HttpClients {
     fun addons(base: OkHttpClient): OkHttpClient = base.newBuilder()
         .cache(null)
         .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
-        .callTimeout(12, TimeUnit.SECONDS)
+        // Debrid addons routinely spend 10-15s validating tokens on their
+        // first request of a session (cold start). The old 8s read timeout
+        // silently discarded them — the most common cause of "no sources
+        // found" when the same title played fine a moment later.
+        .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(20, TimeUnit.SECONDS)
         .dispatcher(Dispatcher().apply {
             maxRequests = 32
             maxRequestsPerHost = 8

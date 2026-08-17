@@ -371,7 +371,11 @@ class StreamsRepository(
          * they answer in a few hundred milliseconds — and short enough that a
          * single hung host cannot hold the film hostage. Whatever misses the
          * window is not lost, only queued behind.
+         *
+         * Raised from 900ms: on mobile networks or when debrid addons are
+         * cold-starting, the old window expired before a single addon had
+         * answered, leaving the first wave empty.
          */
-        const val SETTLE_WINDOW_MS = 900L
+        const val SETTLE_WINDOW_MS = 1_500L
     }
 }
