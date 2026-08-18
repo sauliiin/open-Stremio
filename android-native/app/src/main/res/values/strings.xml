@@ -120,7 +120,6 @@
     </plurals>
 
     <string name="addons_not_imported">Não importados: </string>
-    <string name="detail_save_failed">Não consegui salvar essa mudança.</string>
     <plurals name="addons_mdblist_failed_suffix">
         <item quantity="one"> %1$d falhou: %2$s.</item>
         <item quantity="other"> %1$d falharam: %2$s.</item>
@@ -265,4 +264,63 @@
     <string name="update_open_settings">Abrir configurações</string>
     <string name="update_failed">Não foi possível concluir a atualização.</string>
     <string name="update_retry">Tentar novamente</string>
+
+    <!-- Addons screen: descriptive copy that used to be hardcoded in Kotlin. -->
+    <string name="addons_intro">Cole a URL do manifest de um addon do Stremio. É dele que saem as fontes e as legendas — o app nunca mostra a lista de links, só usa a melhor que abrir.</string>
+    <string name="addons_quick_opensubtitles_what">Legendas em dezenas de idiomas, já indexadas por IMDb ID.</string>
+    <string name="addons_quick_aiostreams_what">Junta vários addons de fontes num só, deduplica e reordena os resultados. A URL do manifest é gerada por usuário na configuração.</string>
+    <string name="addons_quick_aiostreams_unconfigured">só funciona pela URL gerada</string>
+    <string name="addons_stremio_import_explainer">A coleção inteira vem com as URLs configuradas e chaves de debrid. A senha vai direto para api.strem.io e não é salva; somente a chave de sessão devolvida pelo Stremio fica neste aparelho.</string>
+    <string name="addons_mdblist_catalog_explainer">As listas serão baixadas da MDBList e instaladas como addons locais no Open Stream.</string>
+    <string name="addons_sync_explainer">Nomes, ordem, visibilidade e exclusões das listas acompanham automaticamente sua conta Google. Este botão controla a sincronização dos addons: ligue nos dois aparelhos para que eles também acompanhem, sem depender de conta do Stremio.</string>
+    <string name="addons_preferences_error">Nomes, ordem, itens ocultos e excluídos ainda estão somente neste aparelho. %1$s</string>
+    <string name="addons_delta_changed">Lista atualizada — %1$d addon(s) de diferença.</string>
+    <string name="addons_delta_unchanged">Nada mudou — este aparelho já estava em dia.</string>
+
+    <!-- Typed repository failures — see AppError.kt / AppErrorText.kt. -->
+    <string name="error_unexpected">Algo deu errado. Tente novamente.</string>
+    <string name="error_name_required">O nome não pode ficar vazio.</string>
+    <string name="error_addon_install_timed_out">O addon demorou demais para responder. Alguns levam quase um minuto na primeira vez, enquanto validam a chave do debrid — tente de novo, que a segunda costuma ser instantânea.</string>
+    <string name="error_addon_manifest_unreadable">Não consegui ler o manifest. Confira a URL — e note que muitos addons geram um endereço próprio para cada usuário na página de configuração; é esse que precisa ser colado aqui, não o endereço do site.</string>
+    <string name="error_addon_manifest_invalid">O endereço respondeu, mas não é um manifest de addon do Stremio.</string>
+    <string name="error_mdblist_not_linked">Vincule sua conta MDBList primeiro.</string>
+    <string name="error_mdblist_no_lists">Sua conta MDBList não devolveu listas.</string>
+    <string name="error_mdblist_no_valid_manifests">A MDBList não gerou nenhum manifest de addon válido.</string>
+    <string name="error_mdblist_key_required">Informe a chave da API da MDBList.</string>
+    <string name="error_mdblist_write_rejected">mdblist respondeu %1$d.</string>
+    <string name="error_mdblist_session_expired">Sessão expirada.</string>
+    <string name="error_google_sign_in_required">Entre com o Google primeiro.</string>
+    <string name="error_google_account_changed_restore">A conta Google mudou durante a restauração.</string>
+    <string name="error_google_account_changed_sync">A conta Google mudou durante a sincronização.</string>
+    <string name="error_firebase_no_account">O Firebase não devolveu a conta.</string>
+    <string name="error_firebase_no_token">O Firebase não devolveu um token de acesso.</string>
+    <string name="error_firebase_link_rejected">O Firebase recusou o vínculo da conta (%1$d).</string>
+    <string name="error_firebase_unlink_rejected">O Firebase recusou a remoção do vínculo da conta (%1$d).</string>
+    <string name="error_firebase_addon_sync_rejected">O Firebase recusou a sincronização (%1$d).</string>
+    <string name="error_firebase_preferences_sync_rejected">O Firebase recusou as preferências das listas (%1$d).</string>
+    <string name="error_firebase_unreachable">Não foi possível falar com o Firebase.</string>
+    <string name="error_addon_sync_failed">Não foi possível sincronizar os addons.</string>
+    <string name="error_list_order_sync_failed">Não foi possível sincronizar nomes e ordem das listas.</string>
+    <string name="error_preferences_sync_failed">Não foi possível sincronizar as preferências.</string>
+    <string name="error_preferences_changed_repeatedly">As preferências mudaram continuamente durante a sincronização; tente novamente.</string>
+    <string name="error_no_cloud_addon_list">Ainda não há uma lista de addons na nuvem, então não mexi nos daqui. Use "Enviar" no aparelho que tem os addons certos primeiro.</string>
+    <string name="error_stremio_credentials_required">Informe e-mail e senha.</string>
+    <string name="error_stremio_no_session">A API do Stremio não devolveu uma sessão.</string>
+    <string name="error_stremio_not_linked">Entre na sua conta Stremio primeiro.</string>
+    <string name="error_stremio_session_expired">Sua sessão do Stremio expirou. Entre novamente.</string>
+    <string name="error_stremio_unexpected_response">Resposta inesperada da API do Stremio.</string>
+    <string name="error_stremio_wrong_password">Senha incorreta.</string>
+    <string name="error_stremio_user_not_found">Não existe conta Stremio com esse e-mail.</string>
+    <string name="error_stremio_request_rejected">A API do Stremio recusou a solicitação.</string>
+    <string name="error_trakt_not_linked">Conta Trakt não conectada.</string>
+    <string name="error_trakt_title_not_recognized">O Trakt não reconheceu este título.</string>
+    <string name="error_invalid_imdb_id">O catálogo não forneceu um IMDb ID válido.</string>
+    <string name="error_tmdb_title_not_found">Não encontrei este título no TMDB.</string>
+    <string name="addon_import_skip_no_url">a conta não guardou a URL deste addon</string>
+    <string name="addon_import_skip_no_manifest_id">o manifest veio sem id</string>
+    <string name="addon_import_skip_unparsable_url">URL que não dá para interpretar</string>
+    <string name="addon_import_skip_invalid_manifest">manifest inválido</string>
+    <string name="addons_import_report_count">%1$d de %2$d addon(s) da conta importado(s).</string>
+    <string name="addons_import_arrived">Vieram: %1$s.</string>
+    <string name="addons_mdblist_key_hint">Informe a chave da API da MDBList para carregar suas listas.</string>
 </resources>

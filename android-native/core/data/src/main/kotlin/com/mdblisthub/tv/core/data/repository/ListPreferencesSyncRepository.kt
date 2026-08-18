@@ -7,6 +7,10 @@ import com.mdblisthub.tv.core.network.HttpClients
 import com.mdblisthub.tv.core.network.SyncApi
 import com.mdblisthub.tv.core.network.dto.FirebaseListPreferenceDto
 import com.mdblisthub.tv.core.network.dto.FirebaseListPreferencesDto
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.AppException
+import com.mdblisthub.tv.core.model.fail
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.dto.FirebaseCatalogPreferenceDto
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -47,8 +51,8 @@ class ListPreferencesSyncRepository(
     private val busyState = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = busyState.asStateFlow()
 
-    private val failureState = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = failureState.asStateFlow()
+    private val failureState = MutableStateFlow<AppError?>(null)
+    val error: StateFlow<AppError?> = failureState.asStateFlow()
 
     private val lastState = MutableStateFlow<String?>(null)
     val lastSync: StateFlow<String?> = lastState.asStateFlow()
@@ -94,7 +98,7 @@ class ListPreferencesSyncRepository(
             request {
                 requestMutex.withLock {
                     val (uid, token) = auth.firebaseSession()
-                    check(uid == account.uid) { "A conta Google mudou durante a restauração." }
+                    requireOrFail(uid == account.uid) { AppError.GoogleAccountChangedDuringRestore }
                     if (session.areListPreferencesDirty()) {
                         val localLists = session.currentListPreferences()
                         val localCatalogs = session.currentCatalogPreferences()
@@ -144,7 +148,7 @@ class ListPreferencesSyncRepository(
     /** Explicit retry used by the Addons screen's Enviar action. */
     suspend fun pushNow(): Result<Int> {
         val uid = auth.googleAccount.value?.uid
-            ?: return Result.failure(IllegalStateException("Entre com sua conta Google primeiro."))
+            ?: return Result.failure(AppException(AppError.GoogleSignInRequired))
         activeUid = uid
         pushJob?.cancel()
         return request {
@@ -198,8 +202,7 @@ class ListPreferencesSyncRepository(
             }
         }
         busyState.value = false
-        failureState.value = lastFailure?.message
-            ?: "Não foi possível sincronizar nomes e ordem das listas."
+        failureState.value = (lastFailure as? AppException)?.error ?: AppError.ListOrderSyncFailed
     }
 
     private suspend fun writeCurrentSnapshot(uid: String): Int = writeSnapshot(
@@ -217,8 +220,8 @@ class ListPreferencesSyncRepository(
         var currentCatalogs = initialCatalogs
         repeat(MAX_SNAPSHOT_PASSES) {
             val (sessionUid, token) = auth.firebaseSession()
-            check(sessionUid == uid && activeUid == uid) {
-                "A conta Google mudou durante a sincronização."
+            requireOrFail(sessionUid == uid && activeUid == uid) {
+                AppError.GoogleAccountChangedDuringSync
             }
             write(
                 uid,
@@ -233,7 +236,7 @@ class ListPreferencesSyncRepository(
             currentLists = session.currentListPreferences()
             currentCatalogs = session.currentCatalogPreferences()
         }
-        error("As preferências mudaram continuamente durante a sincronização; tente novamente.")
+        fail(AppError.PreferencesChangedRepeatedly)
     }
 
     private suspend fun request(call: suspend () -> Int): Result<Int> {
@@ -252,7 +255,7 @@ class ListPreferencesSyncRepository(
         }
         result.onSuccess { lastState.value = nowIso() }
         result.onFailure {
-            failureState.value = it.message ?: "Não foi possível sincronizar as preferências."
+            failureState.value = (it as? AppException)?.error ?: AppError.PreferencesSyncFailed
             Log.w(TAG, "Falha na sincronização das preferências.", it)
         }
         return result
@@ -281,8 +284,8 @@ class ListPreferencesSyncRepository(
                 catalogs = catalogs,
             ),
         )
-        check(response.isSuccessful) {
-            "O Firebase recusou as preferências das listas (${response.code()})."
+        requireOrFail(response.isSuccessful) {
+            AppError.FirebasePreferencesSyncRejected(response.code())
         }
     }
 

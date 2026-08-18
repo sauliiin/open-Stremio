@@ -7,8 +7,10 @@ import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toEntity
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.database.entity.ListItemEntity
+import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaList
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.dto.FirebaseListPreferenceDto
 import kotlinx.coroutines.flow.Flow
@@ -129,7 +131,7 @@ class ListsRepository(
 
     suspend fun rename(listId: Long, rawName: String) = runCatching {
         val name = rawName.trim()
-        require(name.isNotEmpty()) { "O nome não pode ficar vazio." }
+        requireOrFail(name.isNotEmpty()) { AppError.NameRequired }
         listDao.updateName(listId, name)
         capturePreferences()
     }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -50,11 +51,14 @@ import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.Addon
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.AppException
 import com.mdblisthub.tv.core.model.StremioAccount
 import com.mdblisthub.tv.core.model.StremioImportReport
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -79,26 +83,29 @@ import kotlinx.coroutines.launch
  */
 private data class QuickAddon(
     val name: String,
-    val what: String,
+    // Resource ids, not text. These are declared in a top-level `val` that is
+    // built once at class-init time, long before any composition and with no
+    // Context in reach — so the string has to stay unresolved until the row
+    // that draws it can call `stringResource` in the interface's language.
+    @StringRes val what: Int,
     val host: String? = null,
     val url: String? = null,
     val configureUrl: String? = null,
-    val unconfigured: String? = null,
+    @StringRes val unconfigured: Int? = null,
 )
 
 private val QUICK_ADDONS = listOf(
     QuickAddon(
         name = "OpenSubtitles v3",
-        what = "Legendas em dezenas de idiomas, já indexadas por IMDb ID.",
+        what = R.string.addons_quick_opensubtitles_what,
         url = "https://opensubtitles-v3.strem.io/manifest.json",
     ),
     QuickAddon(
         name = "AIOStreams",
         host = "ElfHosted",
-        what = "Junta vários addons de fontes num só, deduplica e reordena os resultados. " +
-            "A URL do manifest é gerada por usuário na configuração.",
+        what = R.string.addons_quick_aiostreams_what,
         configureUrl = "https://aiostreams.elfhosted.com/configure",
-        unconfigured = "só funciona pela URL gerada",
+        unconfigured = R.string.addons_quick_aiostreams_unconfigured,
     ),
 )
 
@@ -107,14 +114,14 @@ private val QUICK_ADDONS = listOf(
 data class InstallState(
     val url: String = "",
     val busy: Boolean = false,
-    val error: String? = null,
+    val error: AppError? = null,
 )
 
 data class FirebaseSyncUi(
     val enabled: Boolean = false,
     val busy: Boolean = false,
-    val error: String? = null,
-    val preferencesError: String? = null,
+    val error: AppError? = null,
+    val preferencesError: AppError? = null,
     val lastSync: String? = null,
     val lastDelta: Int? = null,
 )
@@ -124,7 +131,7 @@ data class StremioSyncUi(
     val email: String = "",
     val password: String = "",
     val busy: Boolean = false,
-    val error: String? = null,
+    val error: AppError? = null,
     val report: StremioImportReport? = null,
 )
 
@@ -133,8 +140,7 @@ data class MdblistCatalogUi(
     val enabled: Boolean = false,
     val apiKey: String = "",
     val busy: Boolean = false,
-    /** Raw text from the repository; the UI wraps it in a localised template. */
-    val error: String? = null,
+    val error: AppError? = null,
     val message: MdblistCatalogMessage? = null,
 )
 
@@ -234,7 +240,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch {
             graph.addons.install(url).fold(
                 onSuccess = { _install.update { s -> s.copy(busy = false, url = "") } },
-                onFailure = { e -> _install.update { s -> s.copy(busy = false, error = e.message) } },
+                onFailure = { e -> _install.update { s -> s.copy(busy = false, error = (e as? AppException)?.error ?: AppError.Unexpected) } },
             )
         }
     }
@@ -301,7 +307,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                 },
                 onFailure = { error ->
                     _stremio.update {
-                        it.copy(busy = false, password = "", error = error.message)
+                        it.copy(busy = false, password = "", error = (error as? AppException)?.error ?: AppError.Unexpected)
                     }
                 },
             )
@@ -314,7 +320,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch {
             graph.stremioAccount.sync().fold(
                 onSuccess = { report -> _stremio.update { it.copy(busy = false, report = report) } },
-                onFailure = { error -> _stremio.update { it.copy(busy = false, error = error.message) } },
+                onFailure = { error -> _stremio.update { it.copy(busy = false, error = (error as? AppException)?.error ?: AppError.Unexpected) } },
             )
         }
     }
@@ -352,7 +358,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     _mdblistCatalog.update {
                         it.copy(
                             busy = false,
-                            error = error.message.orEmpty(),
+                            error = (error as? AppException)?.error ?: AppError.Unexpected,
                         )
                     }
                 },
@@ -382,7 +388,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                         }
                     },
                     onFailure = { error ->
-                        _mdblistCatalog.update { it.copy(busy = false, error = error.message) }
+                        _mdblistCatalog.update { it.copy(busy = false, error = (error as? AppException)?.error ?: AppError.Unexpected) }
                     },
                 )
             } else {
@@ -400,7 +406,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                         }
                     },
                     onFailure = { error ->
-                        _mdblistCatalog.update { it.copy(busy = false, error = error.message) }
+                        _mdblistCatalog.update { it.copy(busy = false, error = (error as? AppException)?.error ?: AppError.Unexpected) }
                     },
                 )
             }
@@ -424,7 +430,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     }
                 },
                 onFailure = { error ->
-                    _mdblistCatalog.update { it.copy(busy = false, error = error.message) }
+                    _mdblistCatalog.update { it.copy(busy = false, error = (error as? AppException)?.error ?: AppError.Unexpected) }
                 },
             )
         }
@@ -461,9 +467,7 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
         ) {
             Text(stringResource(R.string.addons_title), style = MaterialTheme.typography.displayLarge, color = HubColors.Text)
             Text(
-                text = "Cole a URL do manifest de um addon do Stremio. É dele que saem as " +
-                    "fontes e as legendas — o app nunca mostra a lista de links, só usa a " +
-                    "melhor que abrir.",
+                text = stringResource(R.string.addons_intro),
                 style = MaterialTheme.typography.bodyLarge,
                 color = HubColors.TextDim,
                 modifier = Modifier.widthIn(max = 940.dp).fillMaxWidth(),
@@ -592,9 +596,7 @@ private fun StremioSyncCard(
                 color = HubColors.Text,
             )
             Text(
-                text = "A coleção inteira vem com as URLs configuradas e chaves de debrid. " +
-                    "A senha vai direto para api.strem.io e não é salva; somente a chave de " +
-                    "sessão devolvida pelo Stremio fica neste aparelho.",
+                text = stringResource(R.string.addons_stremio_import_explainer),
                 style = MaterialTheme.typography.bodyMedium,
                 color = HubColors.TextDim,
             )
@@ -632,27 +634,29 @@ private fun StremioSyncCard(
             }
         }
 
-        state.error?.let { InlineMessage(it, isError = true) }
+        state.error?.let { InlineMessage(it.text(), isError = true) }
         state.report?.let { report ->
             InlineMessage(
-                "${report.imported.size} de ${report.received} addon(s) da conta importado(s).",
+                stringResource(R.string.addons_import_report_count, report.imported.size, report.received),
                 isError = false,
             )
             if (report.imported.isNotEmpty()) {
                 Text(
-                    "Vieram: ${report.imported.joinToString(", ")}.",
+                    stringResource(R.string.addons_import_arrived, report.imported.joinToString(", ")),
                     style = MaterialTheme.typography.bodyMedium,
                     color = HubColors.TextDim,
                 )
             }
             if (report.skipped.isNotEmpty()) {
+                // Resolved outside the `joinToString` transform, which is a
+                // plain `(T) -> CharSequence` lambda and cannot itself call a
+                // @Composable function like `AddonImportSkipReason.text()`.
+                val entries = report.skipped.map { "${it.name} (${it.reason.text()})" }
                 Text(
-                    text = report.skipped.joinToString(
+                    text = entries.joinToString(
                         ", ",
                         prefix = stringResource(R.string.addons_not_imported),
-                    ) {
-                        "${it.name} (${it.reason})"
-                    },
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = HubColors.Rotten,
                 )
@@ -684,14 +688,14 @@ private fun MdblistCatalogCard(
             StatusPill(on = state.enabled)
         }
         Text(
-            text = "As listas serão baixadas da MDBList e instaladas como addons locais no Open Stream.",
+            text = stringResource(R.string.addons_mdblist_catalog_explainer),
             style = MaterialTheme.typography.bodyMedium,
             color = HubColors.TextDim,
         )
 
         if (!state.linked) {
             Text(
-                "Informe a chave da API da MDBList para carregar suas listas.",
+                stringResource(R.string.addons_mdblist_key_hint),
                 style = MaterialTheme.typography.bodyMedium,
                 color = HubColors.TextDim,
             )
@@ -762,9 +766,7 @@ private fun FirebaseSyncCard(
             StatusPill(on = state.enabled)
         }
         Text(
-            text = "Nomes, ordem, visibilidade e exclusões das listas acompanham automaticamente " +
-                "sua conta Google. Este botão controla a sincronização dos addons: ligue nos dois " +
-                "aparelhos para que eles também acompanhem, sem depender de conta do Stremio.",
+            text = stringResource(R.string.addons_sync_explainer),
             style = MaterialTheme.typography.bodyMedium,
             color = HubColors.TextDim,
         )
@@ -778,17 +780,17 @@ private fun FirebaseSyncCard(
             }
         }
 
-        state.error?.let { InlineMessage(it, isError = true) }
+        state.error?.let { InlineMessage(it.text(), isError = true) }
         state.preferencesError?.let { error ->
             InlineMessage(
-                "Nomes, ordem, itens ocultos e excluídos ainda estão somente neste aparelho. $error",
+                stringResource(R.string.addons_preferences_error, error.text()),
                 isError = true,
             )
         }
         state.lastDelta?.let { delta ->
             InlineMessage(
-                if (delta > 0) "Lista atualizada — $delta addon(s) de diferença."
-                else "Nada mudou — este aparelho já estava em dia.",
+                if (delta > 0) stringResource(R.string.addons_delta_changed, delta)
+                else stringResource(R.string.addons_delta_unchanged),
                 isError = false,
             )
         }
@@ -833,7 +835,7 @@ private fun InstallCard(
             )
         }
 
-        state.error?.let { InlineMessage(it, isError = true) }
+        state.error?.let { InlineMessage(it.text(), isError = true) }
     }
 }
 
@@ -889,11 +891,11 @@ private fun GettingStartedCard(
                         .border(1.dp, HubColors.Rotten.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
-                    Text(text = it, style = MaterialTheme.typography.labelSmall, color = HubColors.Rotten)
+                    Text(text = stringResource(it), style = MaterialTheme.typography.labelSmall, color = HubColors.Rotten)
                 }
             }
         }
-        Text(quick.what, style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
+        Text(stringResource(quick.what), style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (quick.url != null) {
                 HubButton(

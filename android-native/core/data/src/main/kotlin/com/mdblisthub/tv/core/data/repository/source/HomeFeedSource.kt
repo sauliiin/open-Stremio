@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.repository.source
 
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
 import com.mdblisthub.tv.core.model.MdblistHomeFeedItem
@@ -229,7 +230,7 @@ private fun BucketTitleDto.toFeedItem(type: MediaType): MdblistHomeFeedItem? {
         MediaItem(
             tmdbId = tmdbId,
             type = type,
-            title = title.orEmpty().ifBlank { "Sem título" },
+            title = title.orEmpty().ifBlank { CoreText.untitled },
             imdbId = ids?.imdb,
             year = year,
             posterUrl = TmdbImages.upscale(poster),
@@ -252,7 +253,7 @@ private fun TraktTitleDto.toFeedItem(type: MediaType): MdblistHomeFeedItem? {
         MediaItem(
             tmdbId = tmdbId,
             type = type,
-            title = title.orEmpty().ifBlank { "Sem título" },
+            title = title.orEmpty().ifBlank { CoreText.untitled },
             imdbId = ids?.imdb,
             year = year,
             runtimeMinutes = runtime?.takeIf { it > 0 },

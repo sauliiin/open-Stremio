@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.mapper
 
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.database.entity.AddonEntity
 import com.mdblisthub.tv.core.database.entity.EpisodeEntity
 import com.mdblisthub.tv.core.database.entity.ListEntity
@@ -216,7 +217,7 @@ fun buildDetailEntity(
         reviews = info?.reviews.orEmpty().mapNotNull { review ->
             review.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Review(
-                author = review.author.ifBlank { "Anônimo" },
+                author = review.author.ifBlank { CoreText.anonymous },
                 content = review.content,
                 rating = review.rating,
                 // mdblist's `provider_id`: 1 = Trakt, 2 = TMDB.
@@ -388,7 +389,7 @@ fun PlaybackSessionDto.toResumeEntity(now: Long): ResumeEntity? {
         type = mediaType.mdblist,
         tmdbId = tmdbId,
         imdbId = imdbId,
-        title = parent.title ?: "Sem título",
+        title = parent.title ?: CoreText.untitled,
         posterUrl = null,
         backdropUrl = null,
         score = null,

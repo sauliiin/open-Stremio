@@ -3,7 +3,10 @@ package com.mdblisthub.tv.core.data.repository
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.UiPreferencesStore
 import com.mdblisthub.tv.core.data.repository.source.HomeFeedSource
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.model.LibraryProvider
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.model.MdblistHomeFeed
 import com.mdblisthub.tv.core.model.MdblistHomeFeedItem
 import com.mdblisthub.tv.core.model.MdblistHomeFeedKeys
@@ -54,7 +57,7 @@ class HomeFeedsRepository(
 
         val items = content.items.takeIf { content.ownerKey == ownerKey(provider, apiKey) }.orEmpty()
         val byKey = catalogPreferences.associateBy { it.key }
-        DEFAULTS.mapNotNull { default ->
+        defaults().mapNotNull { default ->
             val preference = byKey[default.key]
             if (preference?.deleted == true) return@mapNotNull null
             default.copy(
@@ -149,7 +152,7 @@ class HomeFeedsRepository(
 
     suspend fun rename(feed: MdblistHomeFeed, rawName: String) = runCatching {
         val name = rawName.trim()
-        require(name.isNotEmpty()) { "O nome não pode ficar vazio." }
+        requireOrFail(name.isNotEmpty()) { AppError.NameRequired }
         updatePreference(feed) {
             it.copy(name = name.takeUnless { value -> value == feed.originalName })
         }
@@ -188,26 +191,34 @@ class HomeFeedsRepository(
         /** Same ceiling as the decoy-duration probe: a network+DB round trip per title, bounded. */
         const val ARTWORK_CONCURRENCY = 8
 
-        val DEFAULTS = listOf(
+        /**
+         * A function, not a `val`. These names come from [CoreText], which
+         * reads `Locale.getDefault()` live — freezing them into a `val` would
+         * bake in whatever locale happened to be current the first time this
+         * companion object was touched, which on a cold start can run before
+         * `MainActivity` has mirrored the user's chosen language into the
+         * process default at all.
+         */
+        fun defaults(): List<MdblistHomeFeed> = listOf(
             MdblistHomeFeed(
                 key = MdblistHomeFeedKeys.UP_NEXT,
-                name = "Up Next",
-                originalName = "Up Next",
+                name = CoreText.upNext,
+                originalName = CoreText.upNext,
             ),
             MdblistHomeFeed(
                 key = MdblistHomeFeedKeys.RECENTLY_ADDED,
-                name = "Recently Added",
-                originalName = "Recently Added",
+                name = CoreText.recentlyAdded,
+                originalName = CoreText.recentlyAdded,
             ),
             MdblistHomeFeed(
                 key = MdblistHomeFeedKeys.WATCHLIST,
-                name = "Watchlist",
-                originalName = "Watchlist",
+                name = CoreText.watchlist,
+                originalName = CoreText.watchlist,
             ),
             MdblistHomeFeed(
                 key = MdblistHomeFeedKeys.RECENTLY_WATCHED,
-                name = "Recently Watched",
-                originalName = "Recently Watched",
+                name = CoreText.recentlyWatched,
+                originalName = CoreText.recentlyWatched,
             ),
         )
     }

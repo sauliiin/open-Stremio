@@ -94,6 +94,7 @@ import com.mdblisthub.tv.core.ui.component.RatingBadges
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -335,12 +336,8 @@ fun DetailScreen(
                     }
 
                     libraryError?.let { failure ->
-                        val text = when (failure) {
-                            is LibraryError.Message -> failure.text
-                            LibraryError.SaveFailed -> stringResource(R.string.detail_save_failed)
-                        }
                         Spacer(Modifier.height(10.dp))
-                        Text(text, style = MaterialTheme.typography.bodyMedium, color = HubColors.Rotten)
+                        Text(failure.text(), style = MaterialTheme.typography.bodyMedium, color = HubColors.Rotten)
                     }
 
                     if (current.directors.isNotEmpty() || current.studios.isNotEmpty()) {

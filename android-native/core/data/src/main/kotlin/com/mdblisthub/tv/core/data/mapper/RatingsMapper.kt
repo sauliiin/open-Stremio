@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.mapper
 
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.model.RatingBadge
 import com.mdblisthub.tv.core.model.RatingTone
 import com.mdblisthub.tv.core.network.dto.MdbRatingDto
@@ -31,7 +32,7 @@ object RatingsMapper {
     private val SOURCES: Map<String, Spec> = mapOf(
         "imdb" to Spec("IMDb", RatingTone.IMDB, 1, ::oneDecimal) { it * 10 },
         "tomatoes" to Spec("Tomatometer", RatingTone.RT_FRESH, 2, ::percent) { it },
-        "popcorn" to Spec("RT Público", RatingTone.RT_FRESH, 3, ::percent) { it },
+        "popcorn" to Spec(CoreText.audienceScore, RatingTone.RT_FRESH, 3, ::percent) { it },
         "metacritic" to Spec("Metacritic", RatingTone.METACRITIC, 4, { "${it.roundToInt()}" }) { it },
         "letterboxd" to Spec("Letterboxd", RatingTone.LETTERBOXD, 5, { "${oneDecimal(it)}/5" }) { it / 5 * 100 },
         "trakt" to Spec("Trakt", RatingTone.TRAKT, 6, ::percent) { it },

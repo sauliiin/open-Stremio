@@ -12,6 +12,8 @@ import com.mdblisthub.tv.core.network.TraktTokens
 import com.mdblisthub.tv.core.network.dto.TraktDeviceCodeRequestDto
 import com.mdblisthub.tv.core.network.dto.TraktDeviceTokenRequestDto
 import com.mdblisthub.tv.core.network.dto.TraktRefreshRequestDto
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.dto.TraktRevokeRequestDto
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -51,9 +53,12 @@ class TraktAuthRepository(
      * constant here, because they are Trakt's to change.
      */
     suspend fun startLink(): Result<TraktDeviceCode> = runCatching {
-        check(configured) { MISSING_CREDENTIALS }
+        // Redundant with the UI-level `configured` gate in SettingsScreen (which
+        // never reaches this call in the first place), but kept as a typed
+        // backstop for any future caller that skips it.
+        requireOrFail(configured) { AppError.TraktNotConfigured }
         val dto = authApi.deviceCode(TraktDeviceCodeRequestDto(ApiConfig.TRAKT_CLIENT_ID))
-        check(dto.deviceCode.isNotBlank() && dto.userCode.isNotBlank()) { "Trakt devolveu códigos vazios." }
+        requireOrFail(dto.deviceCode.isNotBlank() && dto.userCode.isNotBlank()) { AppError.TraktUnavailable }
         TraktDeviceCode(
             userCode = dto.userCode,
             // Include the code in Trakt's public activation URL so opening the
@@ -220,9 +225,5 @@ class TraktAuthRepository(
             store.save(token)
             token.accessToken
         }
-    }
-
-    private companion object {
-        const val MISSING_CREDENTIALS = "Este build não traz credenciais do Trakt."
     }
 }

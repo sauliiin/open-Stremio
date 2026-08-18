@@ -9,7 +9,11 @@ import com.mdblisthub.tv.core.data.StremioAccountStore
 import com.mdblisthub.tv.core.data.SyncStore
 import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.database.HubDatabase
+import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.HubUser
+import com.mdblisthub.tv.core.model.fail
+import com.mdblisthub.tv.core.model.orFail
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.HttpClients
 import com.mdblisthub.tv.core.network.MdblistApi
@@ -91,7 +95,7 @@ class AuthRepository(
         val result = firebase
             .signInWithCredential(GoogleAuthProvider.getCredential(idToken, null))
             .awaitResult()
-        val firebaseUser = requireNotNull(result.user) { "O Firebase não devolveu a conta." }
+        val firebaseUser = result.user.orFail { AppError.FirebaseNoAccount }
 
         if (previousUid.isNotBlank() && previousUid != firebaseUser.uid) {
             syncStore.setFirebaseSyncEnabled(false)
@@ -107,9 +111,9 @@ class AuthRepository(
 
     /** Validates and links the user's MDBList credential to the current Google UID. */
     suspend fun linkMdblist(rawKey: String): Result<HubUser> = runCatching {
-        val firebaseUser = requireNotNull(firebase.currentUser) { "Entre com o Google primeiro." }
+        val firebaseUser = firebase.currentUser.orFail { AppError.GoogleSignInRequired }
         val key = rawKey.trim()
-        require(key.isNotEmpty()) { "Informe a chave da API da MDBList." }
+        requireOrFail(key.isNotEmpty()) { AppError.MdblistKeyRequired }
 
         val user = api.user(key).toDomain()
         val oldKey = session.currentKey()
@@ -135,7 +139,7 @@ class AuthRepository(
      */
     suspend fun signInWithMdblistOnly(rawKey: String): Result<HubUser> = runCatching {
         val key = rawKey.trim()
-        require(key.isNotEmpty()) { "Informe a chave da API da MDBList." }
+        requireOrFail(key.isNotEmpty()) { AppError.MdblistKeyRequired }
 
         val user = api.user(key).toDomain()
         session.saveMdblistOnly(key, user)
@@ -144,12 +148,12 @@ class AuthRepository(
 
     /** Enters with Google only, leaving MDBList-dependent rows disabled. */
     suspend fun continueWithoutMdblist(): Result<Unit> = runCatching {
-        val firebaseUser = requireNotNull(firebase.currentUser) { "Entre com o Google primeiro." }
+        val firebaseUser = firebase.currentUser.orFail { AppError.GoogleSignInRequired }
         val token = firebaseUser.getIdToken(false).awaitResult().token
-            ?: error("O Firebase não devolveu um token de acesso.")
+            ?: fail(AppError.FirebaseNoToken)
         val response = syncApi.deleteProfile(profileUrl(firebaseUser.uid), token)
-        check(response.isSuccessful || response.code() == 404) {
-            "O Firebase recusou a remoção do vínculo da conta (${response.code()})."
+        requireOrFail(response.isSuccessful || response.code() == 404) {
+            AppError.FirebaseUnlinkRejected(response.code())
         }
         clearMdblistData()
         session.markMdblistSkipped(firebaseUser.uid)
@@ -227,9 +231,9 @@ class AuthRepository(
 
     /** Token and UID used by every protected Realtime Database request. */
     suspend fun firebaseSession(): Pair<String, String> {
-        val user = requireNotNull(firebase.currentUser) { "Entre com sua conta Google primeiro." }
+        val user = firebase.currentUser.orFail { AppError.GoogleSignInRequired }
         val token = user.getIdToken(false).awaitResult().token
-        require(!token.isNullOrBlank()) { "O Firebase não devolveu um token de acesso." }
+        requireOrFail(!token.isNullOrBlank()) { AppError.FirebaseNoToken }
         return user.uid to token
     }
 
@@ -238,7 +242,7 @@ class AuthRepository(
         allowLegacyMigration: Boolean,
     ): Boolean {
         val token = firebaseUser.getIdToken(false).awaitResult().token
-            ?: error("O Firebase não devolveu um token de acesso.")
+            ?: fail(AppError.FirebaseNoToken)
         val remoteKey = syncApi.readProfile(profileUrl(firebaseUser.uid), token)
             .takeUnless { it is JsonNull }
         ?.let { HttpClients.json.decodeFromJsonElement(FirebaseProfileDto.serializer(), it).mdblistApiKey }
@@ -260,13 +264,13 @@ class AuthRepository(
 
     private suspend fun writeProfile(user: FirebaseUser, key: String) {
         val token = user.getIdToken(false).awaitResult().token
-            ?: error("O Firebase não devolveu um token de acesso.")
+            ?: fail(AppError.FirebaseNoToken)
         val response = syncApi.writeProfile(
             profileUrl(user.uid),
             token,
             FirebaseProfileDto(mdblistApiKey = key),
         )
-        check(response.isSuccessful) { "O Firebase recusou o vínculo da conta (${response.code()})." }
+        requireOrFail(response.isSuccessful) { AppError.FirebaseLinkRejected(response.code()) }
     }
 
     private fun profileUrl(uid: String) =

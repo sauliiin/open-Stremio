@@ -6,11 +6,14 @@ import com.mdblisthub.tv.core.data.mapper.buildDetailEntity
 import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toEntity
 import com.mdblisthub.tv.core.database.HubDatabase
+import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LandscapeArtwork
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.orFail
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.FanartTvApi
@@ -160,7 +163,7 @@ class MediaRepository(
 
     /** Resolves Stremio catalog cards, which are commonly identified only by IMDb ID. */
     suspend fun resolveImdb(type: MediaType, imdbId: String): Result<Int> = runCatching {
-        require(imdbId.startsWith("tt", ignoreCase = true)) { "O catálogo não forneceu um IMDb ID válido." }
+        requireOrFail(imdbId.startsWith("tt", ignoreCase = true)) { AppError.InvalidImdbId }
         val cacheKey = "${type.mdblist}:$imdbId"
         imdbToTmdb[cacheKey]
             ?: mediaDao.tmdbIdForImdb(imdbId, type.mdblist)
@@ -174,7 +177,7 @@ class MediaRepository(
                 } else {
                     result.movieResults.firstOrNull()?.id
                 }
-                requireNotNull(id?.takeIf { it > 0 }) { "Não encontrei este título no TMDB." }
+                (id?.takeIf { it > 0 }).orFail { AppError.TmdbTitleNotFound }
             }.also { imdbToTmdb[cacheKey] = it }
     }
 

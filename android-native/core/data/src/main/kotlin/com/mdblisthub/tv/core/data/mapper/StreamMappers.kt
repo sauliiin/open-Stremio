@@ -201,29 +201,62 @@ fun List<SubtitleOption>.rankSubtitles(): List<SubtitleOption> {
 /** ISO 639-2/B codes the addons use, rendered readably in Portuguese. */
 object Languages {
 
-    private val NAMES = mapOf(
-        "por" to "Português", "pob" to "Português (BR)", "pt" to "Português",
-        "pt-br" to "Português (BR)",
-        "eng" to "Inglês", "en" to "Inglês",
-        "spa" to "Espanhol", "es" to "Espanhol",
-        "fre" to "Francês", "fra" to "Francês", "fr" to "Francês",
-        "ger" to "Alemão", "deu" to "Alemão", "de" to "Alemão",
-        "ita" to "Italiano", "it" to "Italiano",
-        "jpn" to "Japonês", "ja" to "Japonês",
-        "kor" to "Coreano", "ko" to "Coreano",
-        "chi" to "Chinês", "zho" to "Chinês", "zh" to "Chinês",
-        "rus" to "Russo", "ru" to "Russo",
-        "ara" to "Árabe", "ar" to "Árabe",
-        "dut" to "Holandês", "nld" to "Holandês",
-        "swe" to "Sueco", "nor" to "Norueguês", "dan" to "Dinamarquês", "fin" to "Finlandês",
-        "pol" to "Polonês", "tur" to "Turco", "hin" to "Hindi", "heb" to "Hebraico",
-        "ell" to "Grego",
+    /**
+     * Addon language codes that Java's own tables do not resolve, mapped to the
+     * ISO 639-1 code that they do.
+     *
+     * Only the *irregular* ones are listed. The Stremio and OpenSubtitles
+     * ecosystems use ISO 639-2/B ("fre", "ger", "chi", "dut"), whose bibliographic
+     * form differs from the terminological one Java understands, plus `pob`,
+     * which is not ISO at all — it is the OpenSubtitles code for Brazilian
+     * Portuguese. Everything regular (`eng`, `spa`, `ita`, `jpn`…) is handled by
+     * [java.util.Locale] without an entry here.
+     */
+    private val IRREGULAR = mapOf(
+        "pob" to "pt-BR", "pb" to "pt-BR",
+        "fre" to "fr", "ger" to "de", "chi" to "zh", "dut" to "nl",
+        "gre" to "el", "ice" to "is", "cze" to "cs", "rum" to "ro",
+        "slo" to "sk", "per" to "fa", "arm" to "hy", "baq" to "eu",
+        "geo" to "ka", "may" to "ms", "mac" to "mk", "bur" to "my",
+        "tib" to "bo", "wel" to "cy", "alb" to "sq", "dut_be" to "nl-BE",
     )
 
+    /**
+     * The language's name **in the interface's own language**, not in a fixed one.
+     *
+     * This used to be a hand-written Portuguese lookup table, which meant an
+     * English interface still labelled its subtitle tracks "Português", "Inglês",
+     * "Espanhol". Asking [java.util.Locale] instead gets the name translated by
+     * the platform for whatever locale is current, and covers every language the
+     * addons can return rather than the two dozen the table happened to list.
+     *
+     * `Locale.getDefault()` is the right source here even though the interface
+     * language is a Compose `LocalContext` override elsewhere: `MainActivity`
+     * mirrors every language change into the process default precisely so code
+     * with no Context — like this mapper — can still render in the chosen
+     * language.
+     */
     fun label(code: String?): String {
-        val key = code.orEmpty().lowercase().trim()
-        return NAMES[key] ?: key.uppercase().ifBlank { "Desconhecido" }
+        val key = code.orEmpty().lowercase().trim().replace('_', '-')
+        if (key.isBlank()) return Locale.getDefault().let(::unknownLabel)
+
+        val tag = IRREGULAR[key] ?: key
+        val locale = Locale.forLanguageTag(tag)
+        val display = locale.getDisplayName(Locale.getDefault())
+
+        // `getDisplayName` echoes the tag back when it cannot resolve it, which
+        // is how an unrecognised code is detected — there is no exception and no
+        // null. Showing the raw code uppercased beats showing a lie.
+        return if (display.isBlank() || display.equals(tag, ignoreCase = true)) {
+            key.uppercase()
+        } else {
+            display.replaceFirstChar { it.titlecase(Locale.getDefault()) }
+        }
     }
+
+    /** Only reached for a blank code, where there is no tag to fall back to. */
+    private fun unknownLabel(locale: Locale): String =
+        if (locale.language == "pt") "Desconhecido" else "Unknown"
 
     /** Portuguese first, then English, then everything else. */
     fun rank(code: String?): Int {

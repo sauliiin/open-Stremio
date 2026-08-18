@@ -1,6 +1,11 @@
 package com.mdblisthub.tv.core.data.repository
 
 import com.mdblisthub.tv.core.data.StremioAccountStore
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.AppException
+import com.mdblisthub.tv.core.model.fail
+import com.mdblisthub.tv.core.model.orFail
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.model.MdblistAddonExportReport
 import com.mdblisthub.tv.core.model.StremioAccount
@@ -34,9 +39,9 @@ class StremioAccountRepository(
 
     suspend fun login(email: String, password: String): Result<StremioImportReport> = runCatching {
         val cleanEmail = email.trim()
-        require(cleanEmail.isNotBlank() && password.isNotBlank()) { "Informe e-mail e senha." }
+        requireOrFail(cleanEmail.isNotBlank() && password.isNotBlank()) { AppError.StremioCredentialsRequired }
         val result = api.login(StremioLoginRequest(email = cleanEmail, password = password)).unwrap()
-        require(result.authKey.isNotBlank()) { "A API do Stremio não devolveu uma sessão." }
+        requireOrFail(result.authKey.isNotBlank()) { AppError.StremioNoSession }
         store.save(
             StremioAccount(
                 authKey = result.authKey,
@@ -59,19 +64,18 @@ class StremioAccountRepository(
 
 
     private suspend fun syncNow(): StremioImportReport {
-        val account = requireNotNull(store.current()) { "Entre na sua conta Stremio primeiro." }
+        val account = store.current().orFail { AppError.StremioNotLinked }
         return try {
             val collection = api.collection(
                 StremioCollectionRequest(authKey = account.authKey),
             ).unwrap()
             addons.importCollection(collection.addons)
-        } catch (error: Exception) {
-            if (error.message.orEmpty().contains("sessão", ignoreCase = true) ||
-                error.message.orEmpty().contains("session", ignoreCase = true)
-            ) {
-                store.clear()
-                throw IllegalStateException("Sua sessão do Stremio expirou. Entre novamente.")
-            }
+        } catch (error: AppException) {
+            // A typed check, not a substring match on the message: the old
+            // code looked for the word "session"/"sessão" inside whatever
+            // text `unwrap()` had already translated, which broke the moment
+            // that text stopped being English or Portuguese specifically.
+            if (error.error == AppError.StremioSessionExpired) store.clear()
             throw error
         }
     }
@@ -80,13 +84,13 @@ class StremioAccountRepository(
 
 
 private fun <T> StremioApiResponse<T>.unwrap(): T {
-    error?.let { throw IllegalStateException(translateStremioError(it.message)) }
-    return result ?: throw IllegalStateException("Resposta inesperada da API do Stremio.")
+    error?.let { fail(translateStremioError(it.message)) }
+    return result ?: fail(AppError.StremioUnexpectedResponse)
 }
 
-private fun translateStremioError(message: String): String = when (message) {
-    "Wrong passphrase" -> "Senha incorreta."
-    "User not found" -> "Não existe conta Stremio com esse e-mail."
-    "Session does not exist" -> "Sessão do Stremio expirada. Entre novamente."
-    else -> message.ifBlank { "A API do Stremio recusou a solicitação." }
+private fun translateStremioError(message: String): AppError = when (message) {
+    "Wrong passphrase" -> AppError.StremioWrongPassword
+    "User not found" -> AppError.StremioUserNotFound
+    "Session does not exist" -> AppError.StremioSessionExpired
+    else -> AppError.StremioRequestRejected(message.takeIf { it.isNotBlank() })
 }

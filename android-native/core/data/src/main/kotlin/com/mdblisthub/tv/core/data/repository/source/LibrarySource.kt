@@ -2,6 +2,8 @@ package com.mdblisthub.tv.core.data.repository.source
 
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.network.MdblistApi
@@ -88,7 +90,7 @@ class MdblistLibrarySource(
         add: Boolean,
     ) {
         val key = session.currentKey()
-        require(key.isNotBlank()) { "Sessão expirada." }
+        requireOrFail(key.isNotBlank()) { AppError.MdblistSessionExpired }
 
         val entry = if (imdbId != null) LibraryKeyDto(imdb = imdbId) else LibraryKeyDto(tmdb = tmdbId)
         val body = if (type == MediaType.SHOW) {
@@ -99,7 +101,7 @@ class MdblistLibrarySource(
 
         val path = if (add) bucket.addPath else bucket.removePath
         val response = api.bucketWrite("$ROOT$path", key, body)
-        check(response.isSuccessful) { "mdblist respondeu ${response.code()}" }
+        requireOrFail(response.isSuccessful) { AppError.MdblistWriteRejected(response.code()) }
     }
 
     /**
@@ -198,7 +200,7 @@ class TraktLibrarySource(
         imdbId: String?,
         add: Boolean,
     ) {
-        require(tokens.isLinked()) { "Conta Trakt não conectada." }
+        requireOrFail(tokens.isLinked()) { AppError.TraktNotLinked }
 
         // IMDb first, because it is the id Trakt resolves most reliably for
         // titles this app knows; the TMDB id is what it always has.
@@ -224,7 +226,7 @@ class TraktLibrarySource(
         // A `201` whose every id landed in `not_found` is a failure wearing a
         // success code — see [TraktSyncResponseDto.resolvedNothing]. Without
         // this the button would settle on a state Trakt never stored.
-        check(!response.resolvedNothing()) { "O Trakt não reconheceu este título." }
+        requireOrFail(!response.resolvedNothing()) { AppError.TraktTitleNotRecognized }
     }
 
     /**

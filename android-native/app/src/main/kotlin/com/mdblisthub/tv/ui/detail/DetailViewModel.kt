@@ -3,6 +3,8 @@ package com.mdblisthub.tv.ui.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.AppException
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
@@ -32,18 +34,6 @@ data class LibraryState(
         LibraryBucket.COLLECTION -> collection
         LibraryBucket.WATCHED -> watched
     }
-}
-
-/**
- * Why a watchlist/collection/watched write did not stick.
- *
- * A repository message travels as text; anything this ViewModel raises itself
- * travels as a resource id, because only the screen has a context that knows
- * the interface language.
- */
-sealed interface LibraryError {
-    data class Message(val text: String) : LibraryError
-    data object SaveFailed : LibraryError
 }
 
 /** What the cast popup shows — `member` doubles as "is it open at all". */
@@ -91,8 +81,8 @@ class DetailViewModel(
     private val _pending = MutableStateFlow<Set<LibraryBucket>>(emptySet())
     val pending: StateFlow<Set<LibraryBucket>> = _pending.asStateFlow()
 
-    private val _libraryError = MutableStateFlow<LibraryError?>(null)
-    val libraryError: StateFlow<LibraryError?> = _libraryError.asStateFlow()
+    private val _libraryError = MutableStateFlow<AppError?>(null)
+    val libraryError: StateFlow<AppError?> = _libraryError.asStateFlow()
 
     private val _castBio = MutableStateFlow(CastBioState())
     val castBio: StateFlow<CastBioState> = _castBio.asStateFlow()
@@ -129,13 +119,7 @@ class DetailViewModel(
         viewModelScope.launch {
             graph.library.toggle(bucket, type, tmdbId, current.imdbId, add)
                 .onFailure { failure ->
-                    // The repository's own message when it has one, otherwise a
-                    // resource id — resolving a default here would use the
-                    // application context, which never sees the in-app locale.
-                    _libraryError.value = failure.message
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let(LibraryError::Message)
-                        ?: LibraryError.SaveFailed
+                    _libraryError.value = (failure as? AppException)?.error ?: AppError.Unexpected
                 }
             _pending.update { it - bucket }
         }

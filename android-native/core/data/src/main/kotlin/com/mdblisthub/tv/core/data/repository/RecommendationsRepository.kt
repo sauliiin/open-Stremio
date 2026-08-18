@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.repository
 
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
@@ -105,7 +106,7 @@ class RecommendationsRepository(
         return MediaItem(
             tmdbId = id,
             type = type,
-            title = title ?: name ?: "Sem título",
+            title = title ?: name ?: CoreText.untitled,
             year = date?.take(4)?.toIntOrNull(),
             posterUrl = TmdbImages.url(posterPath, TmdbImages.POSTER_CARD),
             backdropUrl = TmdbImages.url(backdropPath, TmdbImages.BACKDROP_FANART),

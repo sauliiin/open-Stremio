@@ -46,7 +46,7 @@ data class Addon(
          */
         fun normaliseUrl(raw: String): String {
             var url = raw.trim()
-            require(url.isNotEmpty()) { "URL vazia" }
+            requireOrFail(url.isNotEmpty()) { AppError.AddonManifestUnreadable }
 
             if (url.startsWith("stremio://", true)) url = "https://" + url.substring(10)
             if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
@@ -56,7 +56,7 @@ data class Addon(
             if (url.endsWith("/manifest.json", true)) {
                 url = url.dropLast("/manifest.json".length)
             }
-            require(url.length > "https://".length) { "URL inválida" }
+            requireOrFail(url.length > "https://".length) { AppError.AddonManifestUnreadable }
             return url
         }
     }
@@ -96,8 +96,23 @@ data class StremioAccount(
 data class StremioImportFailure(
     val name: String,
     val url: String,
-    val reason: String,
+    val reason: AddonImportSkipReason,
 )
+
+/** Why one entry of a Stremio collection import was skipped. */
+enum class AddonImportSkipReason {
+    /** The account record has no `transportUrl` for this addon at all. */
+    NO_URL,
+
+    /** The manifest JSON has no `id` field, so it cannot be identified as an addon. */
+    NO_MANIFEST_ID,
+
+    /** [Addon.normaliseUrl] could not make sense of the stored URL. */
+    UNPARSABLE_URL,
+
+    /** The manifest parsed as JSON but not into a usable addon entity. */
+    INVALID_MANIFEST,
+}
 
 data class StremioImportReport(
     val received: Int,

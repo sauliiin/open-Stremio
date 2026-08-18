@@ -8,8 +8,13 @@ import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.database.entity.AddonEntity
 import com.mdblisthub.tv.core.model.Addon
 import com.mdblisthub.tv.core.model.AddonCatalog
+import com.mdblisthub.tv.core.model.AddonImportSkipReason
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.fail
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.HttpClients
 import com.mdblisthub.tv.core.network.StremioApi
 import com.mdblisthub.tv.core.network.dto.StremioCollectionEntryDto
@@ -96,7 +101,7 @@ class AddonsRepository(
 
     suspend fun renameCatalog(catalog: AddonCatalog, rawName: String) = runCatching {
         val name = rawName.trim()
-        require(name.isNotEmpty()) { "O nome não pode ficar vazio." }
+        requireOrFail(name.isNotEmpty()) { AppError.NameRequired }
         updateCatalogPreference(catalog) {
             it.copy(name = name.takeUnless { value -> value == catalog.originalName })
         }
@@ -158,17 +163,7 @@ class AddonsRepository(
         val manifest = runCatching { installApi.manifest("$base/manifest.json") }.getOrElse { cause ->
             val timedOut = cause is java.io.InterruptedIOException ||
                 cause is java.net.SocketTimeoutException
-            throw IllegalStateException(
-                if (timedOut) {
-                    "O addon demorou demais para responder. Alguns levam quase um minuto na " +
-                        "primeira vez, enquanto validam a chave do debrid — tente de novo, " +
-                        "que a segunda costuma ser instantânea."
-                } else {
-                    "Não consegui ler o manifest. Confira a URL — e note que muitos addons geram " +
-                        "um endereço próprio para cada usuário na página de configuração; é esse " +
-                        "que precisa ser colado aqui, não o endereço do site."
-                },
-            )
+            fail(if (timedOut) AppError.AddonInstallTimedOut else AppError.AddonManifestUnreadable)
         }
 
         // A host's own PWA manifest has `name` but no `id`, and more than one
@@ -176,9 +171,7 @@ class AddonsRepository(
         // people actually hit when they paste the site instead of the URL it
         // generated for them.
         if (manifest.id.isBlank() || manifest.name.isBlank()) {
-            throw IllegalStateException(
-                "O endereço respondeu, mas não é um manifest de addon do Stremio.",
-            )
+            fail(AppError.AddonManifestInvalid)
         }
 
         val entity = manifest.toEntity(base, System.currentTimeMillis())
@@ -241,24 +234,24 @@ class AddonsRepository(
             val url = entry.transportUrl.orEmpty()
             val manifest = entry.manifest
             val name = manifest?.get("name")?.jsonPrimitive?.contentOrNull
-                ?: url.ifBlank { "addon sem nome" }
+                ?: url.ifBlank { CoreText.unnamedAddon }
 
             if (url.isBlank()) {
-                skipped += StremioImportFailure(name, url, "a conta não guardou a URL deste addon")
+                skipped += StremioImportFailure(name, url, AddonImportSkipReason.NO_URL)
                 return@forEach
             }
             if (manifest?.get("id")?.jsonPrimitive?.contentOrNull.isNullOrBlank()) {
-                skipped += StremioImportFailure(name, url, "o manifest veio sem id")
+                skipped += StremioImportFailure(name, url, AddonImportSkipReason.NO_MANIFEST_ID)
                 return@forEach
             }
 
             val base = runCatching { Addon.normaliseUrl(url) }.getOrElse {
-                skipped += StremioImportFailure(name, url, "URL que não dá para interpretar")
+                skipped += StremioImportFailure(name, url, AddonImportSkipReason.UNPARSABLE_URL)
                 return@forEach
             }
             val entity = manifest.toAddonEntity(base, now)
             if (entity == null) {
-                skipped += StremioImportFailure(name, url, "manifest inválido")
+                skipped += StremioImportFailure(name, url, AddonImportSkipReason.INVALID_MANIFEST)
             } else {
                 imported += entity
             }
@@ -276,11 +269,11 @@ class AddonsRepository(
     /** Adds every MDBList row as a catalog addon to the local Open Stream repository. */
     suspend fun exportAllMdblistLists(): Result<MdblistAddonExportReport> = runCatching {
         val apiKey = session.currentKey()
-        require(apiKey.isNotBlank()) { "Vincule sua conta MDBList primeiro." }
+        requireOrFail(apiKey.isNotBlank()) { AppError.MdblistNotLinked }
 
         lists.refreshLists(force = true).getOrThrow()
         val mdblistLists = lists.listsOnce()
-        require(mdblistLists.isNotEmpty()) { "Sua conta MDBList não devolveu listas." }
+        requireOrFail(mdblistLists.isNotEmpty()) { AppError.MdblistNoLists }
 
         val manifestGate = Semaphore(4)
         val manifestResults = coroutineScope {
@@ -306,7 +299,7 @@ class AddonsRepository(
         val failed = manifestResults.mapNotNull { (list, result) ->
             list.name.takeIf { result.isFailure }
         }
-        check(exported.isNotEmpty()) { "A MDBList não gerou nenhum manifest de addon válido." }
+        requireOrFail(exported.isNotEmpty()) { AppError.MdblistNoValidManifests }
 
         // Remove the old ones first to ensure clean state
         dao.addons()

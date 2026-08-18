@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.data.repository.source
 
+import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
 import com.mdblisthub.tv.core.data.mapper.toResumeEntity
@@ -142,7 +143,7 @@ class TraktPlaybackSource(
                 type = mediaType.mdblist,
                 tmdbId = tmdbId,
                 imdbId = imdbId,
-                title = parent.title ?: "Sem título",
+                title = parent.title ?: CoreText.untitled,
                 // Filled by the artwork pass in PlaybackRepository, from the
                 // TMDB detail this row already carries the id for.
                 posterUrl = null,

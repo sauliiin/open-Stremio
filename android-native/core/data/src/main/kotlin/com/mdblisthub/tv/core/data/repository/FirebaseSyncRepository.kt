@@ -7,6 +7,9 @@ import com.mdblisthub.tv.core.data.mapper.toSyncedDto
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.HttpClients
 import com.mdblisthub.tv.core.network.SyncApi
+import com.mdblisthub.tv.core.model.AppError
+import com.mdblisthub.tv.core.model.AppException
+import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.network.dto.SyncPayloadDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -54,8 +57,8 @@ class FirebaseSyncRepository(
     private val busyState = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = busyState.asStateFlow()
 
-    private val failureState = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = failureState.asStateFlow()
+    private val failureState = MutableStateFlow<AppError?>(null)
+    val error: StateFlow<AppError?> = failureState.asStateFlow()
 
     private val lastState = MutableStateFlow<String?>(null)
     val lastSync: StateFlow<String?> = lastState.asStateFlow()
@@ -99,7 +102,7 @@ class FirebaseSyncRepository(
                 }
             }
             busyState.value = false
-            failureState.value = lastFailure?.message ?: "Não foi possível sincronizar os addons."
+            failureState.value = (lastFailure as? AppException)?.error ?: AppError.AddonSyncFailed
         }
     }
 
@@ -177,10 +180,7 @@ class FirebaseSyncRepository(
     suspend fun pull(): Result<Int> = request {
         val (uid, token) = auth.firebaseSession()
         val remote = read(uid, token)
-        check(remote != null) {
-            "Ainda não há uma lista de addons na nuvem, então não mexi nos daqui. " +
-                "Use \"Enviar\" no aparelho que tem os addons certos primeiro."
-        }
+        requireOrFail(remote != null) { AppError.NoCloudAddonList }
 
         val before = addons.entities().size
         addons.replaceAll(remote)
@@ -217,7 +217,7 @@ class FirebaseSyncRepository(
             idToken,
             SyncPayloadDto(updatedAt = nowIso(), addons = entries),
         )
-        check(response.isSuccessful) { "O Firebase recusou a sincronização (${response.code()})." }
+        requireOrFail(response.isSuccessful) { AppError.FirebaseAddonSyncRejected(response.code()) }
     }
 
     private fun url(uid: String) =
@@ -240,7 +240,7 @@ class FirebaseSyncRepository(
         }
 
         result.onSuccess { lastState.value = nowIso() }
-        result.onFailure { failureState.value = it.message ?: "Não foi possível falar com o Firebase." }
+        result.onFailure { failureState.value = (it as? AppException)?.error ?: AppError.FirebaseUnreachable }
         return result
     }
 
