@@ -38,7 +38,7 @@ dependencies {
     // entry. `DefaultRenderersFactory.setExtensionRendererMode(..._ON)` in
     // `PlaybackController` finds `FfmpegAudioRenderer` here by reflection;
     // deleting the file makes that call inert rather than breaking the build.
-    implementation(files("libs/media3-decoder-ffmpeg-1.11.0.aar"))
+    compileOnly(files("libs/media3-decoder-ffmpeg-1.11.0.aar"))
 
     // `api`, not `implementation`: `PlaybackController` takes a `Call.Factory`
     // so the app can hand it the client whose connection pool the mirror probe

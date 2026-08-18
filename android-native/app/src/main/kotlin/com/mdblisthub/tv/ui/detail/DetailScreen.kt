@@ -368,7 +368,7 @@ fun DetailScreen(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-                            modifier = Modifier.focusRestorer(),
+                            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
                         ) {
                             items(current.seasons, key = { it.seasonNumber }) { entry ->
                                 HubButton(
@@ -459,7 +459,7 @@ private fun EpisodeRow(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
         ) {
             items(episodes, key = { it.id }) { episode ->
                 // These cards carried no focus treatment at all: `clickable`
@@ -558,7 +558,7 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastCli
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
         ) {
             items(current.cast, key = { it.id }) { member ->
                 val interaction = remember { MutableInteractionSource() }
@@ -738,7 +738,7 @@ private fun ReviewsRow(reviews: List<Review>) {
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
         ) {
             items(reviews, key = { "${it.provider}-${it.author}-${it.updatedAt}" }) { review ->
                 val interaction = remember { MutableInteractionSource() }

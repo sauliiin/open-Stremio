@@ -71,6 +71,13 @@ private class SafeHorizontalScroll(private val insetPx: Float) : BringIntoViewSp
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
+private class PivotHorizontalScroll(private val insetPx: Float) : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        return offset - insetPx
+    }
+}
+
 /**
  * A list, rendered as a row of posters.
  *
@@ -138,8 +145,12 @@ fun MediaRow(
     val horizontalInsetPx = with(LocalDensity.current) {
         HubDimens.ScreenPaddingHorizontal.toPx()
     }
-    val safeHorizontalScroll = remember(horizontalInsetPx) {
-        SafeHorizontalScroll(horizontalInsetPx)
+    val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant) {
+        if (HubColors.isNetflixy || HubColors.isPrimefly) {
+            PivotHorizontalScroll(horizontalInsetPx)
+        } else {
+            SafeHorizontalScroll(horizontalInsetPx)
+        }
     }
 
     // Hoisted rather than read inline: `stringResource` is only callable from a
@@ -235,13 +246,13 @@ fun MediaRow(
             }
         }
 
-        CompositionLocalProvider(LocalBringIntoViewSpec provides safeHorizontalScroll) {
+        CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalScrollSpec) {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(HubDimens.CardSpacing),
                 contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRestorer(),
+                    .let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
             ) {
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(
