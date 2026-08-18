@@ -54,13 +54,22 @@ fun SideRail(
     selectedKey: String,
     onSelect: (RailItem) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Whether the rail as a whole holds focus. The home screen listens so it
+     * can hold its row list still while focus is over here — see its
+     * `pinnedForRail`.
+     */
+    onFocusChanged: (Boolean) -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
             .fillMaxHeight()
-            .onFocusChanged { expanded = it.hasFocus }
+            .onFocusChanged {
+                expanded = it.hasFocus
+                onFocusChanged(it.hasFocus)
+            }
             // A tween here, not the default spring: the posters it shares
             // the screen with ease in on the same curve (`railFocusTween`),
             // and a spring's overshoot next to a tween's flat arrival is

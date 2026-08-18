@@ -54,6 +54,19 @@ class DetailViewModel(
     val detail: StateFlow<MediaDetail?> = graph.media.observeDetail(type, tmdbId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The app's own language setting — the same one `SettingsScreen` reads —
+     * not the device's. `LocalConfiguration` is supposed to carry this same
+     * override down through the whole tree, but on this screen it does not:
+     * every other string on it renders in English even with "Português"
+     * selected, so a date formatted off `LocalConfiguration` would have
+     * inherited that same bug. Reading the preference directly here
+     * sidesteps whatever is broken in that chain instead of also going wrong
+     * in a *new* way.
+     */
+    val language: StateFlow<String> = graph.uiPreferences.language
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "en")
+
     private val _season = MutableStateFlow(1)
     val season: StateFlow<Int> = _season.asStateFlow()
 

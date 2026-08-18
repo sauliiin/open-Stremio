@@ -98,6 +98,8 @@ import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -116,6 +118,7 @@ fun DetailScreen(
     val detail by viewModel.detail.collectAsStateWithLifecycle()
     val season by viewModel.season.collectAsStateWithLifecycle()
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
+    val appLanguage by viewModel.language.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
     val library by viewModel.library.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
@@ -368,7 +371,7 @@ fun DetailScreen(
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-                            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
+                            modifier = Modifier.focusRestorer(),
                         ) {
                             items(current.seasons, key = { it.seasonNumber }) { entry ->
                                 HubButton(
@@ -386,6 +389,7 @@ fun DetailScreen(
                         episodes = episodes,
                         watchedEpisodes = watchedEpisodes,
                         showTmdbId = tmdbId,
+                        appLanguage = appLanguage,
                         onPlay = { ep -> onPlay(ep.seasonNumber, ep.episodeNumber) },
                     )
                 }
@@ -445,6 +449,7 @@ private fun EpisodeRow(
     episodes: List<Episode>,
     watchedEpisodes: Set<String>,
     showTmdbId: Int,
+    appLanguage: String,
     onPlay: (Episode) -> Unit
 ) {
     if (episodes.isEmpty()) return
@@ -459,7 +464,7 @@ private fun EpisodeRow(
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
+            modifier = Modifier.focusRestorer(),
         ) {
             items(episodes, key = { it.id }) { episode ->
                 // These cards carried no focus treatment at all: `clickable`
@@ -527,6 +532,23 @@ private fun EpisodeRow(
                                 size = 22.dp
                             )
                         }
+                        episode.airDate
+                            ?.let { formatAirDate(it, appLanguage) }
+                            ?.let { formatted ->
+                                Text(
+                                    text = formatted,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = HubColors.Text,
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(8.dp)
+                                        .background(
+                                            HubColors.Background.copy(alpha = 0.72f),
+                                            RoundedCornerShape(6.dp),
+                                        )
+                                        .padding(horizontal = 6.dp, vertical = 3.dp),
+                                )
+                            }
                     }
                     Text(
                         text = "${episode.episodeNumber}. ${episode.name}",
@@ -545,6 +567,32 @@ private fun EpisodeRow(
 private fun <T> episodeFocusTween(): FiniteAnimationSpec<T> =
     tween(durationMillis = 200, easing = FastOutSlowInEasing)
 
+/**
+ * TMDB's `air_date` ("2026-12-18") as a short weekday + date, matching the
+ * two formats this app ships strings for:
+ *
+ * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"
+ *
+ * Takes the raw "pt"/"en" code rather than a `Locale` — `Locale.forLanguageTag`
+ * on a bare "pt" resolves to European Portuguese, whose CLDR weekday
+ * abbreviations don't reliably match Brazil's; building the locale explicitly
+ * for each branch pins the exact one this format was written against.
+ *
+ * `minSdk` is 24 without core library desugaring — see the note on
+ * `SyncMappers.formatter()` — so this reaches for `SimpleDateFormat` rather
+ * than `java.time`, the same tradeoff the rest of the app already made.
+ */
+private fun formatAirDate(airDate: String, language: String): String? {
+    val parsed = runCatching {
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(airDate)
+    }.getOrNull() ?: return null
+    return if (language == "pt") {
+        SimpleDateFormat("EEE, dd/MM/yyyy", Locale("pt", "BR")).format(parsed)
+    } else {
+        SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastClick: (CastMember) -> Unit) {
@@ -558,7 +606,7 @@ private fun CastRow(current: com.mdblisthub.tv.core.model.MediaDetail, onCastCli
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(18.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
+            modifier = Modifier.focusRestorer(),
         ) {
             items(current.cast, key = { it.id }) { member ->
                 val interaction = remember { MutableInteractionSource() }
@@ -738,7 +786,7 @@ private fun ReviewsRow(reviews: List<Review>) {
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-            modifier = Modifier.let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
+            modifier = Modifier.focusRestorer(),
         ) {
             items(reviews, key = { "${it.provider}-${it.author}-${it.updatedAt}" }) { review ->
                 val interaction = remember { MutableInteractionSource() }

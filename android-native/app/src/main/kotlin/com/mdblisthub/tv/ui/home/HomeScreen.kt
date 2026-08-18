@@ -44,9 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
@@ -132,8 +135,22 @@ private sealed interface EditableListTarget {
 private class RowPivotScroll(
     private val variant: HubThemeVariant,
     private val normalFirstRowOffsetPx: Float,
+    /**
+     * True while focus is away on the side rail, and for a moment after it
+     * comes back. See [HomeScreen]'s `pinnedForRail` for why the pivot has to
+     * stand down for that window.
+     */
+    private val pinned: State<Boolean>,
 ) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        // Returning to the rows must not move them. The list did not scroll
+        // while the rail held focus, so the row focus is being restored to is
+        // still exactly where the user left it — every pixel this would scroll
+        // is a pixel of error, and it is what made the row look like it had
+        // jumped by one. Same trick, same reason, as `pinWhileOnButtons` in
+        // `DetailScreen`.
+        if (pinned.value) return 0f
+
         val pivot = when {
             variant == HubThemeVariant.NORMAL -> normalFirstRowOffsetPx
             // The focused child is the card, not the whole shelf. This offset
@@ -163,7 +180,7 @@ private class RowPivotScroll(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreen(
     graph: DataGraph,
@@ -313,9 +330,49 @@ fun HomeScreen(
     var deleteTarget by remember { mutableStateOf<EditableListTarget?>(null) }
     var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
+    /**
+     * Holds the row list still across a trip to the side rail.
+     *
+     * `focusRestorer()` on the list below already brings focus back to the row
+     * the user left, and that part was never the problem: the row it *landed*
+     * on was right, but the list had scrolled a row's worth underneath it, so
+     * a neighbour ended up parked at the pivot and it read as "it moved up a
+     * line". The scroll comes from the pivot spec, which recomputes on the
+     * restore's bring-into-view request the same as on any other focus move —
+     * except this one is not a move. Nothing scrolled while the rail had
+     * focus, so the correct scroll distance on the way back is zero, and this
+     * flag is what says so.
+     *
+     * It stays raised for a beat past the hand-off because the restore's
+     * requests arrive after the rail has already given up focus.
+     */
+    val pinnedForRail = remember { mutableStateOf(false) }
+    var railFocused by remember { mutableStateOf(false) }
+    /**
+     * The row focus should come back to, named for the list's `enter` below.
+     *
+     * Pinning the scroll alone was not enough: with the pivot leaving a sliver
+     * of the previous row showing above the focused one, the default focus
+     * search entering from the rail picks that sliver — it is geometrically
+     * the nearer candidate — and `focusRestorer()` did not get consulted at
+     * all. `enter` is consulted, and it is resolved by the focus system during
+     * the search rather than after it, so unlike a `requestFocus()` fired from
+     * a focus callback there is no transaction still in flight to overwrite it.
+     */
+    var lastFocusedRow by remember { mutableStateOf<FocusRequester?>(null) }
+    LaunchedEffect(railFocused) {
+        if (railFocused) {
+            pinnedForRail.value = true
+        } else if (pinnedForRail.value) {
+            // Long enough to cover the restore's bring-into-view, short enough
+            // that a D-pad press the user makes after it is scrolled normally.
+            kotlinx.coroutines.delay(200)
+            pinnedForRail.value = false
+        }
+    }
     val normalFirstRowOffsetPx = with(LocalDensity.current) { 36.dp.toPx() }
     val rowPivotScroll = remember(HubColors.variant, normalFirstRowOffsetPx) {
-        RowPivotScroll(HubColors.variant, normalFirstRowOffsetPx)
+        RowPivotScroll(HubColors.variant, normalFirstRowOffsetPx, pinnedForRail)
     }
     val onInitialNormalFocusHandled = { initialNormalFocusPending = false }
 
@@ -527,6 +584,7 @@ fun HomeScreen(
                         "exit" -> showExitDialog = true
                     }
                 },
+                onFocusChanged = { railFocused = it },
             )
 
             if (!mdblistLinked && lists.isEmpty() && feeds.isEmpty() && resumePoints.isEmpty() && extraCatalogs.isEmpty()) {
@@ -636,6 +694,8 @@ fun HomeScreen(
                                 .weight(1f)
                                 .clipToBounds()
                             else -> Modifier.fillMaxSize()
+                        }.focusProperties {
+                            enter = { lastFocusedRow ?: FocusRequester.Default }
                         },
                         // Tighter than HubDimens.RowSpacing on purpose — with the
                         // smaller posters, this is what keeps two rows of a list on
@@ -666,6 +726,10 @@ fun HomeScreen(
 
                 if (hasResumeItem) {
                     item(key = "resume") {
+                        val resumeRowFocus = remember { FocusRequester() }
+                        DisposableEffect(Unit) {
+                            onDispose { if (lastFocusedRow === resumeRowFocus) lastFocusedRow = null }
+                        }
                         MediaRow(
                             title = stringResource(R.string.home_resume_row),
                             items = resumeCards,
@@ -679,7 +743,11 @@ fun HomeScreen(
                             // indices (see their construction above), so only
                             // the position — not the card's own equality —
                             // can say correctly which point this was.
-                            onItemFocused = viewModel::onFocused,
+                            onItemFocused = {
+                                viewModel.onFocused(it)
+                                lastFocusedRow = resumeRowFocus
+                            },
+                            rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
                             onItemClickIndexed = { index, _ ->
                                 resumePoints.getOrNull(index)?.let(onResume)
@@ -710,6 +778,19 @@ fun HomeScreen(
                         !isEditMode &&
                         resumePoints.isEmpty() &&
                         index == 0
+                    val rowFocus = remember { FocusRequester() }
+                    val trackFocus: (MediaItem) -> Unit = {
+                        viewModel.onFocused(it)
+                        lastFocusedRow = rowFocus
+                    }
+                    // A requester whose row has left composition — edit mode
+                    // rebuilding the list, a theme change, a row deleted — no
+                    // longer points at anything, and `enter` handing that to
+                    // the focus system is not a state it tolerates. Forget it
+                    // on the way out and fall back to the default search.
+                    DisposableEffect(Unit) {
+                        onDispose { if (lastFocusedRow === rowFocus) lastFocusedRow = null }
+                    }
                     when (row) {
                         is HomeMediaRow.Mdblist -> {
                             val list = row.list
@@ -732,11 +813,12 @@ fun HomeScreen(
                                 },
                                 onEnsure = { viewModel.ensureItems(list.id) },
                                 onItemClick = onOpenTitle,
-                                onItemFocused = viewModel::onFocused,
+                                onItemFocused = trackFocus,
                                 onReachedEnd = { viewModel.loadMore(list.id) },
                                 isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
+                                rowFocusRequester = rowFocus,
                             )
                         }
                         is HomeMediaRow.Stremio -> {
@@ -764,10 +846,11 @@ fun HomeScreen(
                                 },
                                 onEnsure = { viewModel.ensureCatalog(catalog) },
                                 onItemClick = openCatalogItem,
-                                onItemFocused = viewModel::onFocused,
+                                onItemFocused = trackFocus,
                                 isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
+                                rowFocusRequester = rowFocus,
                             )
                         }
                         is HomeMediaRow.Feed -> {
@@ -812,8 +895,10 @@ fun HomeScreen(
                                         watchedIds.contains(item.tmdbId)
                                     }
                                 },
+                                onItemFocused = trackFocus,
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
+                                rowFocusRequester = rowFocus,
                             )
                         }
                     }
@@ -826,11 +911,19 @@ fun HomeScreen(
                         becauseYouWatched,
                         key = { _, row -> "byw-${row.seedTitle}" },
                     ) { index, row ->
+                        val bywRowFocus = remember { FocusRequester() }
+                        DisposableEffect(Unit) {
+                            onDispose { if (lastFocusedRow === bywRowFocus) lastFocusedRow = null }
+                        }
                         MediaRow(
                             title = stringResource(R.string.home_because_you_watched, row.seedTitle),
                             items = row.items,
                             onItemClick = onOpenTitle,
-                            onItemFocused = viewModel::onFocused,
+                            onItemFocused = {
+                                viewModel.onFocused(it)
+                                lastFocusedRow = bywRowFocus
+                            },
+                            rowFocusRequester = bywRowFocus,
                             isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                             requestInitialFocus = isNormalTheme &&
                                 initialNormalFocusPending &&
@@ -866,6 +959,7 @@ private fun AddonCatalogRow(
     isWatched: ((Int, MediaItem) -> Boolean)? = null,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
+    rowFocusRequester: FocusRequester? = null,
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
     LaunchedEffect(catalog.addonBase, catalog.key) { onEnsure() }
@@ -886,6 +980,7 @@ private fun AddonCatalogRow(
         isWatched = isWatched,
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
+        rowFocusRequester = rowFocusRequester,
     )
 }
 
@@ -931,6 +1026,7 @@ private fun ListRow(
     onReachedEnd: () -> Unit,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
+    rowFocusRequester: FocusRequester? = null,
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
 
@@ -954,6 +1050,7 @@ private fun ListRow(
         onReachedEnd = onReachedEnd,
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
+        rowFocusRequester = rowFocusRequester,
     )
 }
 

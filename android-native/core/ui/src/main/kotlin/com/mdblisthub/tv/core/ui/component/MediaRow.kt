@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -71,8 +72,16 @@ private class SafeHorizontalScroll(private val insetPx: Float) : BringIntoViewSp
     }
 }
 
+/**
+ * Netflixy-only: pins the focused card to the leading inset instead of the
+ * minimal "safe area" scroll [SafeHorizontalScroll] does for every other
+ * theme. Every D-pad move scrolls the row so the newly focused card lands
+ * at that same x position — the first (leftmost) column — matching the
+ * Netflix TV behaviour the theme is named for. Mirrors its vertical
+ * counterpart, `RowPivotScroll`, in `HomeScreen`.
+ */
 @OptIn(ExperimentalFoundationApi::class)
-private class PivotHorizontalScroll(private val insetPx: Float) : BringIntoViewSpec {
+private class LeadingColumnScroll(private val insetPx: Float) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         return offset - insetPx
     }
@@ -132,6 +141,14 @@ fun MediaRow(
     isWatched: ((Int, MediaItem) -> Boolean)? = null,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
+    /**
+     * Names this row as a focus target its screen can aim at. The home screen
+     * hands the one for the row you were last on to its list's `enter`, so
+     * coming back from the side rail returns here rather than wherever the
+     * default geometric search happens to land — which, with a sliver of the
+     * row above showing at the pivot, is the row above.
+     */
+    rowFocusRequester: FocusRequester? = null,
 ) {
     if (items.isEmpty() && !isEditMode) return
 
@@ -146,8 +163,8 @@ fun MediaRow(
         HubDimens.ScreenPaddingHorizontal.toPx()
     }
     val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant) {
-        if (HubColors.isNetflixy || HubColors.isPrimefly) {
-            PivotHorizontalScroll(horizontalInsetPx)
+        if (HubColors.isNetflixy) {
+            LeadingColumnScroll(horizontalInsetPx)
         } else {
             SafeHorizontalScroll(horizontalInsetPx)
         }
@@ -252,7 +269,15 @@ fun MediaRow(
                 contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .let { if (HubColors.isNetflixy || HubColors.isPrimefly) it else it.focusRestorer() },
+                    .let { if (rowFocusRequester != null) it.focusRequester(rowFocusRequester) else it }
+                    // Netflixy's LeadingColumnScroll re-pins the focused card to
+                    // the leading edge on every focus event; combined with
+                    // focusRestorer's own re-focus-and-scroll on re-entry, the
+                    // two fight and the row jumps. Every other theme's
+                    // SafeHorizontalScroll only moves when the restored card
+                    // is actually outside the safe area, so it has no such
+                    // fight to avoid.
+                    .let { if (HubColors.isNetflixy) it else it.focusRestorer() },
             ) {
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(

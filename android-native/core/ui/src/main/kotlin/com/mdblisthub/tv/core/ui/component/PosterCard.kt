@@ -59,9 +59,10 @@ import com.mdblisthub.tv.core.ui.theme.HubDimens
  *
  * Focus is expressed two ways at once — an accent border and a brightening
  * title, no scale — because on a television the viewer is metres away and a
- * single cue is easy to lose. The zoom this used to add on top fought the
- * grid's own spacing (a scaled-up card overlaps its neighbours) and read as
- * restless when moving quickly through a row; the border alone is enough.
+ * single cue is easy to lose. A per-theme zoom was tried (including one
+ * scoped to just Netflixy) and dropped both times: it fought the grid's own
+ * spacing (a scaled-up card overlaps its neighbours) and read as restless
+ * when moving quickly through a row; the border alone is enough.
  */
 @Composable
 fun PosterCard(
