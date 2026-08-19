@@ -353,6 +353,12 @@ class PlaybackController(
     private var watchdog: Job? = null
     private var ticker: Job? = null
 
+    /**
+     * Supervises a source that is *already playing*. [watchdog] deliberately
+     * stops at the moment this one starts — see [startStallWatch].
+     */
+    private var stallWatch: Job? = null
+
     /** Set by the screen; see [setOsdVisible]. Starts true, since the OSD does. */
     private var osdVisible = true
 
@@ -932,6 +938,7 @@ class PlaybackController(
         failoverPlayWhenReady = null
         updatePrefetch()
         startTicker()
+        startStallWatch()
     }
 
     /**
@@ -961,6 +968,7 @@ class PlaybackController(
         prefetcher.onPosition(
             positionMs = player.currentPosition.coerceAtLeast(0L),
             playerBufferedMs = player.totalBufferedDuration,
+            playerLoading = player.isLoading,
         )
     }
 
@@ -982,6 +990,8 @@ class PlaybackController(
         watchdog = null
         ticker?.cancel()
         ticker = null
+        stallWatch?.cancel()
+        stallWatch = null
         // Nothing left to work ahead of. Without this the loop survives the
         // film, polling every couple of seconds against a window that is
         // permanently full, for as long as the ENDED screen is up.
@@ -1032,6 +1042,7 @@ class PlaybackController(
     private fun fail(failure: PlaybackFailure) {
         watchdog?.cancel()
         ticker?.cancel()
+        stallWatch?.cancel()
         prefetcher?.stop()
         runCatching { player.stop() }
         _state.update {
@@ -1071,6 +1082,78 @@ class PlaybackController(
             while (isActive) {
                 delay(if (osdVisible) TICK_MS else IDLE_TICK_MS)
                 publishPosition()
+            }
+        }
+    }
+
+    /**
+     * Catches the stall that never becomes an error.
+     *
+     * [watchdog] covers the opposite half of a source's life: it decides
+     * whether a candidate is worth waiting for, and [onReady] cancels it
+     * precisely because a link that has produced a picture has proven itself.
+     * From there until the film ends nothing was watching — and the failure
+     * this repairs lives entirely in that gap.
+     *
+     * A mirror behind a Fire TV Stick's radio rarely *closes* the connection
+     * when it gives up; it simply stops sending. Nothing about that is an
+     * error, so the engine goes on waiting for a socket that will never
+     * deliver another byte, and the only thing that ends the wait is the
+     * thirty-second `readTimeout` in `HttpClients.playback` — with the retry
+     * ladder in [loadErrorPolicy] stacked after it. From the sofa that is a
+     * picture frozen for upwards of half a minute. And the reason seeking
+     * "fixes" it is not that the position was wrong: a seek closes the dead
+     * socket and opens a new one, which is the one thing a waiting player will
+     * not do for itself.
+     *
+     * So this does it instead, and sooner. A frozen [Player.getBufferedPosition]
+     * is the honest signal — a source that is merely slow still advances it,
+     * however slowly, while one that has gone quiet cannot move it at all — and
+     * the repair is [reopenCommitted], the same one the error path already
+     * trusts, at the same position, with the disk cache underneath making the
+     * refill cheap.
+     */
+    private fun startStallWatch() {
+        stallWatch?.cancel()
+        stallWatch = scope.launch {
+            var frozenMs = 0L
+            var lastBuffered = C.TIME_UNSET
+
+            while (isActive) {
+                delay(STALL_POLL_MS)
+
+                // Paused is not stalled, and neither is anything the cascade is
+                // still deciding about. `committedStream` is what separates
+                // them — without one there is nothing for [reopenCommitted] to
+                // reopen, and the attempt watchdog owns that phase anyway.
+                val waiting = committedStream != null &&
+                    player.playWhenReady &&
+                    player.playbackState == Player.STATE_BUFFERING
+
+                val buffered = player.bufferedPosition
+                if (!waiting || buffered != lastBuffered) {
+                    lastBuffered = buffered
+                    frozenMs = 0L
+                    continue
+                }
+
+                frozenMs += STALL_POLL_MS
+                if (frozenMs < STALL_FROZEN_MS) continue
+
+                // Cleared before the reopen rather than after: `open` returns
+                // long before the new source produces anything, and the next
+                // poll must not measure staleness against a buffer position
+                // that belongs to the connection just abandoned.
+                frozenMs = 0L
+                lastBuffered = C.TIME_UNSET
+
+                // Resumes from here. The counter inside `reopenCommitted` is
+                // what stops a link that is genuinely gone from being reopened
+                // forever: after COMMITTED_RETRY_LIMIT of them the cascade
+                // takes over, which is the right answer once a source has
+                // stopped responding that many times in a row.
+                rememberPlaybackForFailover()
+                reopenCommitted()
             }
         }
     }
@@ -1307,10 +1390,12 @@ class PlaybackController(
         prefetcher?.stop()
         watchdog?.cancel()
         ticker?.cancel()
+        stallWatch?.cancel()
         candidatesJob?.cancel()
         subtitleTicker?.cancel()
         watchdog = null
         ticker = null
+        stallWatch = null
         candidatesJob = null
         subtitleTicker = null
         candidatesCollecting = false
@@ -1396,6 +1481,28 @@ class PlaybackController(
         const val IDLE_TICK_MS = 4_000L
 
         const val SUBTITLE_TICK_MS = 120L
+
+        /**
+         * How often a committed source is checked for a frozen buffer.
+         *
+         * Two field reads on the main thread, so the cost is nil, and a second
+         * is fine enough that quantisation is a rounding error against
+         * [STALL_FROZEN_MS].
+         */
+        const val STALL_POLL_MS = 1_000L
+
+        /**
+         * How long `bufferedPosition` may stand perfectly still, while the
+         * viewer is waiting for a picture, before the link is reopened.
+         *
+         * Two bounds decide this. Long enough that a source still trickling is
+         * never touched — any byte demuxed moves the buffer and resets the
+         * count, so this can only fire on a link delivering literally nothing.
+         * Short enough to land well inside the thirty-second read timeout it
+         * exists to pre-empt, since waiting for that timeout is the freeze
+         * being fixed.
+         */
+        const val STALL_FROZEN_MS = 10_000L
 
         /** How far off the runtime estimate may be before a resume is corrected. */
         const val RESUME_TOLERANCE_MS = 5_000L

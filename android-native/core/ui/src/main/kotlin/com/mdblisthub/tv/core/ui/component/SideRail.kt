@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -60,14 +63,38 @@ fun SideRail(
      * `pinnedForRail`.
      */
     onFocusChanged: (Boolean) -> Unit = {},
+    /**
+     * Lets the host park focus here when it has nowhere else to put it.
+     *
+     * The rail collapses to zero width while something else holds focus, which
+     * is the whole point of it — but a screen whose content ends up with no
+     * focusable at all (every row resolved empty) then has no focus anywhere,
+     * and a D-pad press has no origin to search from. The event goes unhandled,
+     * leaves the app, and from the sofa the box looks frozen. The rail is the
+     * one thing always present, so it is the safe place to land.
+     */
+    focusRequester: FocusRequester? = null,
+    /**
+     * Holds the rail open even though nothing here has focus yet.
+     *
+     * Needed because the collapsed rail is `width(0.dp)`, and a zero-width node
+     * cannot take focus — so "just call `requestFocus()` when the screen has
+     * none" quietly does nothing, which is exactly what it did the first time
+     * this was attempted. The host raises this first, the rail gains real
+     * width, and only then is the focus request able to land.
+     */
+    forceExpanded: Boolean = false,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    var focusExpanded by remember { mutableStateOf(false) }
+    val expanded = focusExpanded || forceExpanded
 
     Column(
         modifier = modifier
             .fillMaxHeight()
+            .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
+            .focusGroup()
             .onFocusChanged {
-                expanded = it.hasFocus
+                focusExpanded = it.hasFocus
                 onFocusChanged(it.hasFocus)
             }
             // A tween here, not the default spring: the posters it shares

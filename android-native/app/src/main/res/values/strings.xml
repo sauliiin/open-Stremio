@@ -237,6 +237,7 @@
     <string name="settings_trakt_not_connected">Nenhuma conta Trakt conectada</string>
     <string name="settings_trakt_connect">Conectar Trakt</string>
     <string name="settings_trakt_disconnect">Desconectar</string>
+    <string name="settings_dim_unwatched_episodes">Desfocar episódios não assistidos</string>
 
     <string name="trakt_link_title">Conectar ao Trakt</string>
     <string name="trakt_link_requesting">Pedindo um código ao Trakt…</string>
@@ -323,4 +324,9 @@
     <string name="addons_import_report_count">%1$d de %2$d addon(s) da conta importado(s).</string>
     <string name="addons_import_arrived">Vieram: %1$s.</string>
     <string name="addons_mdblist_key_hint">Informe a chave da API da MDBList para carregar suas listas.</string>
+    <string name="addons_mdblist_key_edit_hint">Informe a nova chave da API da MDBList. A antiga deixa de valer assim que esta for vinculada.</string>
+    <string name="addons_change_mdblist_key">Trocar chave</string>
+    <string name="addons_cancel">Cancelar</string>
+    <string name="home_rows_unavailable">Nada para mostrar agora</string>
+    <string name="home_rows_unavailable_desc">Suas listas não responderam. O motivo mais comum é a cota diária da API do MDBList ter acabado, ou a chave ter parado de funcionar. Use o menu à esquerda para abrir Addons e conferir a chave.</string>
 </resources>

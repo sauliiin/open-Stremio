@@ -67,6 +67,9 @@ class DetailViewModel(
     val language: StateFlow<String> = graph.uiPreferences.language
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "en")
 
+    val dimUnwatchedEpisodes: StateFlow<Boolean> = graph.uiPreferences.dimUnwatchedEpisodes
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     private val _season = MutableStateFlow(1)
     val season: StateFlow<Int> = _season.asStateFlow()
 

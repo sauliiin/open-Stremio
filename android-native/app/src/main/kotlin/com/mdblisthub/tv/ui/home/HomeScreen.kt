@@ -1,6 +1,7 @@
 package com.mdblisthub.tv.ui.home
 
 import androidx.compose.ui.draw.clipToBounds
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.foundation.verticalScroll
 
@@ -48,6 +49,7 @@ import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -330,6 +332,19 @@ fun HomeScreen(
     var deleteTarget by remember { mutableStateOf<EditableListTarget?>(null) }
     var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
+    val railFocusRequester = remember { FocusRequester() }
+    /**
+     * Whether anything at all on this screen holds focus.
+     *
+     * Read from the root, so it covers the rail and the content alike. It
+     * exists for the one state that leaves a television unusable: every row
+     * resolving empty — an expired MDBList key, a quota the account has
+     * already spent, the network down — renders a screen with no focusable on
+     * it, and a D-pad press then has no origin to search from. The key event
+     * goes unhandled, the launcher takes it, and the app simply disappears
+     * with no way back into Settings to fix the cause. See the effect below.
+     */
+    var screenHasFocus by remember { mutableStateOf(false) }
     /**
      * Holds the row list still across a trip to the side rail.
      *
@@ -563,7 +578,82 @@ fun HomeScreen(
     }
     val resumeCards = remember(resumePoints) { resumePoints.map { it.toCardItem() } }
 
-    Box(Modifier.fillMaxSize()) {
+    /**
+     * True once the screen has been found with no focus anywhere — every row
+     * empty, so `MediaRow` drew none of them and there is nothing to point a
+     * remote at. Opens the rail and drives the explanation below it.
+     */
+    var contentUnreachable by remember { mutableStateOf(false) }
+
+    // Owns `contentUnreachable` end to end, as one loop rather than several
+    // effects reacting to each other — the previous version was exactly that,
+    // and it could only ever *raise* the flag from a focus change, never
+    // *lower* it again once real rows came back on their own.
+    //
+    // That mattered because `contentUnreachable` gates a `return@Row` further
+    // down that skips the entire rows `Column` in favour of the explanation:
+    // once true, nothing in that `Column` composes, so nothing in it can ever
+    // request focus again either, and a row's data repopulating in the
+    // background — an mdblist quota resetting, a key working again — had no
+    // way to be noticed. `MediaRow` would happily render the moment it was
+    // asked to; it was just never asked again.
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            if (!initialSyncComplete) {
+                // A cold start with an empty local cache can easily run
+                // longer than `FOCUS_FALLBACK_MS` — several sequential
+                // network calls, not one. Without this check that was read as
+                // "nothing to show" on the very first launch, on a
+                // perfectly healthy connection, before the sync had a chance
+                // to finish; a relaunch then "fixed" it only because Room
+                // already had something cached the second time around. The
+                // `LoadingScreen` below already owns this state and needs no
+                // help from here — the flag stays down until the sync itself
+                // says it is done, not before.
+                delay(POLL_MS)
+                continue
+            }
+
+            if (!screenHasFocus) {
+                // Give the normal case room to resolve first: rows land a
+                // beat after the first composition, and whichever one takes
+                // focus is what flips this true before the delay elapses.
+                delay(FOCUS_FALLBACK_MS)
+                if (screenHasFocus) continue
+
+                // Order matters: the rail is zero-width until this flips, and
+                // focus cannot land on a node with no size.
+                contentUnreachable = true
+                delay(RAIL_EXPAND_MS)
+                runCatching { railFocusRequester.requestFocus() }
+                continue
+            }
+
+            if (!railFocused) {
+                // Real content holds focus — recovered, or never lost it.
+                contentUnreachable = false
+                delay(POLL_MS)
+                continue
+            }
+
+            // Focus is parked on the rail specifically, which only happens
+            // once the flag above has already been raised. Periodically
+            // re-admit the real `Column` in case whatever emptied it has
+            // since recovered; if nothing there claims focus inside the
+            // grace window, put the notice straight back rather than leaving
+            // the screen silently blank until the next round.
+            delay(CONTENT_RETRY_MS)
+            contentUnreachable = false
+            delay(RAIL_EXPAND_MS)
+            if (railFocused) contentUnreachable = true
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onFocusChanged { screenHasFocus = it.hasFocus },
+    ) {
         // The fanart follows focus, the way Estuary does it: whatever the
         // remote is pointing at fills the screen behind the rows.
         FocusedBackdrop(viewModel)
@@ -572,6 +662,8 @@ fun HomeScreen(
             SideRail(
                 items = rail,
                 selectedKey = "home",
+                focusRequester = railFocusRequester,
+                forceExpanded = contentUnreachable,
                 onSelect = { item ->
                     when (item.key) {
                         "search" -> onOpenSearch()
@@ -658,6 +750,32 @@ fun HomeScreen(
                         primary = true,
                         onClick = if (hasHiddenRows) viewModel::toggleEditMode else onOpenAddons,
                         modifier = Modifier.focusRequester(emptyStateFocusRequester),
+                    )
+                }
+                return@Row
+            }
+
+            // Rows exist but every one of them came back empty, so `MediaRow`
+            // drew none of them (it returns early on an empty list) and the
+            // screen is blank. Saying so beats a black rectangle: the usual
+            // cause is the MDBList account being out of daily API calls or the
+            // key having stopped working, and both are fixed from the rail
+            // that is now open to the left.
+            if (contentUnreachable) {
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
+                ) {
+                    Text(
+                        stringResource(R.string.home_rows_unavailable),
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = HubColors.Text,
+                    )
+                    Text(
+                        stringResource(R.string.home_rows_unavailable_desc),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = HubColors.TextDim,
                     )
                 }
                 return@Row
@@ -1239,6 +1357,32 @@ private fun HeroMetadataRow(
         }
     }
 }
+
+/**
+ * How long the home screen may sit with no focus before the rail is handed it.
+ *
+ * Long enough that a normally-loading screen never reaches it — the rows land
+ * well inside this — and short enough that a viewer staring at an empty screen
+ * is not left wondering whether the remote is broken.
+ */
+private const val FOCUS_FALLBACK_MS = 1_200L
+
+/** Long enough for the rail's width animation to give focus something to land on. */
+private const val RAIL_EXPAND_MS = 250L
+
+/**
+ * How often the real rows get another chance while `contentUnreachable`.
+ *
+ * A recovered mdblist quota or a freshly re-linked key can repopulate the
+ * rows any time after this screen gave up on them, and this is the only
+ * thing that ever notices — long enough that the flicker of the retry is
+ * rare, short enough that a fix on the account side is felt within a normal
+ * amount of patience rather than requiring the app to be relaunched.
+ */
+private const val CONTENT_RETRY_MS = 15_000L
+
+/** Steady-state cadence once real content holds focus — cheap, two boolean reads. */
+private const val POLL_MS = 1_000L
 
 private fun ResumePoint.toCardItem() = MediaItem(
     tmdbId = tmdbId ?: 0,

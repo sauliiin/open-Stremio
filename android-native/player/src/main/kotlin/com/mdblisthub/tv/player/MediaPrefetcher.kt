@@ -112,9 +112,12 @@ internal class MediaPrefetcher(
         job = scope.launch(Dispatchers.IO) { run(uri, key, durationMs) }
     }
 
-    fun onPosition(positionMs: Long, playerBufferedMs: Long) {
+    fun onPosition(positionMs: Long, playerBufferedMs: Long, playerLoading: Boolean) {
         this.positionMs = positionMs
-        starving = playerBufferedMs < STARVING_BUFFER_MS
+        // Both halves are load-bearing; see [STARVING_BUFFER_MS] for why the
+        // threshold on its own was not enough to tell a starving player from a
+        // satisfied one.
+        starving = playerLoading && playerBufferedMs < STARVING_BUFFER_MS
     }
 
     /**
@@ -294,6 +297,21 @@ internal class MediaPrefetcher(
          * idle, so this loop is using capacity nobody else wants. Below it the
          * player is fighting for every byte, and the correct amount of help to
          * offer is none.
+         *
+         * Paired with `isLoading` rather than applied alone, because as a lone
+         * threshold it switched this class off on exactly the files it was
+         * written for. The player's buffer is capped in **bytes** by
+         * [HeapBudget], so what those bytes are worth in *seconds* falls as the
+         * bitrate rises: the ~56MB a Fire TV Stick is allowed is around 18
+         * seconds of a 25Mbps remux but only 11 of a 40Mbps one. Under the old
+         * rule that second file sat permanently below this line — on a
+         * completely full buffer, with the link completely idle — and the
+         * prefetcher stood down for the entire film, on the one release whose
+         * bitrate made it necessary.
+         *
+         * `isLoading` is what tells the two apart. A player that has stopped
+         * loading is satisfied, however few seconds that turned out to buy, and
+         * the bandwidth left over is genuinely spare.
          */
         const val STARVING_BUFFER_MS = 15_000L
 

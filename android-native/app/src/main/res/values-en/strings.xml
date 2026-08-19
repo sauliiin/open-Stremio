@@ -237,6 +237,7 @@
     <string name="settings_trakt_not_connected">No Trakt account connected</string>
     <string name="settings_trakt_connect">Connect Trakt</string>
     <string name="settings_trakt_disconnect">Disconnect</string>
+    <string name="settings_dim_unwatched_episodes">Blur unwatched episodes</string>
 
     <string name="trakt_link_title">Connect to Trakt</string>
     <string name="trakt_link_requesting">Asking Trakt for a code…</string>
@@ -323,4 +324,9 @@
     <string name="addons_import_report_count">%1$d of %2$d addon(s) from the account imported.</string>
     <string name="addons_import_arrived">Imported: %1$s.</string>
     <string name="addons_mdblist_key_hint">Enter your MDBList API key to load your lists.</string>
+    <string name="addons_mdblist_key_edit_hint">Enter the new MDBList API key. The old one stops working as soon as this one links.</string>
+    <string name="addons_change_mdblist_key">Change key</string>
+    <string name="addons_cancel">Cancel</string>
+    <string name="home_rows_unavailable">Nothing to show right now</string>
+    <string name="home_rows_unavailable_desc">Your lists did not answer. The usual cause is the MDBList account running out of daily API calls, or the key no longer working. Use the menu on the left to open Addons and check the key.</string>
 </resources>
