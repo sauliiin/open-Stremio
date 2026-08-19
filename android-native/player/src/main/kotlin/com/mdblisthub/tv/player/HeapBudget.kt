@@ -57,49 +57,63 @@ internal object HeapBudget {
     private const val RAM_SHARE = 0.55
 
     /**
-     * What a healthy device should get, when both limits allow it.
+     * The RAM buffer floor, by how much RAM the box physically has.
      *
-     * Now equal to [ABSOLUTE_MIN_BYTES], which means it no longer decides
-     * anything on its own — see there. Kept as a separate name so lowering the
-     * absolute floor again restores the two-tier behaviour without having to
-     * restructure `targetBufferBytes`.
+     * This used to be one flat 128MB constant applied to every device, with a
+     * comment conceding it was "past the edge the measurements were defending".
+     * It was — but the fault was in *how* it applied, not in the number. It was
+     * a floor that overrode `maxMemory() / 3`, so a Fire TV Stick with a 256MB
+     * heap was handed half of it for `byte[]` while Compose, Coil and the
+     * decoders shared the rest, and the collector ran constantly. That garbage
+     * collection was the stutter the flat floor had been raised to prevent.
+     *
+     * So these are generous, and safely so, because two things changed
+     * underneath them. [MediaPrefetcher] moved the deep cushion onto disk, so
+     * the RAM buffer is no longer the only thing between a network hiccup and a
+     * stopped picture. And in [targetBufferBytes] the floor now yields to the
+     * heap-third ceiling instead of overriding it — which means raising these
+     * constants can no longer push any device past what its heap can back. On a
+     * box with the heap to afford them they take effect; on one without, the
+     * ceiling quietly wins and the tier constant is simply never reached.
+     *
+     * That is what makes doubling them a different decision from the flat 128MB
+     * that came before, rather than a return to it.
      */
-    private const val PREFERRED_MIN_BYTES = 128L * 1024 * 1024
+    private const val ROOMY_MIN_BYTES = 256L * 1024 * 1024
+    private const val MODEST_MIN_BYTES = 128L * 1024 * 1024
 
     /**
-     * The point below which playback stutters regardless, so there is no
-     * reason to go under it — if the device cannot afford even this, a smaller
-     * buffer would not save it either.
+     * The bottom tier, and the one to lower first if anything regresses.
      *
-     * Raised from 24MB after devices with 1.5–2.5GB of total RAM kept
-     * rebuffering on high-bitrate remuxes: at ~25Mbps, 24MB is only ~8s of
-     * forward buffer, well under what a normal network hiccup drains. Then to
-     * 88MB, then 112MB, and now to [PREFERRED_MIN_BYTES] itself.
+     * This is the one tier where the floor is not academic. In the ordinary
+     * case the measured `allowance` already sits above the heap-third ceiling,
+     * so the ceiling decides and the floor is never consulted — true for every
+     * tier, including this one. But a Fire TV Stick is also the device most
+     * likely to *hit* `spareRamBytes` pressure, since 1GB of physical RAM
+     * leaves little headroom above the low-memory killer's threshold to begin
+     * with. When that happens is exactly when this floor stops being inert and
+     * starts forcing the buffer back up — during the one condition where doing
+     * that is actively wrong.
      *
-     * **At this value the floor stops being measured at all.** Read
-     * [targetBufferBytes]: the trailing `coerceAtLeast` is applied *after* the
-     * `minOf`, so with this constant equal to `PREFERRED_MIN_BYTES` both of the
-     * other two inputs — the preferred floor and `maxMemory() / 3`, the heap
-     * ceiling the rest of this file treats as the real risk line — can never
-     * lower the result. The floor is now flatly 128MB on every device. On a
-     * 256MB heap (`largeHeap` on a modest box) that is half the heap spent on
-     * buffer, with Compose, Coil and the decoders sharing the other half.
-     *
-     * That is the trade, and it is on purpose: below this the high-bitrate
-     * remuxes that prompted the change stutter regardless, so yielding to
-     * either measured limit simply moves the failure from OOM to unwatchable.
-     * What makes it defensible is [MemoryPressure] — the runtime valve that
-     * stops the buffer growing once the platform says it is reclaiming. If that
-     * valve ever stops working, this number is immediately too high.
-     *
-     * Remeasure on an actual 1.5GB device if OOMs or process kills show up
-     * where they did not before — this is past the edge the measurements were
-     * defending, not short of it. The knob to turn first is this constant
-     * (40–64MB was the original safe range, 112MB the previous setting);
-     * dropping the trailing `coerceAtLeast` instead hands the decision back to
-     * `maxMemory() / 3`.
+     * So this stays close to the heap-third ceiling (~85MB on a 256MB heap)
+     * rather than doubling with the other two tiers: 56MB is ~22% of that
+     * heap, comfortably under the ~33% ratio that was thrashing, while still
+     * being ~18s of an 25Mbps remux — enough to bridge eMMC read latency, which
+     * is the only job left for this buffer now that [MediaPrefetcher] holds
+     * the deep cushion on disk.
      */
-    private const val ABSOLUTE_MIN_BYTES = 128L * 1024 * 1024
+    private const val CONSTRAINED_MIN_BYTES = 56L * 1024 * 1024
+
+    /**
+     * Where the tiers divide, in `ActivityManager.MemoryInfo.totalMem`.
+     *
+     * `totalMem` is physical RAM as the kernel sees it, so a box marketed as
+     * "1GB" reports nearer 0.9GiB and a "1.5GB" stick nearer 1.4GiB — the
+     * thresholds sit in the gaps between those real readings rather than on
+     * the round numbers from a spec sheet.
+     */
+    private const val CONSTRAINED_RAM_BYTES = 1_250L * 1024 * 1024
+    private const val MODEST_RAM_BYTES = 2_400L * 1024 * 1024
 
     /**
      * Above this the extra buffer buys nothing a viewer can perceive.
@@ -165,6 +179,57 @@ internal object HeapBudget {
         }.getOrNull()
     }
 
+    /**
+     * Total physical RAM, or null when it cannot be read.
+     *
+     * Distinct from [spareRamBytes] on purpose: that one moves minute to
+     * minute and answers "how much can be claimed right now", while this one
+     * is a property of the box and answers "what class of box is this". Only
+     * the second is a sane thing to size a *floor* from — a floor derived from
+     * a momentary reading would be a different number every time a film
+     * started.
+     */
+    fun totalRamBytes(context: Context): Long? {
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return null
+        val info = ActivityManager.MemoryInfo()
+        return runCatching {
+            manager.getMemoryInfo(info)
+            info.totalMem
+        }.getOrNull()?.takeIf { it > 0 }
+    }
+
+    /**
+     * True on the boxes this whole change is about — a Fire TV Stick rather
+     * than a television with a real SoC in it.
+     *
+     * `isLowRamDevice` is checked first and trusted outright: it is the
+     * manufacturer declaring the device is memory-constrained, which is better
+     * evidence than any threshold guessed here.
+     */
+    fun isConstrainedDevice(context: Context): Boolean {
+        val manager = context.getSystemService(ActivityManager::class.java)
+        if (manager?.isLowRamDevice == true) return true
+        val total = totalRamBytes(context) ?: return false
+        return total < CONSTRAINED_RAM_BYTES
+    }
+
+    /**
+     * The floor for this box, by tier.
+     *
+     * An unreadable `totalMem` lands on the middle tier rather than the top
+     * one: the cost of being wrong downward is a slightly shallower RAM buffer
+     * behind a disk window that covers for it, and the cost of being wrong
+     * upward is the garbage collection this change exists to stop.
+     */
+    private fun minimumBufferBytes(context: Context): Long {
+        // Covers the bottom tier outright, including the `isLowRamDevice`
+        // declaration that no RAM threshold would catch on its own, so what
+        // remains below is only the split between the middle and top tiers.
+        if (isConstrainedDevice(context)) return CONSTRAINED_MIN_BYTES
+        val total = totalRamBytes(context) ?: return MODEST_MIN_BYTES
+        return if (total < MODEST_RAM_BYTES) MODEST_MIN_BYTES else ROOMY_MIN_BYTES
+    }
+
     fun targetBufferBytes(context: Context): Int {
         val heapAllowance = (headroomBytes() * HEAP_SHARE).toLong()
         val ramAllowance = spareRamBytes(context)
@@ -176,20 +241,48 @@ internal object HeapBudget {
         // its RAM, and each gets the buffer it can actually back.
         val allowance = minOf(heapAllowance, ramAllowance)
 
-        // The `minOf` caps the preferred floor by both measured limits, and the
-        // trailing `coerceAtLeast` then overrides that result — deliberately,
-        // see ABSOLUTE_MIN_BYTES. With the two constants now equal, the
-        // override always wins and this whole expression evaluates to
-        // ABSOLUTE_MIN_BYTES on every device; the `minOf` is kept because
-        // lowering that constant brings the measured limits straight back.
-        val floor = minOf(
-            PREFERRED_MIN_BYTES,
-            Runtime.getRuntime().maxMemory() / 3,
-            allowance.coerceAtLeast(ABSOLUTE_MIN_BYTES),
-        ).coerceAtLeast(ABSOLUTE_MIN_BYTES)
+        // A third of the heap ceiling is the hard line the rest of this file
+        // treats as the real risk, and nothing below is allowed past it — not
+        // the measured allowance, and not the tier floor either. That last part
+        // is the whole difference from the version this replaced, where the
+        // ceiling sat *inside* a `minOf` whose result a trailing
+        // `coerceAtLeast` then overrode: `maxMemory() / 3` could never lower
+        // anything, and every device got the flat floor regardless of the heap
+        // it had to fit in.
+        val ceiling = minOf(MAX_TARGET_BYTES, Runtime.getRuntime().maxMemory() / 3)
 
-        return allowance.coerceIn(floor, MAX_TARGET_BYTES).toInt()
+        // The floor yields to that ceiling rather than overriding it, which is
+        // what keeps a raised tier constant from quietly becoming the same bug
+        // again. A floor exists to override the *measured* allowance — a
+        // pessimistic, momentary reading that dips for reasons unrelated to
+        // what the box can afford. It has no business overriding a structural
+        // limit: a device whose heap cannot back its tier's number does not
+        // become able to by being handed it anyway, it just OOMs.
+        val floor = minOf(minimumBufferBytes(context), ceiling)
+
+        return allowance.coerceIn(floor, ceiling).toInt()
     }
+
+    /**
+     * How much buffer the player must rebuild before it resumes from a stall.
+     *
+     * Media3 defaults to 2s and this app raised it to 8s, on the reasoning that
+     * resuming with almost nothing in hand turns one stall into a run of them.
+     * That reasoning holds on a box that can refill 8s quickly. On a Fire TV
+     * Stick behind its own weak radio, pulling 8 seconds of a high-bitrate
+     * remux can take longer than the outage did — and until it finishes, the
+     * picture stays stopped. That is the freeze that only a seek clears: seek
+     * backward and the bytes come off disk instantly, seek forward and the
+     * requirement is recomputed somewhere the link can actually satisfy.
+     *
+     * So the constrained tier resumes sooner. It can afford to: with
+     * [MediaPrefetcher] holding minutes of film on disk, "almost nothing in
+     * hand" is no longer true — the RAM buffer refills from the cache file at
+     * eMMC speed rather than from the network, so the run-of-stalls the 8s was
+     * defending against cannot start.
+     */
+    fun bufferForPlaybackAfterRebufferMs(context: Context): Int =
+        if (isConstrainedDevice(context)) 2_500 else 8_000
 
     /**
      * How much back buffer [targetBytes] affords at the given throughput,

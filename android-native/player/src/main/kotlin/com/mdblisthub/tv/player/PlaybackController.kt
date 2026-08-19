@@ -1,6 +1,7 @@
 package com.mdblisthub.tv.player
 
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -124,13 +125,38 @@ class PlaybackController(
     private val upstreamFactory: DataSource.Factory =
         DefaultDataSource.Factory(context.applicationContext, httpDataSourceFactory)
 
+    /**
+     * Hoisted out of [dataSourceFactory] because [prefetcher] needs the same
+     * instance: `SimpleCache` throws if two of them are pointed at one
+     * directory, and a prefetcher filling a *different* cache from the one the
+     * player reads is worse than no prefetcher at all.
+     */
+    private val mediaCache = MediaCache.get(context)
+
     private val dataSourceFactory: DataSource.Factory =
-        MediaCache.get(context)?.let { cache ->
+        mediaCache?.let { cache ->
             CacheDataSource.Factory()
                 .setCache(cache)
                 .setUpstreamDataSourceFactory(upstreamFactory)
                 .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
         } ?: upstreamFactory
+
+    /**
+     * Keeps the disk cache filled ahead of the playhead — the deep buffer that
+     * used to have to live in the Java heap.
+     *
+     * Null when no cache could be opened, which is the same condition that
+     * makes [dataSourceFactory] stream straight through: with nowhere to write,
+     * there is nothing to work ahead into.
+     */
+    private val prefetcher = mediaCache?.let { cache ->
+        MediaPrefetcher(
+            cache = cache,
+            upstreamFactory = upstreamFactory,
+            scope = scope,
+            maxWindowBytes = (MediaCache.budgetBytes * PREFETCH_CACHE_SHARE).toLong(),
+        )
+    }
 
     /**
      * The first line of defence against a source going quiet, and the one that
@@ -215,12 +241,16 @@ class PlaybackController(
                         // extra 1.5s on every start and 3s on every rebuffer,
                         // paid for a benefit that was never being missed.
                         /* bufferForPlaybackMs = */ DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
-                        // Deliberately above the 2s default: resuming from a
-                        // rebuffer with almost nothing in hand is what turns
-                        // one stall into a run of them. Only this one is
-                        // raised — `bufferForPlaybackMs` stays at the default
-                        // so the *first* frame is still fast.
-                        /* bufferForPlaybackAfterRebufferMs = */ 8_000,
+                        // Above the 2s default, but no longer by the same
+                        // amount everywhere — see the function, which drops it
+                        // on constrained boxes. Refilling 8s of a high-bitrate
+                        // remux over a Fire TV Stick's radio can outlast the
+                        // outage it is recovering from, and the picture stays
+                        // stopped for the whole of it. Only this one varies;
+                        // `bufferForPlaybackMs` stays at the default so the
+                        // *first* frame is still fast.
+                        /* bufferForPlaybackAfterRebufferMs = */
+                        HeapBudget.bufferForPlaybackAfterRebufferMs(context.applicationContext),
                     )
                     // `DefaultAllocator` takes its `byte[]` from the *Java*
                     // heap, not native memory, so this is bounded by what the
@@ -520,6 +550,13 @@ class PlaybackController(
      */
     private fun open(stream: PlayableStream) {
         val url = stream.url ?: return
+
+        // Stopped before the headers move, not after. The prefetcher builds its
+        // requests from the same shared factory, so a chunk still in flight
+        // when this line runs would finish under the *next* candidate's headers
+        // — and write whatever that host returned into the previous file's
+        // cache key.
+        prefetcher?.stop()
 
         // Replaced wholesale rather than merged: the factory is shared across
         // every attempt, so a header the previous mirror needed would
@@ -893,7 +930,38 @@ class PlaybackController(
         }
         failoverPositionMs = null
         failoverPlayWhenReady = null
+        updatePrefetch()
         startTicker()
+    }
+
+    /**
+     * Points the prefetcher at the committed source and tells it where the
+     * playhead is.
+     *
+     * Called from [onReady] and from every position tick, because neither is
+     * sufficient alone: `STATE_READY` is where a source becomes committed but
+     * can arrive before the duration is demuxed, and the tick has the duration
+     * but no idea when the source changed. `MediaPrefetcher.start` is a no-op
+     * once it is already running for the same file, so calling it on every tick
+     * costs a string comparison.
+     *
+     * Reads `player` on the main thread only; the prefetcher gets plain values.
+     */
+    private fun updatePrefetch() {
+        val prefetcher = prefetcher ?: return
+        val stream = committedStream ?: return
+        val url = stream.url ?: return
+        prefetcher.start(
+            uri = Uri.parse(url),
+            // Must match what `open` puts on the MediaItem, or the two write
+            // to different keys and every prefetched byte is downloaded twice.
+            cacheKey = stream.filename?.takeIf { it.isNotBlank() },
+            durationMs = player.duration,
+        )
+        prefetcher.onPosition(
+            positionMs = player.currentPosition.coerceAtLeast(0L),
+            playerBufferedMs = player.totalBufferedDuration,
+        )
     }
 
     /**
@@ -914,6 +982,10 @@ class PlaybackController(
         watchdog = null
         ticker?.cancel()
         ticker = null
+        // Nothing left to work ahead of. Without this the loop survives the
+        // film, polling every couple of seconds against a window that is
+        // permanently full, for as long as the ENDED screen is up.
+        prefetcher?.stop()
         _state.update { it.copy(phase = PlaybackPhase.ENDED) }
     }
 
@@ -960,6 +1032,7 @@ class PlaybackController(
     private fun fail(failure: PlaybackFailure) {
         watchdog?.cancel()
         ticker?.cancel()
+        prefetcher?.stop()
         runCatching { player.stop() }
         _state.update {
             it.copy(phase = PlaybackPhase.FAILED, error = failure, availableSources = queue.toList())
@@ -1003,6 +1076,7 @@ class PlaybackController(
     }
 
     private fun publishPosition() {
+        updatePrefetch()
         _state.update {
             it.copy(
                 positionMs = player.currentPosition.coerceAtLeast(0),
@@ -1042,6 +1116,10 @@ class PlaybackController(
         if (duration <= 0) return
         val clamped = positionMs.coerceIn(0, duration)
         player.seekTo(clamped)
+        // The chunk in flight was fetched for where the viewer just left, and
+        // on a slow link it can be tens of seconds of download standing between
+        // them and the bytes they now need.
+        prefetcher?.invalidate()
         _state.update { it.copy(positionMs = clamped) }
         updateActiveCueNow()
     }
@@ -1226,6 +1304,7 @@ class PlaybackController(
     fun progressPercent(): Float = _state.value.progress * 100f
 
     private fun stopInternal() {
+        prefetcher?.stop()
         watchdog?.cancel()
         ticker?.cancel()
         candidatesJob?.cancel()
@@ -1265,6 +1344,23 @@ class PlaybackController(
     }
 
     private companion object {
+        /**
+         * Share of the disk cache the read-ahead window may occupy.
+         *
+         * The rest is left for what has already been watched. Both directions
+         * come out of one `LeastRecentlyUsedCacheEvictor`, so this is the line
+         * between "rewind is free" and "the next several minutes are already
+         * here" — and taking all of it for the second would make a backward
+         * seek re-download every time.
+         *
+         * Weighted three-to-one toward read-ahead because the two sides are not
+         * worth the same. Behind the playhead, a quarter of a large cache is
+         * already many minutes of instant rewind, and the cost of missing is a
+         * re-download the viewer waits a moment for. Ahead of it, the cost of
+         * missing is the picture stopping.
+         */
+        const val PREFETCH_CACHE_SHARE = 0.75
+
         /** How long a source may go without buffering anything before it is dead. */
         const val ATTEMPT_STALL_MS = 9_000L
 
