@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -30,6 +29,7 @@ import com.mdblisthub.tv.ui.login.LoginScreen
 import com.mdblisthub.tv.ui.player.PlayerScreen
 import com.mdblisthub.tv.ui.search.SearchScreen
 import com.mdblisthub.tv.ui.settings.SettingsScreen
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -52,20 +52,43 @@ object Routes {
 @Composable
 fun HubNavHost(graph: DataGraph) {
     val navController = rememberNavController()
-    val signedIn by graph.auth.signedIn.collectAsStateWithLifecycle(initialValue = null)
+
+    /**
+     * Where the graph starts — decided **once**, from a snapshot, and never
+     * recomputed.
+     *
+     * This used to read `graph.auth.signedIn` as live Compose state and derive
+     * the start destination from it, which looks reasonable and is in fact the
+     * bug that made a first sign-in end on a black screen with no menu.
+     *
+     * `NavHost` keys its `NavGraph` on `startDestination` via `remember`, and
+     * hands each rebuilt graph to `NavController.setGraph`, which drops the
+     * entire back stack and re-seeds it from the new start. So the instant a
+     * login landed, one state change fired two things at once: `LoginScreen`'s
+     * `onSignedIn` running `navigate(HOME) { popUpTo(LOGIN) }`, and a graph
+     * swap caused by that same `signedIn` flipping. The swap tore down the
+     * entry the navigate had just pushed, and nothing was left to draw. Sign-out
+     * raced identically in reverse.
+     *
+     * Read once here, after `restore()` has settled, the value the graph is
+     * built from can no longer change underneath it. Every later transition is
+     * an explicit `navigate` — which is the only thing that should ever move
+     * the back stack.
+     */
+    var startDestination by remember { mutableStateOf<String?>(null) }
 
     // A stored key is re-checked before anything routes, so every screen
     // downstream can assume the session is real.
-    var restored by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         graph.auth.restore()
         graph.listPreferencesSync.restore()
         graph.firebaseSync.restore()
         graph.scheduler.syncNow()
-        restored = true
+        startDestination = if (graph.auth.signedIn.first()) Routes.HOME else Routes.LOGIN
     }
 
-    if (!restored || signedIn == null) {
+    val start = startDestination
+    if (start == null) {
         LoadingScreen(message = stringResource(R.string.loading_opening))
         return
     }
@@ -95,7 +118,7 @@ fun HubNavHost(graph: DataGraph) {
     CompositionLocalProvider(LocalLandscapeArtworkLoader provides artworkLoader) {
         NavHost(
             navController = navController,
-            startDestination = if (signedIn == true) Routes.HOME else Routes.LOGIN,
+            startDestination = start,
         ) {
         composable(Routes.LOGIN) {
             LoginScreen(

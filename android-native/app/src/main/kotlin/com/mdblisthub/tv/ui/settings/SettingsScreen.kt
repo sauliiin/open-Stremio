@@ -77,6 +77,7 @@ data class SettingsUiState(
     val subtitleColor: String = "white",
     val audioLanguage: String = "en",
     val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
+    val dimUnwatchedEpisodes: Boolean = false,
     val traktAccount: TraktAccount? = null,
     /** False when the build ships no Trakt client id — see `ApiConfig`. */
     val traktConfigured: Boolean = false,
@@ -107,6 +108,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
             }
                 .combine(graph.uiPreferences.libraryProvider) { partial, provider ->
                     partial.copy(libraryProvider = provider)
+                }
+                .combine(graph.uiPreferences.dimUnwatchedEpisodes) { partial, dim ->
+                    partial.copy(dimUnwatchedEpisodes = dim)
                 }
                 .combine(graph.traktAuth.account) { partial, account ->
                     partial.copy(
@@ -196,6 +200,7 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     fun setSubtitleLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleLanguage(lang) }
     fun setSubtitleColor(color: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleColor(color) }
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
+    fun toggleDimUnwatchedEpisodes() = viewModelScope.launch { graph.uiPreferences.saveDimUnwatchedEpisodes(!_state.value.dimUnwatchedEpisodes) }
 
     private companion object {
         /** Long enough to read "connected as @you" before the overlay closes. */
@@ -276,6 +281,16 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                             onClick = { viewModel.setLibraryProvider(provider) },
                         )
                     }
+                }
+
+                SettingsRow(label = stringResource(R.string.settings_dim_unwatched_episodes)) {
+                    HubButton(
+                        text = stringResource(
+                            if (state.dimUnwatchedEpisodes) R.string.settings_on else R.string.settings_off,
+                        ),
+                        primary = state.dimUnwatchedEpisodes,
+                        onClick = viewModel::toggleDimUnwatchedEpisodes,
+                    )
                 }
 
                 SettingsRow(

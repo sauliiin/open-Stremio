@@ -114,6 +114,23 @@ class UiPreferencesStore(context: Context) {
     }
 
     /**
+     * Whether an unwatched episode's still is blurred on the detail screen, so
+     * what is left to watch stands apart from what is already seen. Off by
+     * default: `WatchedBadge` already marks watched episodes card by card,
+     * and this is an opt-in for viewers who want that told at a glance across
+     * a whole season grid instead.
+     *
+     * On API 31+ a Gaussian blur is used; older devices fall back to reduced
+     * opacity for the same visual signal at no extra cost.
+     */
+    val dimUnwatchedEpisodes: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_DIM_UNWATCHED_EPISODES] ?: false
+    }
+    suspend fun saveDimUnwatchedEpisodes(enabled: Boolean) {
+        store.edit { it[KEY_DIM_UNWATCHED_EPISODES] = enabled }
+    }
+
+    /**
      * Who answers for watchlist, collection, watched, up next and continue
      * watching. mdblist unless the user deliberately switched, and mdblist
      * again if the stored value is one this build no longer recognises — a
@@ -140,5 +157,6 @@ class UiPreferencesStore(context: Context) {
         val KEY_SUBTITLE_LANGUAGE = stringPreferencesKey("subtitle_language")
         val KEY_SUBTITLE_COLOR = stringPreferencesKey("subtitle_color")
         val KEY_AUDIO_LANGUAGE = stringPreferencesKey("audio_language")
+        val KEY_DIM_UNWATCHED_EPISODES = booleanPreferencesKey("dim_unwatched_episodes")
     }
 }

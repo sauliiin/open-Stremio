@@ -142,6 +142,15 @@ data class MdblistCatalogUi(
     val busy: Boolean = false,
     val error: AppError? = null,
     val message: MdblistCatalogMessage? = null,
+    /**
+     * True while the key field is shown for an *already linked* account —
+     * distinct from `!linked`, which shows the same field for the opposite
+     * reason. Without this, [linkMdblist] worked for a key typed once but
+     * had nothing in the UI to invite typing a second one, which is exactly
+     * the follow-up viewers asked for after the auto-logout was fixed: a way
+     * to swap or re-enter a key without signing out of Google first.
+     */
+    val editingKey: Boolean = false,
 )
 
 /**
@@ -335,6 +344,13 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
     fun onMdblistApiKeyChange(value: String) =
         _mdblistCatalog.update { it.copy(apiKey = value, error = null, message = null) }
 
+    /** Re-opens the key field for an account that already has one linked. */
+    fun beginEditMdblistKey() =
+        _mdblistCatalog.update { it.copy(editingKey = true, apiKey = "", error = null, message = null) }
+
+    fun cancelEditMdblistKey() =
+        _mdblistCatalog.update { it.copy(editingKey = false, apiKey = "", error = null) }
+
     fun linkMdblist() {
         val key = _mdblistCatalog.value.apiKey.trim()
         if (key.isBlank() || _mdblistCatalog.value.busy) return
@@ -348,6 +364,7 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     _mdblistCatalog.update {
                         it.copy(
                             linked = true,
+                            editingKey = false,
                             apiKey = "",
                             busy = false,
                             message = MdblistCatalogMessage.Linked,
@@ -511,6 +528,8 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
                 onLink = viewModel::linkMdblist,
                 onToggle = viewModel::toggleMdblistCatalogs,
                 onExport = viewModel::exportMdblistLists,
+                onBeginEditKey = viewModel::beginEditMdblistKey,
+                onCancelEditKey = viewModel::cancelEditMdblistKey,
             )
         }
 
@@ -674,6 +693,8 @@ private fun MdblistCatalogCard(
     onLink: () -> Unit,
     onToggle: () -> Unit,
     onExport: () -> Unit,
+    onBeginEditKey: () -> Unit,
+    onCancelEditKey: () -> Unit,
 ) {
     SyncCard(accent = HubColors.Accent2) {
         Row(
@@ -693,9 +714,11 @@ private fun MdblistCatalogCard(
             color = HubColors.TextDim,
         )
 
-        if (!state.linked) {
+        if (!state.linked || state.editingKey) {
             Text(
-                stringResource(R.string.addons_mdblist_key_hint),
+                stringResource(
+                    if (state.editingKey) R.string.addons_mdblist_key_edit_hint else R.string.addons_mdblist_key_hint,
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = HubColors.TextDim,
             )
@@ -704,8 +727,11 @@ private fun MdblistCatalogCard(
                     value = state.apiKey,
                     onValueChange = onApiKeyChange,
                     placeholder = stringResource(R.string.addons_mdblist_key_placeholder),
-                    keyboardType = KeyboardType.Password,
-                    obscure = true,
+                    // Not masked, unlike the Stremio password above: a wrong
+                    // character here is easy to make and hard to catch blind,
+                    // and this key is not a secret defending an account of
+                    // its own — anyone who can point a remote at this screen
+                    // already has the box.
                     imeAction = ImeAction.Done,
                     onImeAction = onLink,
                     modifier = Modifier.weight(1f),
@@ -716,6 +742,16 @@ private fun MdblistCatalogCard(
                     enabled = state.apiKey.isNotBlank() && !state.busy,
                     onClick = onLink,
                 )
+                // Only worth offering once there was already a working key to
+                // fall back to — cancelling out of the first-ever link would
+                // just leave the card demanding one again.
+                if (state.editingKey) {
+                    HubButton(
+                        text = stringResource(R.string.addons_cancel),
+                        enabled = !state.busy,
+                        onClick = onCancelEditKey,
+                    )
+                }
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -736,6 +772,11 @@ private fun MdblistCatalogCard(
                         onClick = onExport,
                     )
                 }
+                HubButton(
+                    text = stringResource(R.string.addons_change_mdblist_key),
+                    enabled = !state.busy,
+                    onClick = onBeginEditKey,
+                )
             }
         }
 

@@ -10,6 +10,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -57,6 +58,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import android.os.Build
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -120,6 +124,7 @@ fun DetailScreen(
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val appLanguage by viewModel.language.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
+    val dimUnwatchedEpisodes by viewModel.dimUnwatchedEpisodes.collectAsStateWithLifecycle()
     val library by viewModel.library.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
@@ -388,6 +393,7 @@ fun DetailScreen(
                     EpisodeRow(
                         episodes = episodes,
                         watchedEpisodes = watchedEpisodes,
+                        dimUnwatched = dimUnwatchedEpisodes,
                         showTmdbId = tmdbId,
                         appLanguage = appLanguage,
                         onPlay = { ep -> onPlay(ep.seasonNumber, ep.episodeNumber) },
@@ -448,6 +454,7 @@ fun DetailScreen(
 private fun EpisodeRow(
     episodes: List<Episode>,
     watchedEpisodes: Set<String>,
+    dimUnwatched: Boolean,
     showTmdbId: Int,
     appLanguage: String,
     onPlay: (Episode) -> Unit
@@ -499,6 +506,30 @@ private fun EpisodeRow(
                     label = "episode-background",
                 )
 
+                val watched = watchedEpisodes.contains(
+                    "${showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}",
+                )
+                // Focus lifts the blur back to sharp — same as the web app's
+                // hover — so checking what an unwatched episode looks like
+                // never costs a click, just a D-pad move.
+                //
+                // Modifier.blur() is only available on API 31+; on older devices
+                // we fall back to reduced alpha which achieves a similar visual
+                // signal at minimal cost.
+                val blurActive = dimUnwatched && !watched && !focused
+                val stillBlurRadius by animateDpAsState(
+                    if (blurActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                        UNWATCHED_BLUR_RADIUS else 0.dp,
+                    episodeFocusTween(),
+                    label = "episode-still-blur",
+                )
+                val stillAlpha by animateFloatAsState(
+                    if (blurActive && Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
+                        UNWATCHED_ALPHA_FALLBACK else 1f,
+                    episodeFocusTween(),
+                    label = "episode-still-alpha",
+                )
+
                 Column(
                     modifier = Modifier
                         .width(260.dp)
@@ -521,10 +552,16 @@ private fun EpisodeRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(132.dp)
-                                .clip(RoundedCornerShape(8.dp)),
+                                .clip(RoundedCornerShape(8.dp))
+                                .then(
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                                        Modifier.blur(stillBlurRadius)
+                                    else
+                                        Modifier.alpha(stillAlpha)
+                                ),
                         )
                     }
-                        if (watchedEpisodes.contains("${showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}")) {
+                        if (watched) {
                             com.mdblisthub.tv.core.ui.component.WatchedBadge(
                                 modifier = Modifier
                                     .align(Alignment.BottomEnd)
@@ -567,6 +604,15 @@ private fun EpisodeRow(
 private fun <T> episodeFocusTween(): FiniteAnimationSpec<T> =
     tween(durationMillis = 200, easing = FastOutSlowInEasing)
 
+/** Gaussian blur radius applied to unwatched stills on API 31+ — see [EpisodeRow]. */
+private val UNWATCHED_BLUR_RADIUS = 6.dp
+
+/**
+ * Alpha fallback for devices below API 31 that cannot run [Modifier.blur].
+ * Achieves the same "this is still to watch" signal without blurring.
+ */
+private const val UNWATCHED_ALPHA_FALLBACK = 0.45f
+
 /**
  * TMDB's `air_date` ("2026-12-18") as a short weekday + date, matching the
  * two formats this app ships strings for:
@@ -587,7 +633,7 @@ private fun formatAirDate(airDate: String, language: String): String? {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(airDate)
     }.getOrNull() ?: return null
     return if (language == "pt") {
-        SimpleDateFormat("EEE, dd/MM/yyyy", Locale("pt", "BR")).format(parsed)
+        SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
     } else {
         SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
     }
