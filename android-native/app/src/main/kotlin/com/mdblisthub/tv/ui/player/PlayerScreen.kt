@@ -117,11 +117,13 @@ import com.mdblisthub.tv.player.MAX_SUBTITLE_OFFSET_MS
 import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
+import com.mdblisthub.tv.player.PlaybackPosition
 import com.mdblisthub.tv.player.TrackInfo
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 
 private const val OSD_TIMEOUT_MS = 4_000L
 
@@ -515,10 +517,14 @@ fun PlayerScreen(
 
         // Independent of the OSD gradient: a caption still belongs on screen
         // while the controls are hidden, which is most of a film's runtime.
-        val subtitleCue = playback.activeSubtitleCue
-        if (playback.canShowVideo && !listOverlayOpen && !subtitleCue.isNullOrBlank()) {
-            ExternalSubtitleOverlay(
-                text = subtitleCue,
+        //
+        // The cue is collected *inside* the layer rather than here, and that
+        // is deliberate: it changes once per line of dialogue, and read at
+        // this level it recomposed the whole player screen every couple of
+        // seconds for the length of a conversation. See [PlaybackPosition].
+        if (playback.canShowVideo && !listOverlayOpen) {
+            ExternalSubtitleLayer(
+                cue = viewModel.controller.activeSubtitleCue,
                 liftForOsd = osdOnScreen,
                 liftForCast = castRailOpen,
                 color = parsedSubtitleColor,
@@ -534,8 +540,11 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.CenterStart),
             )
             PlayerOsd(
-                positionMs = playback.positionMs,
-                durationMs = playback.durationMs,
+                // The flow, not two Longs. Collected inside the OSD so the
+                // twice-a-second tick recomposes the seek bar and the two
+                // time labels instead of this whole screen — and stops
+                // reaching composition at all once the OSD hides itself.
+                position = viewModel.controller.position,
                 playing = playback.isPlaying,
                 subtitleActive = playback.externalSubtitle != null ||
                     playback.currentSubtitleId != NO_TRACK,
@@ -962,6 +971,35 @@ private fun SourceRow(
 }
 
 /**
+ * Holds the subscription to the cue flow so [ExternalSubtitleOverlay] can stay
+ * a pure drawing composable — and, more to the point, so that a new line of
+ * dialogue recomposes this and nothing above it.
+ *
+ * The blank check lives here rather than at the call site for the same reason:
+ * a gap between cues is the common case, and deciding it upstream would mean
+ * reading the cue upstream.
+ */
+@Composable
+private fun ExternalSubtitleLayer(
+    cue: StateFlow<String?>,
+    liftForOsd: Boolean,
+    liftForCast: Boolean,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Yellow,
+) {
+    val text by cue.collectAsStateWithLifecycle()
+    val line = text
+    if (line.isNullOrBlank()) return
+    ExternalSubtitleOverlay(
+        text = line,
+        liftForOsd = liftForOsd,
+        liftForCast = liftForCast,
+        color = color,
+        modifier = modifier,
+    )
+}
+
+/**
  * The external subtitle's current line, drawn by this app rather than handed
  * to ExoPlayer as a side-loaded track — see `PlaybackController`. Owning the
  * draw is what let synchronizing become a pure UI operation: adjusting the
@@ -1013,8 +1051,7 @@ private fun ExternalSubtitleOverlay(
 
 @Composable
 private fun PlayerOsd(
-    positionMs: Long,
-    durationMs: Long,
+    position: StateFlow<PlaybackPosition>,
     playing: Boolean,
     subtitleActive: Boolean,
     onTogglePlay: () -> Unit,
@@ -1032,6 +1069,15 @@ private fun PlayerOsd(
 ) {
     val progressBarFocusRequester = remember { FocusRequester() }
     val firstFlatControlFocusRequester = remember { FocusRequester() }
+
+    // Collected here rather than passed in as two Longs. The tick is twice a
+    // second while the controls are up, and this is the deepest point that
+    // still covers all three readers below — the elapsed label, the bar and
+    // the remaining label. Above this, nothing hears it; below it, the focus
+    // requesters would be rebuilt on every tick.
+    val playhead by position.collectAsStateWithLifecycle()
+    val positionMs = playhead.positionMs
+    val durationMs = playhead.durationMs
 
     Column(
         modifier = modifier

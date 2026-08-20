@@ -31,6 +31,9 @@ class NetworkModule(context: Context) {
     /** What the player reads the film over — see [HttpClients.playback]. */
     val playbackClient: OkHttpClient = HttpClients.playback(metadataClient)
 
+    /** What Coil reads artwork over — see [HttpClients.images]. */
+    val imageClient: OkHttpClient = HttpClients.images(metadataClient)
+
     private val converter = json.asConverterFactory("application/json".toMediaType())
 
     val mdblist: MdblistApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()

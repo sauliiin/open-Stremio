@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.serialization.json.Json
 import okhttp3.Cache
 import okhttp3.CacheControl
+import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import java.io.File
@@ -30,11 +31,52 @@ object HttpClients {
     /** Disk budget for the metadata cache. A TV box has room; a cold home does not. */
     private const val CACHE_BYTES = 96L * 1024 * 1024
 
+    /**
+     * How many warm sockets the whole app may keep, and this is load-bearing
+     * rather than tuning.
+     *
+     * Every client below is derived from [metadata], so they all share this
+     * one pool — which is the entire reason [playback] can reuse the TLS
+     * handshake `StreamsRepository`'s probe just paid for. OkHttp's default
+     * holds **five** idle connections in total, and this app routinely has
+     * far more than five hosts in flight at once: a dozen addons fanning out,
+     * up to `PROBE_CONCURRENCY` mirrors being range-probed, TMDB, mdblist,
+     * OMDb and every poster off image.tmdb.org.
+     *
+     * At five, the winning candidate's connection is evicted by the losers
+     * before the player ever opens it, so the documented reuse silently did
+     * not happen and each start paid for a second handshake. Idle sockets are
+     * cheap — a few kilobytes of kernel buffer each — and the keep-alive
+     * still reaps them; the ceiling only has to be above the number of hosts
+     * one playback touches.
+     */
+    private const val MAX_IDLE_CONNECTIONS = 32
+    private const val KEEP_ALIVE_MINUTES = 5L
+
+    /**
+     * Concurrent requests allowed to one host.
+     *
+     * OkHttp defaults to five, which is right for an API and wrong for a CDN:
+     * every poster on the home screen comes from the single host
+     * `image.tmdb.org`, so five is the number of artwork downloads that may be
+     * in flight while a row fills in, and the sixth waits. The APIs are not
+     * affected in practice — the workers that walk them are sequential and
+     * space themselves deliberately (see `Workers.kt`), so nothing here lifts
+     * a limit they were relying on.
+     */
+    private const val MAX_REQUESTS_PER_HOST = 12
+
     fun metadata(context: Context): OkHttpClient {
         val cache = Cache(File(context.cacheDir, "http-metadata"), CACHE_BYTES)
 
         return OkHttpClient.Builder()
             .cache(cache)
+            .connectionPool(
+                ConnectionPool(MAX_IDLE_CONNECTIONS, KEEP_ALIVE_MINUTES, TimeUnit.MINUTES),
+            )
+            .dispatcher(
+                Dispatcher().apply { maxRequestsPerHost = MAX_REQUESTS_PER_HOST },
+            )
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)
@@ -61,10 +103,17 @@ object HttpClients {
         // found" when the same title played fine a moment later.
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(20, TimeUnit.SECONDS)
-        .dispatcher(Dispatcher().apply {
-            maxRequests = 32
-            maxRequestsPerHost = 8
-        })
+        // Built on the *base's* executor rather than on one of its own. A bare
+        // `Dispatcher()` lazily spins up a second unbounded thread pool, which
+        // is precisely what the comment above says this client does not do —
+        // the pool was shared, the threads were not. Passing the executor in
+        // makes both true, and the limits below still apply only here.
+        .dispatcher(
+            Dispatcher(base.dispatcher.executorService).apply {
+                maxRequests = 32
+                maxRequestsPerHost = 8
+            },
+        )
         .build()
 
     /**
@@ -110,6 +159,24 @@ object HttpClients {
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(true)
+        .build()
+
+    /**
+     * What Coil reads posters and fanart over.
+     *
+     * Derived from [metadata] for its connection pool, but with the disk cache
+     * **off**, and that is the whole point. Coil keeps its own 512MB artwork
+     * cache; leaving OkHttp's cache attached meant every poster was written to
+     * disk twice — once by each layer — and the second copy landed in the 96MB
+     * metadata cache, where a few hundred posters are more than enough to
+     * evict the JSON responses that cache exists to hold. So the app paid
+     * double the disk writes to make its own metadata cache miss.
+     *
+     * Nothing is lost: the bytes still come off Coil's cache on the next
+     * launch, which is the layer that was serving them anyway.
+     */
+    fun images(base: OkHttpClient): OkHttpClient = base.newBuilder()
+        .cache(null)
         .build()
 
     /**

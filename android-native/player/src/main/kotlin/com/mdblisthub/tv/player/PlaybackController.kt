@@ -299,6 +299,24 @@ class PlaybackController(
     val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
     /**
+     * The playhead, published apart from [state] — see [PlaybackPosition] for
+     * why. Nothing but the seek bar reads it, and it changes on a timer.
+     */
+    private val _position = MutableStateFlow(PlaybackPosition())
+    val position: StateFlow<PlaybackPosition> = _position.asStateFlow()
+
+    /**
+     * The external subtitle line on screen right now, or null in a gap.
+     *
+     * Its own flow for the same reason as [position], and with more to gain:
+     * this changes once per line of dialogue, which through [state] meant the
+     * entire player screen recomposing every couple of seconds for the length
+     * of a conversation.
+     */
+    private val _activeSubtitleCue = MutableStateFlow<String?>(null)
+    val activeSubtitleCue: StateFlow<String?> = _activeSubtitleCue.asStateFlow()
+
+    /**
      * Candidates tried so far, in rank order. Append-only: [candidatesJob]
      * grows it as the repository's probe flow delivers verified mirrors,
      * which may still be happening while [tryAdvance] is already walking the
@@ -930,10 +948,10 @@ class PlaybackController(
         _state.update {
             it.copy(
                 phase = if (player.isPlaying) PlaybackPhase.PLAYING else PlaybackPhase.PAUSED,
-                durationMs = player.duration.coerceAtLeast(0),
                 error = null,
             )
         }
+        _position.update { it.copy(durationMs = player.duration.coerceAtLeast(0)) }
         failoverPositionMs = null
         failoverPlayWhenReady = null
         updatePrefetch()
@@ -1160,13 +1178,16 @@ class PlaybackController(
 
     private fun publishPosition() {
         updatePrefetch()
-        _state.update {
-            it.copy(
-                positionMs = player.currentPosition.coerceAtLeast(0),
-                durationMs = player.duration.coerceAtLeast(0),
-                phase = nextPollPhase(it.phase),
-            )
-        }
+        _position.value = PlaybackPosition(
+            positionMs = player.currentPosition.coerceAtLeast(0),
+            durationMs = player.duration.coerceAtLeast(0),
+        )
+        // Separate from the position above, and that separation is the point:
+        // the phase is the same on almost every tick, so this `copy` compares
+        // equal and `MutableStateFlow` drops it without waking a single
+        // collector. The position lands on its own flow, where only the seek
+        // bar is listening.
+        _state.update { it.copy(phase = nextPollPhase(it.phase)) }
     }
 
     private fun nextPollPhase(current: PlaybackPhase): PlaybackPhase = when (current) {
@@ -1195,7 +1216,7 @@ class PlaybackController(
     }.let { }
 
     fun seekTo(positionMs: Long) {
-        val duration = _state.value.durationMs
+        val duration = _position.value.durationMs
         if (duration <= 0) return
         val clamped = positionMs.coerceIn(0, duration)
         player.seekTo(clamped)
@@ -1203,11 +1224,11 @@ class PlaybackController(
         // on a slow link it can be tens of seconds of download standing between
         // them and the bytes they now need.
         prefetcher?.invalidate()
-        _state.update { it.copy(positionMs = clamped) }
+        _position.update { it.copy(positionMs = clamped) }
         updateActiveCueNow()
     }
 
-    fun seekBy(deltaMs: Long) = seekTo(_state.value.positionMs + deltaMs)
+    fun seekBy(deltaMs: Long) = seekTo(_position.value.positionMs + deltaMs)
 
     /**
      * Walks [SCALE_CYCLE], wrapping — the "esticar"/aspect-ratio button.
@@ -1306,9 +1327,9 @@ class PlaybackController(
             it.copy(
                 externalSubtitle = option.takeIf { resolvedTrack != null },
                 subtitleOffsetMs = 0L,
-                activeSubtitleCue = null,
             )
         }
+        _activeSubtitleCue.value = null
 
         if (resolvedTrack == null) {
             subtitleTicker?.cancel()
@@ -1368,15 +1389,15 @@ class PlaybackController(
     private fun updateActiveCueNow() {
         val track = subtitleTrack ?: return
         val timeMs = player.currentPosition - _state.value.subtitleOffsetMs
-        val text = track.cueAt(timeMs)?.text
-        if (_state.value.activeSubtitleCue != text) {
-            _state.update { it.copy(activeSubtitleCue = text) }
-        }
+        // No guard against an unchanged line: `MutableStateFlow` compares with
+        // `equals` before emitting, so writing the same text eight times a
+        // second wakes nobody.
+        _activeSubtitleCue.value = track.cueAt(timeMs)?.text
     }
 
     /** Keeps an already-started film in place if Media3 needs another URL. */
     private fun rememberPlaybackForFailover() {
-        val position = maxOf(_state.value.positionMs, player.currentPosition).coerceAtLeast(0L)
+        val position = maxOf(_position.value.positionMs, player.currentPosition).coerceAtLeast(0L)
         if (!_state.value.canShowVideo && position == 0L) return
 
         failoverPositionMs = position
@@ -1384,7 +1405,7 @@ class PlaybackController(
     }
 
     /** Where the scrobbler reads from: 0–100 of the running title. */
-    fun progressPercent(): Float = _state.value.progress * 100f
+    fun progressPercent(): Float = _position.value.progress * 100f
 
     private fun stopInternal() {
         prefetcher?.stop()
@@ -1404,6 +1425,12 @@ class PlaybackController(
         committedRetries = 0
         failoverPositionMs = null
         failoverPlayWhenReady = null
+        // Reset alongside the state the three of them used to live in. Every
+        // caller of this — `play`, `stop`, `release` — is a new title or no
+        // title, and a playhead left over from the last one would be read by
+        // the seek bar before the first tick of the next.
+        _position.value = PlaybackPosition()
+        _activeSubtitleCue.value = null
         runCatching { player.stop() }
     }
 

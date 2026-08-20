@@ -109,7 +109,11 @@ fun PosterCard(
         item.title
     }
     val landscapeArtworkLoader = LocalLandscapeArtworkLoader.current
-    val resolvedArtwork = landscapeArtworkLoader.artworkFor(item)
+    // Only the landscape themes consult this, and only they should *subscribe*
+    // to it: reading it unconditionally attached every card in every theme to
+    // an artwork cache that four of the five themes never write to. Both uses
+    // below already sit behind the same check, so nothing is lost.
+    val resolvedArtwork = if (HubColors.isPrimefly) landscapeArtworkLoader.artworkFor(item) else null
 
     // LazyRow only composes the visible cards (plus its small layout buffer),
     // so composition is the precise signal to start every image on screen.

@@ -873,7 +873,7 @@ fun HomeScreen(
                             rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
                             onItemClickIndexed = { index, _ ->
-                                resumePoints.getOrNull(index)?.let(resumePlayback)
+                                resumeCards.getOrNull(index)?.let(openCatalogItem)
                             },
                             onItemLongClickIndexed = { index, _ ->
                                 resumeRemovalTarget = resumePoints.getOrNull(index)
@@ -978,7 +978,13 @@ fun HomeScreen(
                         }
                         is HomeMediaRow.Feed -> {
                             val feed = row.feed
-                            val cards = feed.items.map { it.media }
+                            // Remembered rather than rebuilt: a fresh `List`
+                            // instance every recomposition is a fresh instance
+                            // as far as skipping is concerned, so `MediaRow`
+                            // — which takes the list as an unstable parameter —
+                            // re-ran for every row of every feed on each pass,
+                            // however unchanged the items were.
+                            val cards = remember(feed.items) { feed.items.map { it.media } }
                             MediaRow(
                                 title = feed.name,
                                 items = cards,

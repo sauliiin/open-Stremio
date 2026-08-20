@@ -104,6 +104,21 @@ object MediaCache {
     var budgetBytes: Long = 0L
         private set
 
+    /**
+     * Opens the cache without handing it back.
+     *
+     * Exists so the application can pay [get]'s cost — a storage-quota binder
+     * call, a `stat` of the volume and opening the SQLite span index — on a
+     * background thread at launch, instead of leaving it on the main thread
+     * inside `PlaybackController`'s constructor, between the OK keypress and
+     * the first addon request. Returning `Unit` rather than the `Cache` keeps
+     * the unstable Media3 type from leaking into `:app`, which has no business
+     * holding one.
+     */
+    fun warm(context: Context) {
+        get(context)
+    }
+
     fun get(context: Context): Cache? {
         instance?.let { return it }
         return synchronized(this) {

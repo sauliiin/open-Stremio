@@ -274,7 +274,12 @@ class PlayerViewModel(
             .distinctUntilChangedBy { it.phase }
             .collect { state ->
                 val current = target ?: return@collect
-                lastReportedProgress = state.progress * 100f
+                // Read off the controller rather than off `state`: the
+                // playhead now lives on its own flow — see [PlaybackPosition]
+                // — precisely so that it moving does not wake everything
+                // watching the state. This collector only wakes on a phase
+                // change, and asks for the position when it does.
+                lastReportedProgress = controller.progressPercent()
 
                 when (state.phase) {
                     PlaybackPhase.PLAYING -> graph.playback.start(current, lastReportedProgress)

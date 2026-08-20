@@ -28,6 +28,23 @@ import android.content.Context
 internal object HeapBudget {
 
     /**
+     * The two readings that describe the *box* rather than the moment.
+     *
+     * `totalMem` and `isLowRamDevice` cannot change while the process lives,
+     * but each read costs a binder round trip to `ActivityManager` — and
+     * [targetBufferBytes] plus [bufferForPlaybackAfterRebufferMs] between them
+     * asked for one or the other five times, on the main thread, every time a
+     * film was opened. `availMem` is deliberately *not* cached below: that one
+     * moves minute to minute and sizing a buffer from a stale copy of it is
+     * the mistake this whole file exists to avoid.
+     */
+    @Volatile
+    private var cachedTotalRamBytes: Long? = null
+
+    @Volatile
+    private var cachedConstrained: Boolean? = null
+
+    /**
      * Share of the *currently free* heap headroom the buffer may claim.
      *
      * Still not all of it: Compose, Coil and the decoders keep allocating while
@@ -190,12 +207,17 @@ internal object HeapBudget {
      * started.
      */
     fun totalRamBytes(context: Context): Long? {
+        cachedTotalRamBytes?.let { return it.takeIf { bytes -> bytes > 0 } }
         val manager = context.getSystemService(ActivityManager::class.java) ?: return null
         val info = ActivityManager.MemoryInfo()
-        return runCatching {
+        val total = runCatching {
             manager.getMemoryInfo(info)
             info.totalMem
         }.getOrNull()?.takeIf { it > 0 }
+        // Zero stands for "asked and got nothing", so an unreadable reading is
+        // not re-asked on every playback either.
+        cachedTotalRamBytes = total ?: 0L
+        return total
     }
 
     /**
@@ -207,10 +229,16 @@ internal object HeapBudget {
      * evidence than any threshold guessed here.
      */
     fun isConstrainedDevice(context: Context): Boolean {
+        cachedConstrained?.let { return it }
         val manager = context.getSystemService(ActivityManager::class.java)
-        if (manager?.isLowRamDevice == true) return true
-        val total = totalRamBytes(context) ?: return false
-        return total < CONSTRAINED_RAM_BYTES
+        val constrained = if (manager?.isLowRamDevice == true) {
+            true
+        } else {
+            val total = totalRamBytes(context)
+            total != null && total < CONSTRAINED_RAM_BYTES
+        }
+        cachedConstrained = constrained
+        return constrained
     }
 
     /**

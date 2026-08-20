@@ -19,6 +19,10 @@ import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.player.MediaCache
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import okio.Path.Companion.toOkioPath
 
@@ -48,14 +52,37 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
 
         // Assigned after the graph exists, because the loader shares its
         // OkHttp client — one connection pool for artwork and metadata alike.
+        //
+        // The urls are warmed concurrently, which is the difference between
+        // this keeping up with a browsing session and trailing it: `execute`
+        // suspends until that one image has been fetched *and* decoded, so the
+        // `forEach` it replaces spent eight round trips end to end on a row of
+        // eight posters — and `ArtworkWorker` calls this once per row, for
+        // every list on the account. Nothing widens as a result; the image
+        // client's own per-host limit still bounds how many are in flight, so
+        // this queues the work rather than opening more sockets for it.
         graph.imageWarmer = ImageWarmer { urls ->
             val loader = SingletonImageLoader.get(this)
-            urls.forEach { url ->
-                loader.execute(ImageRequest.Builder(this).data(url).build())
+            coroutineScope {
+                urls.map { url ->
+                    async { loader.execute(ImageRequest.Builder(this@HubApplication).data(url).build()) }
+                }.awaitAll()
             }
         }
 
         graph.imageMemoryTrimmer = CoilMemoryTrimmer(this)
+
+        // Opened here so the player does not have to open it.
+        //
+        // `MediaCache.get` reads a live storage quota over binder, stats the
+        // volume and opens the SQLite span index — and it was being called
+        // from `PlaybackController`'s constructor, which runs on the main
+        // thread inside `PlayerViewModel`'s creation. That is disk I/O and a
+        // binder round trip sitting between the OK keypress and the first
+        // addon request, on the one screen where latency is the whole
+        // experience. It is memoized and synchronized, so warming it on the
+        // graph's IO scope costs the player nothing but the lookup.
+        graph.scope.launch { MediaCache.warm(this@HubApplication) }
 
         // Keeps TMDB in step with the interface language. Without it the
         // English option produced an English interface wrapped around
@@ -91,7 +118,10 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components {
-                add(OkHttpNetworkFetcherFactory(callFactory = { graph.network.metadataClient }))
+                // The image client, not the metadata one: same connection
+                // pool, no second disk cache underneath Coil's own. See
+                // `HttpClients.images`.
+                add(OkHttpNetworkFetcherFactory(callFactory = { graph.network.imageClient }))
             }
             .memoryCache {
                 MemoryCache.Builder().maxSizePercent(context, 0.25).build()

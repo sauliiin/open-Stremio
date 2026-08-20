@@ -122,13 +122,36 @@ const val NO_TRACK = -1
  */
 const val MAX_SUBTITLE_OFFSET_MS = 60_000L
 
+/**
+ * Where the playhead is, kept apart from [PlaybackState] on purpose.
+ *
+ * This used to be three fields on `PlaybackState` — position, duration and the
+ * subtitle line — and that is a `StateFlow` emitting on a timer. Every screen
+ * reading the state read those too, so the whole player recomposed on each
+ * tick, and on each line of dialogue: `activeSubtitleCue` changing every two
+ * or three seconds during a conversation was in fact more frequent than the
+ * idle tick it was blamed on.
+ *
+ * Split out, `PlaybackState` only changes on real events — a phase
+ * transition, a track list, a candidate arriving. Since it is a data class
+ * behind a `MutableStateFlow`, a `copy()` that changes nothing now compares
+ * equal and is dropped rather than delivered, so a film that is simply
+ * playing stops recomposing the screen at all.
+ */
+data class PlaybackPosition(
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+) {
+    /** 0f–1f, for the seek bar. */
+    val progress: Float
+        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+}
+
 data class PlaybackState(
     val phase: PlaybackPhase = PlaybackPhase.IDLE,
     /** 1-based position within a single pass over the candidates. */
     val attempt: Int = 0,
     val candidateCount: Int = 0,
-    val positionMs: Long = 0,
-    val durationMs: Long = 0,
     val audioTracks: List<TrackInfo> = emptyList(),
     val subtitleTracks: List<TrackInfo> = emptyList(),
     val currentAudioId: Int = NO_TRACK,
@@ -148,8 +171,6 @@ data class PlaybackState(
     val externalSubtitle: SubtitleOption? = null,
     /** Signed subtitle shift: negative shows cues earlier, positive later. */
     val subtitleOffsetMs: Long = 0,
-    /** The line an external subtitle is showing right now, or null for a gap. */
-    val activeSubtitleCue: String? = null,
     val scaleType: VideoScaleType = VideoScaleType.FIT,
     /** Why it stopped, as a value the UI renders — see [PlaybackFailure]. */
     val error: PlaybackFailure? = null,
@@ -174,8 +195,4 @@ data class PlaybackState(
     val canShowVideo: Boolean
         get() = phase == PlaybackPhase.PLAYING || phase == PlaybackPhase.PAUSED ||
             phase == PlaybackPhase.BUFFERING
-
-    /** 0f–1f, for the seek bar. */
-    val progress: Float
-        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 }

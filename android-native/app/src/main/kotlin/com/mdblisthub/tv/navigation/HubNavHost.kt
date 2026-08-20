@@ -5,8 +5,8 @@ import com.mdblisthub.tv.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -98,13 +98,35 @@ fun HubNavHost(graph: DataGraph) {
         return
     }
 
-    val artworkCache = remember { mutableStateMapOf<String, LandscapeArtwork>() }
+    /**
+     * One observable slot per title, rather than one observable map for all of
+     * them.
+     *
+     * This was a `mutableStateMapOf`, and the granularity is the whole point:
+     * a `SnapshotStateMap` records every read against the map as a whole, so a
+     * card reading *its own* key subscribed to every other key too. With a
+     * screenful of cards each resolving its artwork, every answer that landed
+     * invalidated every visible card — quadratic recomposition on exactly the
+     * themes (Primefly, Optimus) that use this at all, while a row was being
+     * swept.
+     *
+     * The outer map is deliberately plain: it is only ever grown, and only
+     * from the main thread — composition reads through [artworkStateFor], and
+     * the coroutines that write are dispatched to Main by
+     * [rememberCoroutineScope]. Only the per-title `MutableState` inside it is
+     * observable, so a resolved poster now recomposes the one card waiting on
+     * it.
+     */
+    val artworkStates = remember { mutableMapOf<String, MutableState<LandscapeArtwork?>>() }
+    val artworkStateFor: (String) -> MutableState<LandscapeArtwork?> = remember {
+        { key -> artworkStates.getOrPut(key) { mutableStateOf(null) } }
+    }
     val artworkRequests = remember { mutableSetOf<String>() }
     val artworkPermits = remember { Semaphore(16) }
     val artworkScope = rememberCoroutineScope()
     val artworkLoader = remember(graph, artworkScope) {
         LandscapeArtworkLoader(
-            artworkFor = { item -> artworkCache[item.key] },
+            artworkFor = { item -> artworkStateFor(item.key).value },
             request = { item ->
                 // All calls happen from a card effect on the main thread. The
                 // set makes recomposition and repeated shelves share one call.
@@ -113,7 +135,7 @@ fun HubNavHost(graph: DataGraph) {
                         val artwork = artworkPermits.withPermit {
                             graph.media.resolveLandscapeArtwork(item)
                         }
-                        artworkCache[item.key] = artwork
+                        artworkStateFor(item.key).value = artwork
                     }
                 }
             },
