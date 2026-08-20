@@ -1361,11 +1361,19 @@ private fun HeroMetadataRow(
 /**
  * How long the home screen may sit with no focus before the rail is handed it.
  *
- * Long enough that a normally-loading screen never reaches it — the rows land
- * well inside this — and short enough that a viewer staring at an empty screen
- * is not left wondering whether the remote is broken.
+ * A real Fire TV Stick is nowhere near an emulator on a development machine:
+ * a weak CPU decoding the first frames of a season of posters, a radio that
+ * has to actually reach mdblist over the internet rather than a loopback, and
+ * `initialSyncComplete` covers only the list *definitions* — the items each
+ * row needs still have to land after that, one `refreshItems` per row as it
+ * scrolls into view. 1.2s was tuned against the emulator and fired on real
+ * hardware on every ordinary cold start, not just the account-quota case it
+ * was written for. An mdblist account actually running dry is the exception,
+ * not the rule, so this errs long: fifteen seconds of patience for widgets
+ * that are simply slow to arrive, rather than a few flashes of "nothing to
+ * show" the viewer has to sit through before the real rows appear anyway.
  */
-private const val FOCUS_FALLBACK_MS = 1_200L
+private const val FOCUS_FALLBACK_MS = 15_000L
 
 /** Long enough for the rail's width animation to give focus something to land on. */
 private const val RAIL_EXPAND_MS = 250L
