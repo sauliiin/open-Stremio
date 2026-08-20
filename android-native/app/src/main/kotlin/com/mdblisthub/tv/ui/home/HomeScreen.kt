@@ -333,6 +333,21 @@ fun HomeScreen(
             }
         }
     }
+    val resumePlayback: (ResumePoint) -> Unit = { point ->
+        if ((point.tmdbId ?: 0) > 0) {
+            onResume(point)
+        } else {
+            // The player route is TMDB-keyed. Resolve the uncommon IMDb-only
+            // resume entry without throwing away its season, episode or progress.
+            point.imdbId?.let { imdbId ->
+                scope.launch {
+                    graph.media.resolveImdb(point.type, imdbId).onSuccess { tmdbId ->
+                        onResume(point.copy(tmdbId = tmdbId))
+                    }
+                }
+            }
+        }
+    }
 
     var showExitDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<EditableListTarget?>(null) }
@@ -857,8 +872,8 @@ fun HomeScreen(
                             },
                             rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
-                            onItemClickIndexed = { index, item ->
-                                resumePoints.getOrNull(index)?.toCardItem()?.let(openCatalogItem) ?: openCatalogItem(item)
+                            onItemClickIndexed = { index, _ ->
+                                resumePoints.getOrNull(index)?.let(resumePlayback)
                             },
                             onItemLongClickIndexed = { index, _ ->
                                 resumeRemovalTarget = resumePoints.getOrNull(index)

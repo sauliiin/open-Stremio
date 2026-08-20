@@ -17,6 +17,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -52,6 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,6 +76,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -136,6 +140,15 @@ fun DetailScreen(
     var buttonRowHadFocus by remember { mutableStateOf(false) }
     var buttonRowHasFocus by remember { mutableStateOf(false) }
     var trailerOpen by remember { mutableStateOf(false) }
+    var episodeDetails by remember { mutableStateOf<Episode?>(null) }
+    // Episode cards update this on focus. The main actions then follow the
+    // episode the viewer was actually browsing instead of always targeting E1.
+    var focusedEpisodeNumber by remember(tmdbId, season) { mutableIntStateOf(1) }
+    val actionEpisodeNumber = episodes
+        .firstOrNull { it.episodeNumber == focusedEpisodeNumber }
+        ?.episodeNumber
+        ?: episodes.firstOrNull()?.episodeNumber
+        ?: 1
 
     LaunchedEffect(buttonRowHasFocus) {
         if (buttonRowHasFocus) {
@@ -283,23 +296,19 @@ fun DetailScreen(
                                 buttonRowHasFocus = state.hasFocus
                             },
                     ) {
-                        // Named once so the label and the action cannot disagree
-                        // about which episode this plays. They already did: the
-                        // label was formatted with only the season, against a
-                        // string that takes season *and* episode, so opening any
-                        // series threw `MissingFormatArgumentException` the
-                        // moment the button drew.
-                        val firstEpisode = 1
+                        // Both actions follow the episode most recently focused
+                        // in the row below. A held OK on that card is the direct
+                        // shortcut to the same source picker.
                         HubButton(
                             text = if (type == MediaType.SHOW) {
-                                stringResource(R.string.detail_watch_episode, season, firstEpisode)
+                                stringResource(R.string.detail_watch_episode, season, actionEpisodeNumber)
                             } else {
                                 stringResource(R.string.detail_watch)
                             },
                             primary = true,
                             onClick = {
                                 if (type == MediaType.SHOW) {
-                                    onPlay(season, firstEpisode)
+                                    onPlay(season, actionEpisodeNumber)
                                 } else {
                                     onPlay(null, null)
                                 }
@@ -307,10 +316,14 @@ fun DetailScreen(
                             modifier = Modifier.fillMaxHeight(),
                         )
                         HubButton(
-                            text = stringResource(R.string.detail_select_source),
+                            text = if (type == MediaType.SHOW) {
+                                stringResource(R.string.detail_select_source_episode, season, actionEpisodeNumber)
+                            } else {
+                                stringResource(R.string.detail_select_source)
+                            },
                             onClick = {
                                 if (type == MediaType.SHOW) {
-                                    onSelectSource(season, firstEpisode)
+                                    onSelectSource(season, actionEpisodeNumber)
                                 } else {
                                     onSelectSource(null, null)
                                 }
@@ -404,7 +417,11 @@ fun DetailScreen(
                         dimUnwatched = dimUnwatchedEpisodes,
                         showTmdbId = tmdbId,
                         appLanguage = appLanguage,
-                        onPlay = { ep -> onPlay(ep.seasonNumber, ep.episodeNumber) },
+                        onOpenDetails = { ep -> episodeDetails = ep },
+                        onSelectSource = { ep ->
+                            onSelectSource(ep.seasonNumber, ep.episodeNumber)
+                        },
+                        onFocused = { ep -> focusedEpisodeNumber = ep.episodeNumber },
                     )
                 }
             }
@@ -454,6 +471,136 @@ fun DetailScreen(
                 },
             )
         }
+
+        episodeDetails?.let { episode ->
+            EpisodeDetailsDialog(
+                episode = episode,
+                appLanguage = appLanguage,
+                onPlay = {
+                    episodeDetails = null
+                    onPlay(episode.seasonNumber, episode.episodeNumber)
+                },
+                onSelectSource = {
+                    episodeDetails = null
+                    onSelectSource(episode.seasonNumber, episode.episodeNumber)
+                },
+                onDismiss = { episodeDetails = null },
+            )
+        }
+    }
+}
+
+@Composable
+private fun EpisodeDetailsDialog(
+    episode: Episode,
+    appLanguage: String,
+    onPlay: () -> Unit,
+    onSelectSource: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val watchFocus = remember { FocusRequester() }
+    LaunchedEffect(episode.id) { watchFocus.requestFocus() }
+    val metadata = listOfNotNull(
+        episode.airDate?.let { formatAirDate(it, appLanguage) },
+        episode.runtimeMinutes?.takeIf { it > 0 }
+            ?.let { stringResource(R.string.detail_episode_runtime, it) },
+        episode.voteAverage?.takeIf { it > 0.0 }
+            ?.let { stringResource(R.string.detail_episode_rating, it) },
+    ).joinToString("  •  ")
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.72f)
+                .widthIn(max = 900.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(HubColors.Surface)
+                .border(1.dp, HubColors.Border, RoundedCornerShape(18.dp))
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(22.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(300.dp)
+                        .height(169.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(HubColors.SurfaceStrong),
+                ) {
+                    episode.stillUrl?.let { still ->
+                        AsyncImage(
+                            model = still,
+                            contentDescription = episode.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = stringResource(
+                            R.string.detail_episode_number,
+                            episode.seasonNumber,
+                            episode.episodeNumber,
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = HubColors.AccentSoft,
+                    )
+                    Text(
+                        text = episode.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = HubColors.Text,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (metadata.isNotBlank()) {
+                        Text(
+                            text = metadata,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = HubColors.TextDim,
+                        )
+                    }
+                    Text(
+                        text = episode.overview?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.detail_episode_no_overview),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = HubColors.TextDim,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                HubButton(
+                    text = stringResource(
+                        R.string.detail_watch_episode,
+                        episode.seasonNumber,
+                        episode.episodeNumber,
+                    ),
+                    primary = true,
+                    onClick = onPlay,
+                    modifier = Modifier.focusRequester(watchFocus),
+                )
+                HubButton(
+                    text = stringResource(R.string.detail_select_source),
+                    onClick = onSelectSource,
+                )
+            }
+        }
     }
 }
 
@@ -465,7 +612,9 @@ private fun EpisodeRow(
     dimUnwatched: Boolean,
     showTmdbId: Int,
     appLanguage: String,
-    onPlay: (Episode) -> Unit
+    onOpenDetails: (Episode) -> Unit,
+    onSelectSource: (Episode) -> Unit,
+    onFocused: (Episode) -> Unit,
 ) {
     if (episodes.isEmpty()) return
 
@@ -489,6 +638,10 @@ private fun EpisodeRow(
                 // the cast row directly below this one included.
                 val interaction = remember { MutableInteractionSource() }
                 val focused by interaction.collectIsFocusedAsState()
+
+                LaunchedEffect(focused) {
+                    if (focused) onFocused(episode)
+                }
 
                 val borderWidth by animateDpAsState(
                     if (focused) 3.dp else 0.dp,
@@ -544,10 +697,12 @@ private fun EpisodeRow(
                         .clip(RoundedCornerShape(10.dp))
                         .background(background)
                         .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
-                        .clickable(
+                        .combinedClickable(
                             interactionSource = interaction,
                             indication = null,
-                        ) { onPlay(episode) }
+                            onClick = { onOpenDetails(episode) },
+                            onLongClick = { onSelectSource(episode) },
+                        )
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -600,6 +755,13 @@ private fun EpisodeRow(
                         style = MaterialTheme.typography.titleMedium,
                         color = if (focused) HubColors.AccentSoft else HubColors.Text,
                         maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = stringResource(R.string.detail_episode_source_hint),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (focused) HubColors.AccentSoft else HubColors.TextFaint,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

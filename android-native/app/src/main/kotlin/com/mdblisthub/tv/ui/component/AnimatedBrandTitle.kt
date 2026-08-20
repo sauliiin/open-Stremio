@@ -56,7 +56,7 @@ fun AnimatedOmniStreamTitle(
 
     Text(
         text = "OmniStream",
-        style = style.copy(brush = brush),
+        style = style.copy(brush = brush, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
         modifier = modifier.onSizeChanged { widthPx = it.width.toFloat() },
     )
 }

@@ -37,6 +37,12 @@
     <string name="detail_watch">Watch</string>
     <string name="detail_watch_episode">Watch S%1$dE%2$d</string>
     <string name="detail_select_source">Select Source</string>
+    <string name="detail_select_source_episode">Source S%1$dE%2$d</string>
+    <string name="detail_episode_source_hint">Press OK for details and options</string>
+    <string name="detail_episode_number">Season %1$d · Episode %2$d</string>
+    <string name="detail_episode_runtime">%1$d min</string>
+    <string name="detail_episode_rating">Rating %1$.1f</string>
+    <string name="detail_episode_no_overview">No synopsis is available for this episode.</string>
     <string name="detail_trailer">Trailer</string>
     <string name="detail_in_collection">In collection</string>
     <string name="detail_add_collection">+ Collection</string>
