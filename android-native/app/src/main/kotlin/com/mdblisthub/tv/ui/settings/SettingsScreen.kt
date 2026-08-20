@@ -72,6 +72,7 @@ val ALL_LANGUAGES = listOf(
 
 data class SettingsUiState(
     val language: String = "en",
+    val autotrailer: Boolean = false,
     val subtitleAutoDownload: Boolean = true,
     val subtitleLanguage: String = "pt",
     val subtitleColor: String = "white",
@@ -99,13 +100,22 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
             // five flows, and this needs seven.
             combine(
                 graph.uiPreferences.language,
+                graph.uiPreferences.autotrailer,
                 graph.uiPreferences.subtitleAutoDownload,
                 graph.uiPreferences.subtitleLanguage,
                 graph.uiPreferences.subtitleColor,
-                graph.uiPreferences.audioLanguage,
-            ) { lang, subAuto, subLang, subColor, audioLang ->
-                SettingsUiState(lang, subAuto, subLang, subColor, audioLang)
+            ) { lang, autotrailer, subAuto, subLang, subColor ->
+                SettingsUiState(
+                    language = lang,
+                    autotrailer = autotrailer,
+                    subtitleAutoDownload = subAuto,
+                    subtitleLanguage = subLang,
+                    subtitleColor = subColor,
+                )
             }
+                .combine(graph.uiPreferences.audioLanguage) { partial, audioLang ->
+                    partial.copy(audioLanguage = audioLang)
+                }
                 .combine(graph.uiPreferences.libraryProvider) { partial, provider ->
                     partial.copy(libraryProvider = provider)
                 }
@@ -196,6 +206,7 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     }
 
     fun setLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveLanguage(lang) }
+    fun toggleAutotrailer() = viewModelScope.launch { graph.uiPreferences.saveAutotrailer(!_state.value.autotrailer) }
     fun toggleSubtitleAutoDownload() = viewModelScope.launch { graph.uiPreferences.saveSubtitleAutoDownload(!_state.value.subtitleAutoDownload) }
     fun setSubtitleLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleLanguage(lang) }
     fun setSubtitleColor(color: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleColor(color) }
@@ -263,6 +274,16 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                             onClick = { viewModel.setLanguage(code) }
                         )
                     }
+                }
+
+                SettingsRow(label = stringResource(R.string.settings_autotrailer)) {
+                    HubButton(
+                        text = stringResource(
+                            if (state.autotrailer) R.string.settings_on else R.string.settings_off,
+                        ),
+                        primary = state.autotrailer,
+                        onClick = viewModel::toggleAutotrailer,
+                    )
                 }
             }
         }

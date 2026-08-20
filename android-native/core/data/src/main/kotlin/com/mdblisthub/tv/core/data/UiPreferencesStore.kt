@@ -53,9 +53,17 @@ class UiPreferencesStore(context: Context) {
      * and a renamed enum constant would otherwise do exactly that.
      */
     val theme: Flow<HubThemeVariant> = store.data.map { prefs ->
-        prefs[KEY_THEME]
+        val autotrailer = prefs[KEY_AUTOTRAILER] ?: false
+        val variant = prefs[KEY_THEME]
             ?.let { name -> runCatching { HubThemeVariant.valueOf(name) }.getOrNull() }
             ?: HubThemeVariant.NORMAL
+        when {
+            autotrailer && variant == HubThemeVariant.NETFLIXY -> HubThemeVariant.CYBERFLIX
+            autotrailer && variant == HubThemeVariant.PRIMEFLY -> HubThemeVariant.OPTIMUS_PRIME
+            !autotrailer && variant == HubThemeVariant.CYBERFLIX -> HubThemeVariant.NETFLIXY
+            !autotrailer && variant == HubThemeVariant.OPTIMUS_PRIME -> HubThemeVariant.PRIMEFLY
+            else -> variant
+        }
     }
 
     suspend fun currentTheme(): HubThemeVariant = theme.first()
@@ -66,16 +74,48 @@ class UiPreferencesStore(context: Context) {
      * theme without a blocking read. Same tolerance for a bad value as
      * [theme]: a preference is never worth failing a start over.
      */
-    fun startupTheme(): HubThemeVariant =
-        startupMirror.getString(KEY_THEME.name, null)
+    fun startupTheme(): HubThemeVariant {
+        val autotrailer = startupMirror.getBoolean(KEY_AUTOTRAILER.name, false)
+        val variant = startupMirror.getString(KEY_THEME.name, null)
             ?.let { name -> runCatching { HubThemeVariant.valueOf(name) }.getOrNull() }
             ?: HubThemeVariant.NORMAL
+        return when {
+            autotrailer && variant == HubThemeVariant.NETFLIXY -> HubThemeVariant.CYBERFLIX
+            autotrailer && variant == HubThemeVariant.PRIMEFLY -> HubThemeVariant.OPTIMUS_PRIME
+            !autotrailer && variant == HubThemeVariant.CYBERFLIX -> HubThemeVariant.NETFLIXY
+            !autotrailer && variant == HubThemeVariant.OPTIMUS_PRIME -> HubThemeVariant.PRIMEFLY
+            else -> variant
+        }
+    }
 
     suspend fun saveTheme(variant: HubThemeVariant) {
         // `apply`, not `commit`: nothing this launch depends on it having
         // landed, and the next cold start is far away.
         startupMirror.edit().putString(KEY_THEME.name, variant.name).apply()
         store.edit { it[KEY_THEME] = variant.name }
+    }
+
+    val autotrailer: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_AUTOTRAILER] ?: false
+    }
+
+    suspend fun saveAutotrailer(enabled: Boolean) {
+        startupMirror.edit().putBoolean(KEY_AUTOTRAILER.name, enabled).apply()
+        store.edit { it[KEY_AUTOTRAILER] = enabled }
+        val current = currentTheme()
+        if (enabled) {
+            if (current == HubThemeVariant.NETFLIXY) {
+                saveTheme(HubThemeVariant.CYBERFLIX)
+            } else if (current == HubThemeVariant.PRIMEFLY) {
+                saveTheme(HubThemeVariant.OPTIMUS_PRIME)
+            }
+        } else {
+            if (current == HubThemeVariant.CYBERFLIX) {
+                saveTheme(HubThemeVariant.NETFLIXY)
+            } else if (current == HubThemeVariant.OPTIMUS_PRIME) {
+                saveTheme(HubThemeVariant.PRIMEFLY)
+            }
+        }
     }
 
     val language: Flow<String> = store.data.map { prefs ->
@@ -151,6 +191,7 @@ class UiPreferencesStore(context: Context) {
     private companion object {
         const val STARTUP_MIRROR = "ui-preferences-startup"
         val KEY_THEME = stringPreferencesKey("theme")
+        val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")
         val KEY_LIBRARY_PROVIDER = stringPreferencesKey("library_provider")
         val KEY_LANGUAGE = stringPreferencesKey("language")
         val KEY_SUBTITLE_AUTO_DOWNLOAD = booleanPreferencesKey("subtitle_auto_download")

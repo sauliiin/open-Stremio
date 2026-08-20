@@ -266,7 +266,7 @@ class AddonsRepository(
         )
     }
 
-    /** Adds every MDBList row as a catalog addon to the local Open Stream repository. */
+    /** Adds every MDBList row as a catalog addon to the local OmniStream repository. */
     suspend fun exportAllMdblistLists(): Result<MdblistAddonExportReport> = runCatching {
         val apiKey = session.currentKey()
         requireOrFail(apiKey.isNotBlank()) { AppError.MdblistNotLinked }

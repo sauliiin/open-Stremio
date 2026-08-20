@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Open Stream</string>
+    <string name="app_name">OmniStream</string>
     <string name="menu_home">Início</string>
     <string name="menu_search">Busca</string>
     <string name="menu_addons">Addons</string>
@@ -10,6 +10,8 @@
     <string name="menu_theme_cyberpunk">Cyberpunk</string>
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
+    <string name="menu_theme_cyberflix">CyberFlix</string>
+    <string name="menu_theme_optimus_prime">OptimusPrime</string>
     <string name="menu_settings">Configurações</string>
     <string name="menu_exit">Sair</string>
     <string name="home_empty_title">Você está conectado ao Google</string>
@@ -19,6 +21,7 @@
     <string name="settings_title">Configurações</string>
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">Idioma do App</string>
+    <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_section_subtitles">Legendas</string>
     <string name="settings_subtitle_auto_download">Download Automático de Legendas</string>
     <string name="settings_subtitle_default_lang">Idioma Predefinido da Legenda</string>
@@ -51,6 +54,7 @@
     <string name="detail_cast">Elenco</string>
     <string name="detail_watched">Assistido</string>
     <string name="detail_mark_watched">Marcar assistido</string>
+    <string name="detail_clear_progress">Resetar Progresso</string>
     <string name="detail_reviews">Reviews</string>
     <string name="search_title">Buscar no TMDB</string>
     <string name="search_placeholder">Buscar filmes ou séries…</string>
@@ -107,16 +111,16 @@
     <string name="addons_mdblist_disabled">Uso das listas MDBList como addons desligado.</string>
 
     <plurals name="addons_mdblist_removed">
-        <item quantity="one">%1$d addon de listas MDBList removido do Open Stream.</item>
-        <item quantity="other">%1$d addons de listas MDBList removidos do Open Stream.</item>
+        <item quantity="one">%1$d addon de listas MDBList removido do OmniStream.</item>
+        <item quantity="other">%1$d addons de listas MDBList removidos do OmniStream.</item>
     </plurals>
     <plurals name="addons_mdblist_enabled">
         <item quantity="one">Listas MDBList ligadas: %1$d addon adicionado.</item>
         <item quantity="other">Listas MDBList ligadas: %1$d addons adicionados.</item>
     </plurals>
     <plurals name="addons_mdblist_updated">
-        <item quantity="one">%1$d lista MDBList atualizada no Open Stream.</item>
-        <item quantity="other">%1$d listas MDBList atualizadas no Open Stream.</item>
+        <item quantity="one">%1$d lista MDBList atualizada no OmniStream.</item>
+        <item quantity="other">%1$d listas MDBList atualizadas no OmniStream.</item>
     </plurals>
 
     <string name="addons_not_imported">Não importados: </string>
@@ -139,9 +143,9 @@
     <string name="home_no_visible_rows_desc">Abra a edição para restaurar uma fileira oculta ou reorganizar suas listas.</string>
     <string name="home_no_lists_desc">Crie uma lista na MDBList ou adicione um catálogo na tela de Addons.</string>
     <string name="home_edit_lists">Editar listas</string>
-    <string name="home_delete_mdblist_body">"%1$s" será removida do Open Stream, mas continuará existindo na sua conta MDBList.</string>
-    <string name="home_delete_addon_body">"%1$s" será removida do Open Stream, mas o addon continuará instalado.</string>
-    <string name="home_delete_feed_body">"%1$s" será removida do Open Stream, sem alterar os dados da sua conta MDBList.</string>
+    <string name="home_delete_mdblist_body">"%1$s" será removida do OmniStream, mas continuará existindo na sua conta MDBList.</string>
+    <string name="home_delete_addon_body">"%1$s" será removida do OmniStream, mas o addon continuará instalado.</string>
+    <string name="home_delete_feed_body">"%1$s" será removida do OmniStream, sem alterar os dados da sua conta MDBList.</string>
 
 <!-- Player -->
     <string name="player_preparing">Preparando a reprodução…</string>
@@ -255,13 +259,13 @@
     <string name="trakt_link_vip_limit_warning">Contas Trakt gratuitas conectam só um app de terceiros por vez.</string>
 
     <!-- Atualização automática via GitHub Releases -->
-    <string name="update_title">Atualização do Open Stremio</string>
+    <string name="update_title">Atualização do OmniStream</string>
     <string name="update_available">A versão %1$s está disponível. Baixe agora o APK mais recente do GitHub.</string>
     <string name="update_now">Atualizar agora</string>
     <string name="update_later">Mais tarde</string>
     <string name="update_downloading">Baixando e verificando a atualização… %1$d%%</string>
     <string name="update_cancel">Cancelar</string>
-    <string name="update_permission">O APK %1$s foi verificado. Permita que o Open Stremio instale apps para continuar.</string>
+    <string name="update_permission">O APK %1$s foi verificado. Permita que o OmniStream instale apps para continuar.</string>
     <string name="update_open_settings">Abrir configurações</string>
     <string name="update_failed">Não foi possível concluir a atualização.</string>
     <string name="update_retry">Tentar novamente</string>
@@ -272,7 +276,7 @@
     <string name="addons_quick_aiostreams_what">Junta vários addons de fontes num só, deduplica e reordena os resultados. A URL do manifest é gerada por usuário na configuração.</string>
     <string name="addons_quick_aiostreams_unconfigured">só funciona pela URL gerada</string>
     <string name="addons_stremio_import_explainer">A coleção inteira vem com as URLs configuradas e chaves de debrid. A senha vai direto para api.strem.io e não é salva; somente a chave de sessão devolvida pelo Stremio fica neste aparelho.</string>
-    <string name="addons_mdblist_catalog_explainer">As listas serão baixadas da MDBList e instaladas como addons locais no Open Stream.</string>
+    <string name="addons_mdblist_catalog_explainer">As listas serão baixadas da MDBList e instaladas como addons locais no OmniStream.</string>
     <string name="addons_sync_explainer">Nomes, ordem, visibilidade e exclusões das listas acompanham automaticamente sua conta Google. Este botão controla a sincronização dos addons: ligue nos dois aparelhos para que eles também acompanhem, sem depender de conta do Stremio.</string>
     <string name="addons_preferences_error">Nomes, ordem, itens ocultos e excluídos ainda estão somente neste aparelho. %1$s</string>
     <string name="addons_delta_changed">Lista atualizada — %1$d addon(s) de diferença.</string>

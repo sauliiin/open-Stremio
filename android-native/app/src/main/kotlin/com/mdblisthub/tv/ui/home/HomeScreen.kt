@@ -158,8 +158,16 @@ private class RowPivotScroll(
             // The focused child is the card, not the whole shelf. This offset
             // equals the shelf heading plus its gap, so that heading lands at
             // the viewport top and every preceding shelf remains clipped.
-            variant == HubThemeVariant.PRIMEFLY -> 0.11f * containerSize
-            variant == HubThemeVariant.NETFLIXY -> 0.18f * containerSize
+            variant == HubThemeVariant.PRIMEFLY ||
+                variant == HubThemeVariant.OPTIMUS_PRIME -> 0.11f * containerSize
+            // CyberFlix rides with Netflixy: it shares the layout, so it has to
+            // share the pivot too. Left on the generic `ROW_PIVOT` below it
+            // parked rows lower, which in a viewport this short stopped the
+            // outgoing shelf halfway — its posters clipped off the top while
+            // its card labels stayed on screen, reading as a stray line of
+            // titles under the synopsis with nothing above them.
+            variant == HubThemeVariant.NETFLIXY ||
+                variant == HubThemeVariant.CYBERFLIX -> 0.18f * containerSize
             // Parks the focused shelf higher so it and the next two shelves
             // remain fully visible together on the TV viewport.
             variant == HubThemeVariant.CYBERPUNK -> 0.06f * containerSize
@@ -222,7 +230,7 @@ fun HomeScreen(
     // `LazyColumn` index. These two decide how many fixed items sit above the
     // row list, and stating them once is what keeps that arithmetic from
     // drifting out of step with the items themselves.
-    val hasHeroItem = !HubColors.isNetflixy && !HubColors.isPrimefly && !isNormalTheme
+    val hasHeroItem = !HubColors.isNetflixLayout && !HubColors.isPrimefly && !isNormalTheme
     val hasResumeItem = resumePoints.isNotEmpty() && !isEditMode
     val homeListState = rememberLazyListState()
     val rowToReveal by viewModel.rowToReveal.collectAsStateWithLifecycle()
@@ -555,6 +563,8 @@ fun HomeScreen(
     val menuThemeCyberpunk = stringResource(R.string.menu_theme_cyberpunk)
     val menuThemeNetflixy = stringResource(R.string.menu_theme_netflixy)
     val menuThemePrimefly = stringResource(R.string.menu_theme_primefly)
+    val menuThemeCyberflix = stringResource(R.string.menu_theme_cyberflix)
+    val menuThemeOptimusPrime = stringResource(R.string.menu_theme_optimus_prime)
     val menuSettings = stringResource(R.string.menu_settings)
     val menuExit = stringResource(R.string.menu_exit)
 
@@ -563,6 +573,8 @@ fun HomeScreen(
         HubThemeVariant.CYBERPUNK -> menuThemeCyberpunk
         HubThemeVariant.NETFLIXY -> menuThemeNetflixy
         HubThemeVariant.PRIMEFLY -> menuThemePrimefly
+        HubThemeVariant.CYBERFLIX -> menuThemeCyberflix
+        HubThemeVariant.OPTIMUS_PRIME -> menuThemeOptimusPrime
     }
 
     val rail = remember(isEditMode, HubColors.variant, menuHome, menuSearch, menuAddons, menuLists, menuListsDone, currentThemeName, menuSettings, menuExit) {
@@ -579,73 +591,51 @@ fun HomeScreen(
     val resumeCards = remember(resumePoints) { resumePoints.map { it.toCardItem() } }
 
     /**
-     * True once the screen has been found with no focus anywhere — every row
-     * empty, so `MediaRow` drew none of them and there is nothing to point a
-     * remote at. Opens the rail and drives the explanation below it.
+     * Raised only for the moment it takes to hand focus to the rail.
+     *
+     * The rail collapses to zero width when nothing there holds focus, and a
+     * zero-width node cannot *take* focus — so the rescue below has to widen it
+     * first, then let go. It is not a "something is wrong" flag and nothing on
+     * screen reads it as one.
      */
-    var contentUnreachable by remember { mutableStateOf(false) }
+    var railRescue by remember { mutableStateOf(false) }
 
-    // Owns `contentUnreachable` end to end, as one loop rather than several
-    // effects reacting to each other — the previous version was exactly that,
-    // and it could only ever *raise* the flag from a focus change, never
-    // *lower* it again once real rows came back on their own.
+    // The one thing this loop is for: a screen where *nothing at all* holds
+    // focus leaves the D-pad with no origin to search from, the key event goes
+    // unhandled, and the app drops to the launcher. Parking focus on the rail
+    // costs nothing and makes that impossible.
     //
-    // That mattered because `contentUnreachable` gates a `return@Row` further
-    // down that skips the entire rows `Column` in favour of the explanation:
-    // once true, nothing in that `Column` composes, so nothing in it can ever
-    // request focus again either, and a row's data repopulating in the
-    // background — an mdblist quota resetting, a key working again — had no
-    // way to be noticed. `MediaRow` would happily render the moment it was
-    // asked to; it was just never asked again.
+    // It deliberately draws no conclusion beyond that. An earlier version also
+    // rendered a "nothing to show" notice from this same signal, and it was
+    // wrong twice over: it fired during an ordinary cold start that was merely
+    // slow, and — worse — it treated *the rail holding focus* as the symptom,
+    // so simply opening the menu and reading it for a few seconds accused the
+    // app of being broken. Whether the account actually has rows is a question
+    // about data, and the empty states further down already answer it from the
+    // data itself.
     LaunchedEffect(Unit) {
         while (isActive) {
-            if (!initialSyncComplete) {
-                // A cold start with an empty local cache can easily run
-                // longer than `FOCUS_FALLBACK_MS` — several sequential
-                // network calls, not one. Without this check that was read as
-                // "nothing to show" on the very first launch, on a
-                // perfectly healthy connection, before the sync had a chance
-                // to finish; a relaunch then "fixed" it only because Room
-                // already had something cached the second time around. The
-                // `LoadingScreen` below already owns this state and needs no
-                // help from here — the flag stays down until the sync itself
-                // says it is done, not before.
+            // Nothing to rescue while the first sync is still running: the
+            // loading screen owns that state, and several sequential network
+            // calls on a cold cache can easily outlast the window below.
+            if (!initialSyncComplete || screenHasFocus) {
                 delay(POLL_MS)
                 continue
             }
 
-            if (!screenHasFocus) {
-                // Give the normal case room to resolve first: rows land a
-                // beat after the first composition, and whichever one takes
-                // focus is what flips this true before the delay elapses.
-                delay(FOCUS_FALLBACK_MS)
-                if (screenHasFocus) continue
+            // Give the normal case room to resolve: rows land a beat after the
+            // first composition, and whichever one takes focus ends this.
+            delay(FOCUS_FALLBACK_MS)
+            if (screenHasFocus) continue
 
-                // Order matters: the rail is zero-width until this flips, and
-                // focus cannot land on a node with no size.
-                contentUnreachable = true
-                delay(RAIL_EXPAND_MS)
-                runCatching { railFocusRequester.requestFocus() }
-                continue
-            }
-
-            if (!railFocused) {
-                // Real content holds focus — recovered, or never lost it.
-                contentUnreachable = false
-                delay(POLL_MS)
-                continue
-            }
-
-            // Focus is parked on the rail specifically, which only happens
-            // once the flag above has already been raised. Periodically
-            // re-admit the real `Column` in case whatever emptied it has
-            // since recovered; if nothing there claims focus inside the
-            // grace window, put the notice straight back rather than leaving
-            // the screen silently blank until the next round.
-            delay(CONTENT_RETRY_MS)
-            contentUnreachable = false
+            railRescue = true
             delay(RAIL_EXPAND_MS)
-            if (railFocused) contentUnreachable = true
+            runCatching { railFocusRequester.requestFocus() }
+            // Dropped again immediately: once focus has landed the rail holds
+            // itself open, and leaving the override raised would pin it open
+            // after the viewer moves back into the rows.
+            delay(RAIL_EXPAND_MS)
+            railRescue = false
         }
     }
 
@@ -656,14 +646,26 @@ fun HomeScreen(
     ) {
         // The fanart follows focus, the way Estuary does it: whatever the
         // remote is pointing at fills the screen behind the rows.
-        FocusedBackdrop(viewModel)
+        //
+        // CyberFlix is the exception, and deliberately so: there the artwork is
+        // not a full-bleed field behind everything but a bounded block in the
+        // hero, sharing its rectangle with the trailer that replaces it (see
+        // CyberFlix and OptimusPrime are the exceptions, and deliberately so:
+        // there the artwork is not a full-bleed field behind everything but a
+        // bounded block in the hero, sharing its rectangle with the trailer that
+        // replaces it (see `HeroArtBlock`). Painting both would put the same
+        // backdrop on screen twice at different sizes, and the trailer would then
+        // be crossfading against a copy of the still it is supposed to be replacing.
+        if (!HubColors.hasHeroTrailer) {
+            FocusedBackdrop(viewModel)
+        }
 
         Row(Modifier.fillMaxSize()) {
             SideRail(
                 items = rail,
                 selectedKey = "home",
                 focusRequester = railFocusRequester,
-                forceExpanded = contentUnreachable,
+                forceExpanded = railRescue,
                 onSelect = { item ->
                     when (item.key) {
                         "search" -> onOpenSearch()
@@ -755,39 +757,27 @@ fun HomeScreen(
                 return@Row
             }
 
-            // Rows exist but every one of them came back empty, so `MediaRow`
-            // drew none of them (it returns early on an empty list) and the
-            // screen is blank. Saying so beats a black rectangle: the usual
-            // cause is the MDBList account being out of daily API calls or the
-            // key having stopped working, and both are fixed from the rail
-            // that is now open to the left.
-            if (contentUnreachable) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(48.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
-                ) {
-                    Text(
-                        stringResource(R.string.home_rows_unavailable),
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = HubColors.Text,
-                    )
-                    Text(
-                        stringResource(R.string.home_rows_unavailable_desc),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = HubColors.TextDim,
-                    )
-                }
-                return@Row
-            }
-
             Column(Modifier.fillMaxSize()) {
                 if (isNormalTheme) {
                     Box(Modifier.fillMaxWidth().height(76.dp)) {
                         HeroPanel(viewModel)
                     }
-                } else if (HubColors.isNetflixy || HubColors.isPrimefly) {
+                } else if (HubColors.isNetflixLayout || HubColors.isPrimefly) {
                     Box(Modifier.weight(1f)) {
+                        // Under the panel, not over it: the title, metadata and
+                        // synopsis have to stay legible across the whole
+                        // transition, and the block's left ramp is cut wide
+                        // enough (see `HeroArt`) that the artwork has already
+                        // faded out by the time it reaches them.
+                        if (HubColors.hasHeroTrailer) {
+                            HeroArtBlock(
+                                viewModel = viewModel,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .fillMaxHeight()
+                                    .fillMaxWidth(HERO_ART_WIDTH_FRACTION),
+                            )
+                        }
                         HeroPanel(viewModel)
                     }
                 }
@@ -803,7 +793,7 @@ fun HomeScreen(
                                 .height(312.dp)
                                 .offset(y = 15.dp)
                                 .clipToBounds()
-                            HubColors.isNetflixy -> Modifier
+                            HubColors.isNetflixLayout -> Modifier
                                 .fillMaxWidth()
                                 .height(264.dp)
                                 .clipToBounds()
@@ -867,8 +857,8 @@ fun HomeScreen(
                             },
                             rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
-                            onItemClickIndexed = { index, _ ->
-                                resumePoints.getOrNull(index)?.let(onResume)
+                            onItemClickIndexed = { index, item ->
+                                resumePoints.getOrNull(index)?.toCardItem()?.let(openCatalogItem) ?: openCatalogItem(item)
                             },
                             onItemLongClickIndexed = { index, _ ->
                                 resumeRemovalTarget = resumePoints.getOrNull(index)
@@ -997,13 +987,8 @@ fun HomeScreen(
                                     val feedItem = feed.items.getOrNull(itemIndex)
                                     "${item.key}:${feedItem?.season ?: 0}:${feedItem?.episode ?: 0}"
                                 },
-                                onItemClickIndexed = { itemIndex, item ->
-                                    val feedItem = feed.items.getOrNull(itemIndex)
-                                    if (feedItem?.season != null && feedItem.episode != null) {
-                                        onResume(feedItem.toResumePoint())
-                                    } else {
-                                        openCatalogItem(item)
-                                    }
+                                onItemClickIndexed = { _, item ->
+                                    openCatalogItem(item)
                                 },
                                 isWatched = { itemIndex, item ->
                                     val feedItem = feed.items.getOrNull(itemIndex)
@@ -1219,6 +1204,31 @@ private fun FocusedBackdrop(viewModel: HomeViewModel) {
     FanartBackdrop(url = url)
 }
 
+/**
+ * CyberFlix's hero artwork: the backdrop and the trailer that takes it over.
+ *
+ * Split out for the same recomposition reason as [FocusedBackdrop] — both URLs
+ * change on every settled focus, and read from `HomeScreen` they invalidated
+ * the entire screen — but it matters more here, because an invalidation that
+ * reaches [HeroArt] would take the `AndroidView` holding a *playing*
+ * `ExoPlayer` with it.
+ */
+@Composable
+private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
+    val backdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
+    val trailerUrl by viewModel.focusedTrailerUrl.collectAsStateWithLifecycle()
+
+    HeroArt(
+        backdropUrl = backdropUrl,
+        trailerUrl = trailerUrl,
+        modifier = modifier,
+        // Aloud, the way the streaming apps this theme is named after do it:
+        // an auto-preview is meant to be a preview, and a silent one is just a
+        // moving poster.
+        muted = false,
+    )
+}
+
 /** Same reasoning as [FocusedBackdrop] — see the note in `HomeScreen`. */
 @Composable
 private fun HeroPanel(viewModel: HomeViewModel) {
@@ -1229,7 +1239,7 @@ private fun HeroPanel(viewModel: HomeViewModel) {
 
 @Composable
 private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
-    if (HubColors.isNetflixy || HubColors.isPrimefly) {
+    if (HubColors.isNetflixLayout || HubColors.isPrimefly) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1251,7 +1261,16 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
                     model = logoUrl,
                     contentDescription = item.title,
                     contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.height(100.dp).padding(bottom = logoBottomPadding),
+                    modifier = Modifier
+                        .height(100.dp)
+                        // Height alone left the width to the artwork, and a
+                        // wide clearlogo — a long title set on one line — then
+                        // ran the full width of the panel and out under the
+                        // hero art. `Fit` means this only ever *caps* it: a
+                        // logo narrower than half the screen keeps its natural
+                        // size and only the offenders are scaled down.
+                        .fillMaxWidth(LOGO_MAX_WIDTH_FRACTION)
+                        .padding(bottom = logoBottomPadding),
                     alignment = Alignment.BottomStart,
                 )
             } else {
@@ -1378,19 +1397,37 @@ private const val FOCUS_FALLBACK_MS = 15_000L
 /** Long enough for the rail's width animation to give focus something to land on. */
 private const val RAIL_EXPAND_MS = 250L
 
-/**
- * How often the real rows get another chance while `contentUnreachable`.
- *
- * A recovered mdblist quota or a freshly re-linked key can repopulate the
- * rows any time after this screen gave up on them, and this is the only
- * thing that ever notices — long enough that the flicker of the retry is
- * rare, short enough that a fix on the account side is felt within a normal
- * amount of patience rather than requiring the app to be relaunched.
- */
-private const val CONTENT_RETRY_MS = 15_000L
-
 /** Steady-state cadence once real content holds focus — cheap, two boolean reads. */
 private const val POLL_MS = 1_000L
+
+/**
+ * Share of the hero's width CyberFlix gives the artwork block.
+ *
+ * The block is right-aligned and its own left edge is feathered away over the
+ * first third of itself, so the artwork stops well before the title card
+ * rather than at this line — which is why the number can be this generous
+ * without the two ever colliding.
+ *
+ * A width-only increase was tried here to grow the block's area, on the
+ * reasoning that the block already fills the hero's full height so width was
+ * the only lever left. It was reverted: the height itself is already capped
+ * by the hero `Box`'s share of the column (screen height minus the row
+ * strip's fixed height below it), so widening alone could not deliver a real
+ * area increase — it only stretched the same silhouette sideways. Growing
+ * the area for real means growing what the hero `Box` is given, which means
+ * taking height from the rows below, and that is a layout call bigger than
+ * this constant.
+ */
+private const val HERO_ART_WIDTH_FRACTION = 0.68f
+
+/**
+ * Ceiling on the clearlogo's width, as a share of the hero panel.
+ *
+ * A cap rather than a size: the image is drawn `Fit` and aligned to the
+ * bottom-start, so anything narrower than this is untouched and only a logo
+ * that would otherwise run under the artwork gets scaled back.
+ */
+private const val LOGO_MAX_WIDTH_FRACTION = 0.5f
 
 private fun ResumePoint.toCardItem() = MediaItem(
     tmdbId = tmdbId ?: 0,

@@ -1,4 +1,4 @@
-# Open Stream — Android TV
+# OmniStream — Android TV
 
 App nativo em Kotlin para Android TV: player **Media3/ExoPlayer**, interface no
 vocabulário do **Kodi/Estuary**, **workers dedicados** de metadados e **cache

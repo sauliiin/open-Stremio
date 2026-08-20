@@ -35,7 +35,7 @@ data class FirebaseProfileDto(
     val mdblistApiKey: String = "",
 )
 
-/** One Open Stream customization for an MDBList row, shared between Google devices. */
+/** One OmniStream customization for an MDBList row, shared between Google devices. */
 @Serializable
 data class FirebaseListPreferenceDto(
     val id: Long,
@@ -46,7 +46,7 @@ data class FirebaseListPreferenceDto(
     val deleted: Boolean = false,
 )
 
-/** One Open Stream customization for a catalog declared by a Stremio addon. */
+/** One OmniStream customization for a catalog declared by a Stremio addon. */
 @Serializable
 data class FirebaseCatalogPreferenceDto(
     /** Stable manifest identity: addon id + media type + catalog id. */

@@ -68,7 +68,7 @@ class SessionStore(context: Context) {
     val listPreferencesDirty: Flow<Boolean> =
         store.data.map { it[KEY_LIST_PREFERENCES_DIRTY] == true }
 
-    /** MDBList rows the user removed from Open Stream without deleting them upstream. */
+    /** MDBList rows the user removed from OmniStream without deleting them upstream. */
     val deletedListIds: Flow<Set<Long>> = listPreferences.map { preferences ->
         preferences.filter { it.deleted }.mapTo(mutableSetOf()) { it.id }
     }

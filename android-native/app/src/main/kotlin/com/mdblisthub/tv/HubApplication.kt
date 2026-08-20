@@ -66,6 +66,12 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
                 ApiConfig.LANGUAGE = ApiConfig.metadataLanguageFor(tag)
             }
         }
+
+        graph.scope.launch {
+            graph.uiPreferences.theme.collect { variant ->
+                HubColors.apply(variant)
+            }
+        }
     }
 
     override val workManagerConfiguration: Configuration

@@ -10,7 +10,7 @@ package com.mdblisthub.tv.core.model
  *
  * The order is the order the "tema" button cycles through.
  */
-enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY, PRIMEFLY }
+enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY, PRIMEFLY, CYBERFLIX, OPTIMUS_PRIME }
 
 /**
  * Who answers for the account's own library: watchlist, collection, watched,

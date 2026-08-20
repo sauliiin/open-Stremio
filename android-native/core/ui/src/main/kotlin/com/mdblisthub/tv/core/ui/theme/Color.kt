@@ -47,7 +47,27 @@ object HubColors {
 
     val isCyberpunk: Boolean get() = variant == HubThemeVariant.CYBERPUNK
     val isNetflixy: Boolean get() = variant == HubThemeVariant.NETFLIXY
-    val isPrimefly: Boolean get() = variant == HubThemeVariant.PRIMEFLY
+    val isPrimefly: Boolean get() = variant == HubThemeVariant.PRIMEFLY || variant == HubThemeVariant.OPTIMUS_PRIME
+    val isCyberflix: Boolean get() = variant == HubThemeVariant.CYBERFLIX
+    val isOptimusPrime: Boolean get() = variant == HubThemeVariant.OPTIMUS_PRIME
+
+    /**
+     * Themes laid out the Netflix way: a tall hero panel above the rows, its
+     * title and synopsis over the left of the artwork.
+     *
+     * Distinct from [isNetflixy] on purpose. That one answers "is this
+     * *the* Netflixy palette", which is what a colour decision wants;
+     * everything structural wants this instead, so a new theme built on the
+     * same bones — [isCyberflix] — inherits the layout without having to be
+     * added to a growing `||` chain at every call site.
+     */
+    val isNetflixLayout: Boolean get() = isNetflixy || isCyberflix
+
+    /**
+     * Themes that render the bounded hero artwork block with live autoplaying trailers
+     * instead of a full-bleed static backdrop.
+     */
+    val hasHeroTrailer: Boolean get() = isCyberflix || isOptimusPrime
 
     /**
      * Paints a specific palette — what a cold start calls once the persisted
@@ -92,8 +112,26 @@ object HubColors {
                 TextDim = Color(0xFFB3B3B3)
                 TextFaint = Color(0xFF808080)
             }
+            // Netflixy's bones with a neon edge: the same near-black field and
+            // red accent carry the "Flix" half, while `Accent2` swaps Netflixy's
+            // second red for Cyberpunk's cyan. Only the secondary moves because
+            // this palette has to stay readable behind a *playing trailer* —
+            // see `HeroArt` — and two saturated colours competing over live
+            // video is exactly what makes an auto-preview look cheap.
+            HubThemeVariant.CYBERFLIX -> {
+                Background = Color(0xFF05060A)
+                Surface = Color(0xFF101018)
+                SurfaceStrong = Color(0xFF1B1B28)
+                Border = Color(0xFF2A2A3D)
+                Accent = Color(0xFFE50914)
+                AccentSoft = Color(0xFFFF5C6E)
+                Accent2 = Color(0xFF00F3FF)
+                Text = Color(0xFFFFFFFF)
+                TextDim = Color(0xFFB3B3B3)
+                TextFaint = Color(0xFF7A7A8C)
+            }
             // Prime Video-inspired navy surfaces with its signature cyan.
-            HubThemeVariant.PRIMEFLY -> {
+            HubThemeVariant.PRIMEFLY, HubThemeVariant.OPTIMUS_PRIME -> {
                 Background = Color(0xFF0F171E)
                 Surface = Color(0xFF1A242F)
                 SurfaceStrong = Color(0xFF243244)
@@ -113,12 +151,12 @@ object HubColors {
      * Advances to the next palette and returns where it landed, so the caller
      * can persist the choice without having to re-derive it.
      */
-    fun toggleTheme(): HubThemeVariant {
+    fun toggleTheme(autotrailer: Boolean = false): HubThemeVariant {
         val next = when (variant) {
             HubThemeVariant.NORMAL -> HubThemeVariant.CYBERPUNK
-            HubThemeVariant.CYBERPUNK -> HubThemeVariant.NETFLIXY
-            HubThemeVariant.NETFLIXY -> HubThemeVariant.PRIMEFLY
-            HubThemeVariant.PRIMEFLY -> HubThemeVariant.NORMAL
+            HubThemeVariant.CYBERPUNK -> if (autotrailer) HubThemeVariant.CYBERFLIX else HubThemeVariant.NETFLIXY
+            HubThemeVariant.NETFLIXY, HubThemeVariant.CYBERFLIX -> if (autotrailer) HubThemeVariant.OPTIMUS_PRIME else HubThemeVariant.PRIMEFLY
+            HubThemeVariant.PRIMEFLY, HubThemeVariant.OPTIMUS_PRIME -> HubThemeVariant.NORMAL
         }
         apply(next)
         return next

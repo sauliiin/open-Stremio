@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Inflated rather than constructed in Kotlin for one attribute: `surface_type`.
+
+  `PlayerView` defaults to a `SurfaceView`, which is punched through the window
+  and composited by the system rather than drawn into the view hierarchy. That
+  makes it invisible to everything Compose does to its parent — the alpha
+  crossfade and, critically, the `BlendMode.DstIn` mask that feathers the hero
+  block's edges. The video kept its hard rectangle while the backdrop behind it
+  dissolved correctly, which is exactly the "square edges" this exists to fix.
+
+  A `TextureView` draws into the normal hierarchy, so the offscreen layer in
+  `HeroArt` captures it and the mask erases its edges like any other content.
+  It costs an extra copy per frame, which for a muted-scale preview clip in a
+  corner of the screen is a trade worth making; the *feature* player still uses
+  a SurfaceView, where that cost would actually matter.
+
+  `surface_type` has no runtime setter — it is read once in the constructor —
+  so XML is the only way to set it.
+-->
+<androidx.media3.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent"
+    app:surface_type="texture_view"
+    app:use_controller="false"
+    app:hide_on_touch="false"
+    app:shutter_background_color="@android:color/transparent"
+    app:resize_mode="zoom" />

@@ -126,6 +126,7 @@ fun DetailScreen(
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
     val dimUnwatchedEpisodes by viewModel.dimUnwatchedEpisodes.collectAsStateWithLifecycle()
     val library by viewModel.library.collectAsStateWithLifecycle()
+    val resumePoint by viewModel.resumePoint.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
     val castBio by viewModel.castBio.collectAsStateWithLifecycle()
@@ -341,6 +342,13 @@ fun DetailScreen(
                             onClick = viewModel::toggleWatched,
                             modifier = Modifier.fillMaxHeight(),
                         )
+                        if (resumePoint != null) {
+                            HubButton(
+                                text = stringResource(R.string.detail_clear_progress),
+                                onClick = viewModel::clearProgress,
+                                modifier = Modifier.fillMaxHeight(),
+                            )
+                        }
                     }
 
                     libraryError?.let { failure ->

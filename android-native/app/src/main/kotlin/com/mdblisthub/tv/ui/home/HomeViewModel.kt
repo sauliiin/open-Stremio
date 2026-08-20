@@ -18,8 +18,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -131,6 +133,9 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         _isEditMode.value = !_isEditMode.value
     }
 
+    val autotrailer: StateFlow<Boolean> = graph.uiPreferences.autotrailer
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     /**
      * Advances the palette and writes the choice down, so the box comes back
      * in it. The repaint is immediate and the write is not waited on: the
@@ -138,7 +143,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
      * the next cold start.
      */
     fun cycleTheme() {
-        val next = HubColors.toggleTheme()
+        val next = HubColors.toggleTheme(autotrailer.value)
         viewModelScope.launch { graph.uiPreferences.saveTheme(next) }
     }
 
@@ -308,6 +313,61 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
+     * The trailer to autoplay behind the hero, once a card has been sat on
+     * long enough to mean it — see `HeroArt`, which is the only consumer.
+     *
+     * The dwell is the whole feature. Sweeping a row past a dozen posters must
+     * cost nothing: `debounce` restarts on every focus move, so no lookup is
+     * even attempted until the remote has been still for
+     * [TRAILER_DWELL_MS], and `flatMapLatest` cancels the one in flight the
+     * instant focus moves again. What survives that is a viewer who stopped —
+     * which is the only case a trailer is wanted for.
+     *
+     * IMDb, not TMDB, because [com.mdblisthub.tv.core.data.repository.TrailerRepository]
+     * hands back a plain MP4 that Media3 can play inline; the alternative tiers
+     * behind the detail screen's overlay are a `WebView` and an intent, and
+     * neither belongs on a home screen that is meant to stay quiet.
+     *
+     * Emits null — not "keep the last one" — the moment focus moves, so the
+     * art block can drop straight back to the backdrop rather than leaving a
+     * trailer for the wrong title playing under a new one's title card.
+     */
+    val focusedTrailerUrl: StateFlow<String?> = _focused
+        .flatMapLatest { item ->
+            if (item == null) {
+                flowOf(null)
+            } else {
+                kotlinx.coroutines.flow.flow<String?> {
+                    // Null *before* the wait, not after it. This is what makes
+                    // moving the remote cut the current trailer dead: the
+                    // `flatMapLatest` above cancels this flow the instant focus
+                    // changes, and its replacement's first act is to clear the
+                    // URL — which drops the `AndroidView` holding the player
+                    // and lets the backdrop back in.
+                    //
+                    // Sequencing it the other way — debouncing upstream and
+                    // clearing here — looked equivalent and was not: `debounce`
+                    // only delays the *new* value, so the old one stayed the
+                    // current state and the previous title's trailer went on
+                    // playing for the whole dwell, over the new title's card.
+                    emit(null)
+
+                    // The dwell, restarted from zero for whatever is focused
+                    // now. Cancellation is the mechanism, so no timer has to be
+                    // tracked or reset by hand.
+                    delay(TRAILER_DWELL_MS)
+
+                    val imdbId = item.imdbId?.takeIf { it.isNotBlank() }
+                        ?: graph.media.observeDetail(item.type, item.tmdbId)
+                            .first()?.imdbId?.takeIf { it.isNotBlank() }
+                    emit(imdbId?.let { runCatching { graph.trailers.mp4For(it) }.getOrNull() })
+                }
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
      * "Porque você assistiu" — built once per visit, not persisted: unlike
      * the mdblist rows above, TMDB's recommendations have nothing worth
      * caching in Room for, and the five seeds are cheap to re-derive from
@@ -453,6 +513,17 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
          * fallback flashing first.
          */
         const val FANART_SETTLE_MS = 350L
+
+        /**
+         * How still the remote has to be before a trailer is even looked up.
+         *
+         * Deliberately far longer than [FANART_SETTLE_MS]: settling the fanart
+         * is one image decode and wants to feel immediate, while this starts
+         * *video with sound*. Four seconds is long enough that nobody sweeping
+         * a row ever triggers one, and short enough that stopping to read a
+         * synopsis rolls into the trailer without feeling like a wait.
+         */
+        const val TRAILER_DWELL_MS = 3_000L
     }
 
     private fun catalogCacheKey(catalog: AddonCatalog): String =

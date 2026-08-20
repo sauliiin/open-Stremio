@@ -163,7 +163,7 @@ fun MediaRow(
         HubDimens.ScreenPaddingHorizontal.toPx()
     }
     val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant) {
-        if (HubColors.isNetflixy) {
+        if (HubColors.isNetflixLayout) {
             LeadingColumnScroll(horizontalInsetPx)
         } else {
             SafeHorizontalScroll(horizontalInsetPx)
@@ -277,7 +277,7 @@ fun MediaRow(
                     // SafeHorizontalScroll only moves when the restored card
                     // is actually outside the safe area, so it has no such
                     // fight to avoid.
-                    .let { if (HubColors.isNetflixy) it else it.focusRestorer() },
+                    .let { if (HubColors.isNetflixLayout) it else it.focusRestorer() },
             ) {
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(

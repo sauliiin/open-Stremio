@@ -20,7 +20,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.TextStyle
 import androidx.tv.material3.Text
 
-private val OpenStreamGradient = listOf(
+private val OmniStreamGradient = listOf(
     Color(0xFF00F3FF),
     Color(0xFF7C5CFF),
     Color(0xFFFF00AA),
@@ -30,12 +30,12 @@ private val OpenStreamGradient = listOf(
 
 /** Brand title with a neon gradient that continuously travels left to right. */
 @Composable
-fun AnimatedOpenStreamTitle(
+fun AnimatedOmniStreamTitle(
     style: TextStyle,
     modifier: Modifier = Modifier,
 ) {
     var widthPx by remember { mutableFloatStateOf(1f) }
-    val transition = rememberInfiniteTransition(label = "open-stream-title")
+    val transition = rememberInfiniteTransition(label = "omnistream-title")
     val progress by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -43,20 +43,27 @@ fun AnimatedOpenStreamTitle(
             animation = tween(durationMillis = 2_800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
-        label = "open-stream-gradient-position",
+        label = "omnistream-gradient-position",
     )
     val span = widthPx.coerceAtLeast(1f)
     val startX = -span + progress * span * 2f
     val brush = Brush.linearGradient(
-        colors = OpenStreamGradient,
+        colors = OmniStreamGradient,
         start = Offset(startX, 0f),
         end = Offset(startX + span, 0f),
         tileMode = TileMode.Mirror,
     )
 
     Text(
-        text = "Open Stream",
+        text = "OmniStream",
         style = style.copy(brush = brush),
         modifier = modifier.onSizeChanged { widthPx = it.width.toFloat() },
     )
 }
+
+/** Backward-compatibility alias for [AnimatedOmniStreamTitle]. */
+@Composable
+fun AnimatedOpenStreamTitle(
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) = AnimatedOmniStreamTitle(style = style, modifier = modifier)
