@@ -10,7 +10,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -670,26 +669,13 @@ private fun EpisodeRow(
                 val watched = watchedEpisodes.contains(
                     "${showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}",
                 )
-                // Focus lifts the blur back to sharp — same as the web app's
-                // hover — so checking what an unwatched episode looks like
-                // never costs a click, just a D-pad move.
+                // Focus lifts the blur back to sharp — same as the mobile app —
+                // so checking an unwatched episode never costs an extra click.
                 //
                 // Modifier.blur() is only available on API 31+; on older devices
                 // we fall back to reduced alpha which achieves a similar visual
                 // signal at minimal cost.
                 val blurActive = dimUnwatched && !watched && !focused
-                val stillBlurRadius by animateDpAsState(
-                    if (blurActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                        UNWATCHED_BLUR_RADIUS else 0.dp,
-                    episodeFocusTween(),
-                    label = "episode-still-blur",
-                )
-                val stillAlpha by animateFloatAsState(
-                    if (blurActive && Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
-                        UNWATCHED_ALPHA_FALLBACK else 1f,
-                    episodeFocusTween(),
-                    label = "episode-still-alpha",
-                )
 
                 Column(
                     modifier = Modifier
@@ -717,10 +703,12 @@ private fun EpisodeRow(
                                 .height(132.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .then(
-                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                                        Modifier.blur(stillBlurRadius)
-                                    else
-                                        Modifier.alpha(stillAlpha)
+                                    when {
+                                        !blurActive -> Modifier
+                                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                                            Modifier.blur(UNWATCHED_BLUR_RADIUS)
+                                        else -> Modifier.alpha(UNWATCHED_ALPHA_FALLBACK)
+                                    }
                                 ),
                         )
                     }

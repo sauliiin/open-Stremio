@@ -166,6 +166,7 @@ private class RowPivotScroll(
             // outgoing shelf halfway — its posters clipped off the top while
             // its card labels stayed on screen, reading as a stray line of
             // titles under the synopsis with nothing above them.
+            //
             variant == HubThemeVariant.NETFLIXY ||
                 variant == HubThemeVariant.CYBERFLIX -> 0.18f * containerSize
             // Parks the focused shelf higher so it and the next two shelves
@@ -801,12 +802,56 @@ fun HomeScreen(
                     LazyColumn(
                         state = homeListState,
                         modifier = when {
+                            // OptimusPrime is Primefly's strip with the 15 dp
+                            // it used to give away taken as height instead.
+                            //
+                            // Primefly lays out 312 dp and then parks it 15 dp
+                            // lower, so the band between the hero's bottom
+                            // edge and the first shelf is background nothing
+                            // ever draws into. That costs Primefly nothing —
+                            // its hero is a text panel — but here the hero
+                            // holds artwork that stops dead at that edge, and
+                            // 15 dp of empty navy is 15 dp of backdrop not
+                            // being shown. Asking for 297 dp with no offset
+                            // leaves the shelves pixel-for-pixel where they
+                            // were (297 dp of visible strip either way, two
+                            // complete landscape shelves inside 295.4 of it)
+                            // and hands the difference to `HeroArt`: 228 → 243
+                            // dp of block, which on a 16:9 backdrop is four
+                            // points of crop recovered rather than four points
+                            // of empty background.
+                            HubColors.isOptimusPrime -> Modifier
+                                .fillMaxWidth()
+                                .height(297.dp)
+                                .clipToBounds()
                             HubColors.isPrimefly -> Modifier
                                 .fillMaxWidth()
                                 // Two complete landscape shelves remain visible;
                                 // the hero gives this space back from its bottom.
                                 .height(312.dp)
                                 .offset(y = 15.dp)
+                                .clipToBounds()
+                            // CyberFlix specifically, not Netflixy below: the
+                            // next shelf's heading is meant to show here — see
+                            // `hasHeroTrailer` — it is the one piece of the
+                            // shelf below that stays legible while the rest of
+                            // it is clipped, and it must come through whole.
+                            //
+                            // 257 dp is that heading's own lower edge, not a
+                            // rounder number nearby: the heading starts 232.3
+                            // dp into the list (top padding 12 + this shelf's
+                            // 206.3 + the 14 dp gap between shelves) and is
+                            // 24.6 dp tall, so 256.9 dp is the first line this
+                            // strip can be shortened to without slicing the
+                            // text itself — every dp below that starts eating
+                            // into the glyphs rather than the whitespace under
+                            // them. 264 had 7.1 dp of clipped-gap headroom
+                            // going spare below that line; this claims it for
+                            // the hero and stops exactly where the heading
+                            // does.
+                            HubColors.isCyberflix -> Modifier
+                                .fillMaxWidth()
+                                .height(257.dp)
                                 .clipToBounds()
                             HubColors.isNetflixLayout -> Modifier
                                 .fillMaxWidth()
@@ -1436,8 +1481,19 @@ private const val POLL_MS = 1_000L
  * strip's fixed height below it), so widening alone could not deliver a real
  * area increase — it only stretched the same silhouette sideways. Growing
  * the area for real means growing what the hero `Box` is given, which means
- * taking height from the rows below, and that is a layout call bigger than
- * this constant.
+ * taking height from the rows below; that call has since been made, in the
+ * strip heights CyberFlix and OptimusPrime ask for above.
+ *
+ * Which leaves this constant where it already was: at its ceiling. The left
+ * ramp has to have finished erasing the artwork by the time it reaches the
+ * synopsis, and the synopsis ends 0.55 of the padded width in — 524 dp on the
+ * 960 dp canvas a television gives. The block is right-aligned, so its opaque
+ * edge sits at `width − W + LEFT_FEATHER · W`, and holding that at or past
+ * 524 allows W ≤ 660 dp, i.e. 0.6875. Every dp past that is artwork printed
+ * under the text; every dp of width bought by widening the ramp instead is
+ * artwork drawn at partial alpha while the aspect — and with it the crop
+ * taken out of a 16:9 backdrop — gets worse. Height was the only honest
+ * lever, and it is the one that was pulled.
  */
 private const val HERO_ART_WIDTH_FRACTION = 0.68f
 

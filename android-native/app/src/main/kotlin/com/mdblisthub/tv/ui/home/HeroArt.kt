@@ -82,57 +82,30 @@ fun HeroArt(
         label = "hero-trailer-alpha",
     )
 
-    Box(
-        modifier = modifier
-            // The isolated layer the mask below needs. Also what keeps the
-            // blend from reaching the rest of the window.
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-
-                // `DstIn` keeps the destination's colour and multiplies its
-                // alpha by the source's, so a transparent stop erases and an
-                // opaque one leaves the pixel untouched.
-                //
-                // Only the *left* edge ramps horizontally, and it is much the
-                // widest of any: it is the side the title, metadata and
-                // synopsis sit over, so the artwork has to be gone — not merely
-                // dimmed — by the time it reaches them.
-                //
-                // The right edge is deliberately left hard. It is not an edge
-                // between the artwork and the page, it is the edge of the
-                // screen, and fading there reads as the picture stopping short
-                // of the panel rather than running off it. Feathering it was
-                // the wrong instinct: a ramp only belongs where two things have
-                // to meet.
-                drawRect(
-                    brush = Brush.horizontalGradient(
-                        0f to Color.Transparent,
-                        LEFT_FEATHER to Color.Black,
-                        1f to Color.Black,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Black,
-                        1f - BOTTOM_FEATHER to Color.Black,
-                        1f to Color.Transparent,
-                    ),
-                    blendMode = BlendMode.DstIn,
-                )
-            },
-    ) {
+    Box(modifier = modifier) {
         if (backdropUrl != null) {
             AsyncImage(
                 model = backdropUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                // `Crop`'s own default is `Center`, which crops the same
+                // number of pixels off the top as off the bottom. TMDB
+                // backdrops are near-16:9 already and this block is
+                // considerably narrower than that, so the vertical crop is
+                // the heavy one — and backdrop compositions routinely put a
+                // face in the upper half of the frame, which a centered crop
+                // then cuts straight through. `TopStart` spends that same
+                // crop budget on the bottom margin instead, where these
+                // images are overwhelmingly closer to empty (sky, a
+                // cityscape, negative space for a logo) than a face is to be
+                // found there.
+                alignment = androidx.compose.ui.Alignment.TopStart,
                 modifier = Modifier
                     .fillMaxSize()
                     // Held at full opacity until the trailer is genuinely on
                     // screen, then taken out underneath it.
-                    .alpha(1f - trailerAlpha),
+                    .alpha(1f - trailerAlpha)
+                    .heroEdges(LEFT_FEATHER, BOTTOM_FEATHER),
             )
         }
 
@@ -142,7 +115,10 @@ fun HeroArt(
                 muted = muted,
                 onFirstFrame = { trailerPlaying = true },
                 onFailed = { trailerPlaying = false },
-                modifier = Modifier.fillMaxSize().alpha(trailerAlpha),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .alpha(trailerAlpha)
+                    .heroEdges(VIDEO_LEFT_FEATHER, VIDEO_BOTTOM_FEATHER),
             )
         }
     }
@@ -241,4 +217,36 @@ private const val LEFT_FEATHER = 0.34f
 /** Deeper than the top: this edge has to reach the rows without a seam. */
 private const val BOTTOM_FEATHER = 0.22f
 
+private const val VIDEO_LEFT_FEATHER = 0.34f
+private const val VIDEO_BOTTOM_FEATHER = 0.35f
+
 private const val READY_TIMEOUT_MS = 12_000L
+
+private fun Modifier.heroEdges(leftFeather: Float, bottomFeather: Float): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                leftFeather * 0.25f to Color.Black.copy(alpha = 0.05f),
+                leftFeather * 0.5f to Color.Black.copy(alpha = 0.25f),
+                leftFeather * 0.75f to Color.Black.copy(alpha = 0.6f),
+                leftFeather to Color.Black,
+                1f to Color.Black,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Black,
+                1f - bottomFeather to Color.Black,
+                1f - bottomFeather * 0.75f to Color.Black.copy(alpha = 0.6f),
+                1f - bottomFeather * 0.5f to Color.Black.copy(alpha = 0.25f),
+                1f - bottomFeather * 0.25f to Color.Black.copy(alpha = 0.05f),
+                1f to Color.Transparent,
+            ),
+            blendMode = BlendMode.DstIn,
+        )
+    }

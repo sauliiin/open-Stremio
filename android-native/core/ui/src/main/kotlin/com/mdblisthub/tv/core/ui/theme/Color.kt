@@ -119,16 +119,16 @@ object HubColors {
             // see `HeroArt` — and two saturated colours competing over live
             // video is exactly what makes an auto-preview look cheap.
             HubThemeVariant.CYBERFLIX -> {
-                Background = Color(0xFF05060A)
-                Surface = Color(0xFF101018)
-                SurfaceStrong = Color(0xFF1B1B28)
-                Border = Color(0xFF2A2A3D)
+                Background = Color(0xFF000000)
+                Surface = Color(0xFF121212)
+                SurfaceStrong = Color(0xFF1F1F1F)
+                Border = Color(0xFF333333)
                 Accent = Color(0xFFE50914)
-                AccentSoft = Color(0xFFFF5C6E)
-                Accent2 = Color(0xFF00F3FF)
+                AccentSoft = Color(0xFFFF5252)
+                Accent2 = Color(0xFFE50914)
                 Text = Color(0xFFFFFFFF)
                 TextDim = Color(0xFFB3B3B3)
-                TextFaint = Color(0xFF7A7A8C)
+                TextFaint = Color(0xFF808080)
             }
             // Prime Video-inspired navy surfaces with its signature cyan.
             HubThemeVariant.PRIMEFLY, HubThemeVariant.OPTIMUS_PRIME -> {
