@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.State
@@ -94,6 +95,9 @@ import kotlinx.coroutines.launch
 /** Where a focused row parks: 30% down the viewport, the same pivot Compose's own (internal) TV spec uses. */
 private const val ROW_PIVOT = 0.3f
 
+/** Rounding tolerance on the hero's bounds — not a widening of them. */
+private const val SUB_PIXEL_SLACK = 1f
+
 private sealed interface EditableListTarget {
     val displayName: String
 
@@ -143,6 +147,14 @@ private class RowPivotScroll(
      * stand down for that window.
      */
     private val pinned: State<Boolean>,
+    /** True while the spotlight hero owns the viewport above the rows. */
+    private val spotlightHero: State<Boolean>,
+    /**
+     * Answers "this request is for something inside the spotlight hero, and
+     * here is the scroll it actually wants" — or null when it is not, and the
+     * pivot below should decide. See the guard in [calculateScrollDistance].
+     */
+    private val heroScrollDistance: (offset: Float, size: Float) -> Float?,
 ) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         // Returning to the rows must not move them. The list did not scroll
@@ -153,7 +165,36 @@ private class RowPivotScroll(
         // `DetailScreen`.
         if (pinned.value) return 0f
 
+        // The spotlight hero has exactly one right resting place — the top
+        // of the list, where the whole of it is on screen — and the pivot
+        // cannot express that. The pivot knows only "park the focused child a
+        // fixed distance from the top", and the child here is a button near
+        // the hero's *bottom* edge; obeying it scrolled the artwork almost
+        // entirely off the moment focus landed on "Ver detalhes", which on a
+        // cold start is before the viewer has touched anything.
+        //
+        // Suppressing the scroll outright was the first fix and was wrong in
+        // the other direction: coming back *up* from the rows, the button
+        // being focused is above the viewport, so "don't scroll" left the
+        // hero showing as a sliver with focus on something invisible. The
+        // request has to be answered with the distance home, not with zero —
+        // zero is merely what that distance comes to when the list is already
+        // there.
+        //
+        // Geometry rather than a "hero has focus" flag on purpose: a flag has
+        // to be lowered by a focus callback that races the bring-into-view
+        // request it is meant to gate, and the first press of "down" out of
+        // the hero is exactly the moment that race decides whether the rows
+        // scroll at all.
+        heroScrollDistance(offset, size)?.let { return it }
+
         val pivot = when {
+            // Under the spotlight hero every theme has the same geometry —
+            // one full-height list, hero first, rows after — so they all park
+            // a focused row in the same place. The per-variant landing points
+            // below were each measured against that theme's own fixed row
+            // strip, and none of those strips is on screen while the hero is.
+            spotlightHero.value -> normalFirstRowOffsetPx
             variant == HubThemeVariant.NORMAL -> normalFirstRowOffsetPx
             // The focused child is the card, not the whole shelf. This offset
             // equals the shelf heading plus its gap, so that heading lands at
@@ -216,6 +257,13 @@ fun HomeScreen(
     // `HeroPanel` and the backdrop collect them themselves, so the scope that
     // invalidates is the one that actually displays the value.
     val becauseYouWatched by viewModel.becauseYouWatched.collectAsStateWithLifecycle()
+    // The *list* is collected here — it changes once, when the query lands —
+    // while the item on screen and its detail are not: those turn over every
+    // `SPOTLIGHT_DWELL_MS`, and read at this level they would make this whole
+    // composable recompose on a timer. `SpotlightHeroBlock` collects them.
+    val spotlight by viewModel.spotlight.collectAsStateWithLifecycle()
+    val spotlightLoaded by viewModel.spotlightLoaded.collectAsStateWithLifecycle()
+    val spotlightEnabled by viewModel.spotlightEnabled.collectAsStateWithLifecycle()
     val isEditMode by viewModel.isEditMode.collectAsStateWithLifecycle()
     val watchedIds by viewModel.watchedIds.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
@@ -231,9 +279,54 @@ fun HomeScreen(
     // `LazyColumn` index. These two decide how many fixed items sit above the
     // row list, and stating them once is what keeps that arithmetic from
     // drifting out of step with the items themselves.
-    val hasHeroItem = !HubColors.isNetflixLayout && !HubColors.isPrimefly && !isNormalTheme
+    /**
+     * Whether the site's hero opens the page.
+     *
+     * Every palette, not just the one whose colours the web build happens to
+     * use: the hero is the home screen's shape, and a theme is a set of
+     * colours to paint that shape in — which is why nothing below asks which
+     * variant is painted, and why the hero itself reads `HubColors` for every
+     * fill it draws rather than carrying the site's violet around.
+     *
+     * Held up through the load rather than appearing when the query lands:
+     * the block is most of the viewport, and letting the rows paint at the
+     * top first would push them the height of a hero the moment it arrived.
+     * Once loaded, an empty spotlight means the account has nothing to
+     * feature — or the viewer turned it off in Settings — and the hero gives
+     * the space back rather than sitting empty, which is what puts each
+     * theme's own hero, `FocusedBackdrop` and the row strips back exactly as
+     * they were.
+     */
+    val hasSpotlightHero = spotlightEnabled &&
+        !isEditMode &&
+        (!spotlightLoaded || spotlight.isNotEmpty())
+    val hasHeroItem = !hasSpotlightHero &&
+        !HubColors.isNetflixLayout &&
+        !HubColors.isPrimefly &&
+        !isNormalTheme
     val hasResumeItem = resumePoints.isNotEmpty() && !isEditMode
     val homeListState = rememberLazyListState()
+    var browsingRowsWithFocusedHero by remember(HubColors.variant) { mutableStateOf(false) }
+    val showFocusedHeroForRows = hasSpotlightHero &&
+        HubColors.hasHeroTrailer &&
+        browsingRowsWithFocusedHero
+    val spotlightOwnsViewport = hasSpotlightHero && !showFocusedHeroForRows
+
+    // Cyberflix and Optimus Prime have two deliberately different home
+    // states: the rotating spotlight opens the page, then their original
+    // clearlogo/synopsis/autotrailer hero follows the card focused below it.
+    // Other themes keep the spotlight's flat, full-height scrolling layout.
+    LaunchedEffect(hasSpotlightHero, HubColors.hasHeroTrailer) {
+        if (!hasSpotlightHero || !HubColors.hasHeroTrailer) {
+            browsingRowsWithFocusedHero = false
+        }
+    }
+
+    val onShelfItemFocused = {
+        if (hasSpotlightHero && HubColors.hasHeroTrailer) {
+            browsingRowsWithFocusedHero = true
+        }
+    }
     val rowToReveal by viewModel.rowToReveal.collectAsStateWithLifecycle()
 
     /**
@@ -253,7 +346,9 @@ fun HomeScreen(
      */
     LaunchedEffect(rowToReveal) {
         val reveal = rowToReveal ?: return@LaunchedEffect
-        val leading = (if (hasHeroItem) 1 else 0) + (if (hasResumeItem) 1 else 0)
+        val leading = (if (hasSpotlightHero) 1 else 0) +
+            (if (hasHeroItem) 1 else 0) +
+            (if (hasResumeItem) 1 else 0)
         val targetIndex = leading + reveal.rowIndex
         val layout = homeListState.layoutInfo
         val visible = layout.visibleItemsInfo.firstOrNull { it.index == targetIndex }
@@ -266,15 +361,18 @@ fun HomeScreen(
         viewModel.onRowRevealed()
     }
 
-    LaunchedEffect(isNormalTheme) {
-        initialNormalFocusPending = isNormalTheme
+    // Was NORMAL-only, because NORMAL was the only theme whose first
+    // focusable was a row card. Now every theme opens on the hero, and the
+    // hero is where focus should start on every one of them.
+    LaunchedEffect(isNormalTheme, hasSpotlightHero) {
+        initialNormalFocusPending = isNormalTheme || hasSpotlightHero
     }
 
-    DisposableEffect(lifecycleOwner, viewModel, isNormalTheme) {
+    DisposableEffect(lifecycleOwner, viewModel, isNormalTheme, hasSpotlightHero) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.refreshDynamicRows()
-                if (isNormalTheme) initialNormalFocusPending = true
+                if (isNormalTheme || hasSpotlightHero) initialNormalFocusPending = true
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -410,8 +508,34 @@ fun HomeScreen(
         }
     }
     val normalFirstRowOffsetPx = with(LocalDensity.current) { 36.dp.toPx() }
-    val rowPivotScroll = remember(HubColors.variant, normalFirstRowOffsetPx) {
-        RowPivotScroll(HubColors.variant, normalFirstRowOffsetPx, pinnedForRail)
+    val spotlightHeroHeightPx = with(LocalDensity.current) { spotlightHeroHeight().toPx() }
+    // Read through a `State` rather than captured: the spec outlives the
+    // composition that built it, and a captured boolean would keep answering
+    // for whichever spotlight the screen had when the theme was last changed.
+    val heroPresent = rememberUpdatedState(spotlightOwnsViewport)
+    val rowPivotScroll = remember(HubColors.variant, normalFirstRowOffsetPx, spotlightHeroHeightPx) {
+        RowPivotScroll(
+            HubColors.variant,
+            normalFirstRowOffsetPx,
+            pinnedForRail,
+            heroPresent,
+        ) { offset, size ->
+            // How much of the hero has already gone off the top. The hero
+            // spans `-scrolledOff .. heroHeight - scrolledOff` in the
+            // viewport's own coordinates, which is what the two bounds below
+            // compare against; the slack absorbs sub-pixel rounding rather
+            // than widening the test.
+            val scrolledOff = homeListState.firstVisibleItemScrollOffset.toFloat()
+            when {
+                !heroPresent.value -> null
+                // Past the hero the list is back to ordinary rows, and so is
+                // the pivot.
+                homeListState.firstVisibleItemIndex != 0 -> null
+                offset < -scrolledOff - SUB_PIXEL_SLACK -> null
+                offset + size > spotlightHeroHeightPx - scrolledOff + SUB_PIXEL_SLACK -> null
+                else -> -scrolledOff
+            }
+        }
     }
     val onInitialNormalFocusHandled = { initialNormalFocusPending = false }
 
@@ -672,7 +796,13 @@ fun HomeScreen(
         // replaces it (see `HeroArtBlock`). Painting both would put the same
         // backdrop on screen twice at different sizes, and the trailer would then
         // be crossfading against a copy of the still it is supposed to be replacing.
-        if (!HubColors.hasHeroTrailer) {
+        //
+        // The spotlight hero is a third exception, and the most complete one:
+        // it is the web home translated whole, and there the artwork belongs
+        // to the hero and the rows below sit on flat page background. Painting
+        // a focus-following fanart under them as well would be the one thing
+        // that gives the port away.
+        if (!HubColors.hasHeroTrailer && !hasSpotlightHero) {
             FocusedBackdrop(viewModel)
         }
 
@@ -774,11 +904,18 @@ fun HomeScreen(
             }
 
             Column(Modifier.fillMaxSize()) {
-                if (isNormalTheme) {
+                // Cyberflix and Optimus Prime restore their focused-title hero
+                // after focus leaves the spotlight for a shelf. That is where
+                // their clearlogo, synopsis and autoplaying trailer live.
+                // The other themes keep the spotlight's flat scrolling page.
+                if (isNormalTheme && !hasSpotlightHero) {
                     Box(Modifier.fillMaxWidth().height(76.dp)) {
                         HeroPanel(viewModel)
                     }
-                } else if (HubColors.isNetflixLayout || HubColors.isPrimefly) {
+                } else if (
+                    (!hasSpotlightHero || showFocusedHeroForRows) &&
+                    (HubColors.isNetflixLayout || HubColors.isPrimefly)
+                ) {
                     Box(Modifier.weight(1f)) {
                         // Under the panel, not over it: the title, metadata and
                         // synopsis have to stay legible across the whole
@@ -802,6 +939,19 @@ fun HomeScreen(
                     LazyColumn(
                         state = homeListState,
                         modifier = when {
+                            // One shape for every theme once the hero is up:
+                            // the fixed strip heights below exist to leave
+                            // room for a hero pinned *above* the list, and
+                            // this hero is the list's own first item, so the
+                            // rows simply scroll it away like the web home
+                            // does. Their measurements are untouched because
+                            // they are still exactly right for the layouts
+                            // they were taken for — the ones a theme falls
+                            // back to when there is no spotlight to show.
+                            spotlightOwnsViewport -> Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clipToBounds()
                             // OptimusPrime is Primefly's strip with the 15 dp
                             // it used to give away taken as height instead.
                             //
@@ -879,12 +1029,33 @@ fun HomeScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             // Primefly positions the whole viewport instead;
                             // padding here would be consumed when focus moves.
-                            top = if (HubColors.isPrimefly) 0.dp else 12.dp,
+                            // The spotlight hero wants the same zero for a
+                            // different reason: it is full-bleed artwork, and
+                            // 12 dp of background above it would frame it.
+                            top = if (HubColors.isPrimefly || spotlightOwnsViewport) 0.dp else 12.dp,
                             // Room to park the last row at the pivot instead of
                             // stopping short with it pinned to the bottom edge.
                             bottom = HubDimens.ScreenPaddingVertical * 8,
                         ),
                     ) {
+                        if (hasSpotlightHero) {
+                            item(key = "spotlight") {
+                                SpotlightHeroBlock(
+                                    viewModel = viewModel,
+                                    onOpenTitle = onOpenTitle,
+                                    requestInitialFocus = initialNormalFocusPending &&
+                                        spotlight.isNotEmpty(),
+                                    onInitialFocusHandled = onInitialNormalFocusHandled,
+                                    modifier = Modifier.onFocusChanged { focus ->
+                                        if (focus.hasFocus && browsingRowsWithFocusedHero) {
+                                            browsingRowsWithFocusedHero = false
+                                            scope.launch { homeListState.animateScrollToItem(0) }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+
                         // Normal joins the themes whose hero is fixed above the shelves.
                         if (hasHeroItem) {
                             item(key = "hero") {
@@ -914,6 +1085,7 @@ fun HomeScreen(
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = resumeRowFocus
+                                onShelfItemFocused()
                             },
                             rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
@@ -925,7 +1097,10 @@ fun HomeScreen(
                             },
                             progressPercent = { index, _ -> resumePoints.getOrNull(index)?.progress },
                             isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
-                            requestInitialFocus = isNormalTheme && initialNormalFocusPending && !isEditMode,
+                            requestInitialFocus = isNormalTheme &&
+                                initialNormalFocusPending &&
+                                !isEditMode &&
+                                !hasSpotlightHero,
                             onInitialFocusHandled = onInitialNormalFocusHandled,
                         )
                     }
@@ -944,12 +1119,14 @@ fun HomeScreen(
                     val requestInitialFocus = isNormalTheme &&
                         initialNormalFocusPending &&
                         !isEditMode &&
+                        !hasSpotlightHero &&
                         resumePoints.isEmpty() &&
                         index == 0
                     val rowFocus = remember { FocusRequester() }
                     val trackFocus: (MediaItem) -> Unit = {
                         viewModel.onFocused(it)
                         lastFocusedRow = rowFocus
+                        onShelfItemFocused()
                     }
                     // A requester whose row has left composition — edit mode
                     // rebuilding the list, a theme change, a row deleted — no
@@ -1091,11 +1268,13 @@ fun HomeScreen(
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = bywRowFocus
+                                onShelfItemFocused()
                             },
                             rowFocusRequester = bywRowFocus,
                             isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                             requestInitialFocus = isNormalTheme &&
                                 initialNormalFocusPending &&
+                                !hasSpotlightHero &&
                                 resumePoints.isEmpty() &&
                                 homeRows.isEmpty() &&
                                 index == 0,
@@ -1233,14 +1412,19 @@ private fun AutoScrollText(
     val scrollState = androidx.compose.foundation.rememberScrollState()
     LaunchedEffect(text) {
         scrollState.scrollTo(0)
-        kotlinx.coroutines.delay(4000)
+        kotlinx.coroutines.delay(7000)
         while (isActive) {
             val max = scrollState.maxValue
             if (max > 0) {
-                // 80ms/px rather than 40 — at the old speed a long synopsis
-                // read as a blur scrolling past, not text anyone could
-                // actually read while glancing at the hero panel.
-                scrollState.animateScrollTo(max, animationSpec = androidx.compose.animation.core.tween(durationMillis = max * 80, easing = androidx.compose.animation.core.LinearEasing))
+                // 190ms/px, from 40 by way of 80, 120 and 150. A synopsis
+                // on a hero panel is glanced at, not studied, and every step
+                // down has been towards the same thing: the eye has to be
+                // able to leave a line and find it again on the way back.
+                // Unlike the spotlight hero's copy of this, nothing here is
+                // on a clock — the panel belongs to whatever card holds
+                // focus and stays until the viewer moves — so the pace can
+                // simply be chosen.
+                scrollState.animateScrollTo(max, animationSpec = androidx.compose.animation.core.tween(durationMillis = max * 190, easing = androidx.compose.animation.core.LinearEasing))
                 kotlinx.coroutines.delay(4000)
                 scrollState.animateScrollTo(0, animationSpec = androidx.compose.animation.core.tween(durationMillis = 800))
                 kotlinx.coroutines.delay(3000)
@@ -1292,6 +1476,36 @@ private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier
         // an auto-preview is meant to be a preview, and a silent one is just a
         // moving poster.
         muted = false,
+    )
+}
+
+/**
+ * The site's hero, collecting the rotating pick itself.
+ *
+ * Same reasoning as [FocusedBackdrop]: the item and its detail turn over on a
+ * timer, and read from `HomeScreen` that timer would invalidate the entire
+ * screen — including the row whose card currently holds focus — every sixteen
+ * seconds.
+ */
+@Composable
+private fun SpotlightHeroBlock(
+    viewModel: HomeViewModel,
+    onOpenTitle: (MediaItem) -> Unit,
+    requestInitialFocus: Boolean,
+    onInitialFocusHandled: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val item by viewModel.spotlightItem.collectAsStateWithLifecycle()
+    val detail by viewModel.spotlightDetail.collectAsStateWithLifecycle()
+
+    SpotlightHero(
+        item = item,
+        detail = detail,
+        onOpen = onOpenTitle,
+        onNext = viewModel::nextSpotlight,
+        requestInitialFocus = requestInitialFocus,
+        onInitialFocusHandled = onInitialFocusHandled,
+        modifier = modifier,
     )
 }
 

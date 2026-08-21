@@ -22,6 +22,8 @@
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">App Language</string>
     <string name="settings_autotrailer">Autotrailer</string>
+    <string name="settings_intro">Play intro when opening the app</string>
+    <string name="settings_spotlight_hero">Spotlight hero</string>
     <string name="settings_section_subtitles">Subtitles</string>
     <string name="settings_subtitle_auto_download">Auto-download Subtitles</string>
     <string name="settings_subtitle_default_lang">Default Subtitle Language</string>
@@ -141,6 +143,9 @@
     <string name="home_resume_remove_title">Remove from continue watching?</string>
     <string name="home_resume_remove_body">"%1$s" leaves the row and its saved position is cleared on your MDBList account.</string>
     <string name="home_because_you_watched">Because you watched %1$s</string>
+    <string name="home_spotlight_eyebrow">Featured for you</string>
+    <string name="home_spotlight_details">View details</string>
+    <string name="home_spotlight_surprise">Surprise me</string>
     <string name="home_type_show">Series</string>
     <string name="home_type_movie">Movie</string>
     <string name="home_minutes">%1$d min</string>

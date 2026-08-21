@@ -65,7 +65,7 @@ class MdblistLibrarySource(
     override suspend fun membership(bucket: LibraryBucket): LibrarySyncResult? {
         val key = session.currentKey()
         if (key.isBlank()) return null
-        val response = api.bucket("$ROOT${bucket.readPath}", key)
+        val response = api.wholeBucket("$ROOT${bucket.readPath}", key)
         val titleIds = response.tmdbIds()
         
         // MDBList sync/watched JSON returns a flat array of episodes at the top level

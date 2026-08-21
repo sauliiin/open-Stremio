@@ -9,12 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdblisthub.tv.core.ui.theme.HubTheme
 import com.mdblisthub.tv.navigation.HubNavHost
+import com.mdblisthub.tv.ui.intro.IntroScreen
 import com.mdblisthub.tv.update.AppUpdateManager
 import com.mdblisthub.tv.update.AppUpdateOverlay
 import java.util.Locale
@@ -40,6 +44,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val language by graph.uiPreferences.language
                 .collectAsStateWithLifecycle(initialValue = DEFAULT_LANGUAGE)
+            var introVisible by rememberSaveable {
+                mutableStateOf(graph.uiPreferences.startupIntroEnabled())
+            }
 
             LaunchedEffect(Unit) {
                 appUpdateManager.checkForUpdate()
@@ -78,6 +85,9 @@ class MainActivity : ComponentActivity() {
                     Box {
                         HubNavHost(graph = graph)
                         AppUpdateOverlay(manager = appUpdateManager)
+                        if (introVisible) {
+                            IntroScreen(onFinished = { introVisible = false })
+                        }
                     }
                 }
             }

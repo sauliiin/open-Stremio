@@ -22,6 +22,8 @@
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">Idioma do App</string>
     <string name="settings_autotrailer">Autotrailer</string>
+    <string name="settings_intro">Reproduzir introdução ao abrir o app</string>
+    <string name="settings_spotlight_hero">Hero de destaques</string>
     <string name="settings_section_subtitles">Legendas</string>
     <string name="settings_subtitle_auto_download">Download Automático de Legendas</string>
     <string name="settings_subtitle_default_lang">Idioma Predefinido da Legenda</string>
@@ -141,6 +143,9 @@
     <string name="home_resume_remove_title">Remover de continuar assistindo?</string>
     <string name="home_resume_remove_body">"%1$s" sai da fileira e a posição salva é apagada na sua conta MDBList.</string>
     <string name="home_because_you_watched">Porque você assistiu %1$s</string>
+    <string name="home_spotlight_eyebrow">Destaques para você</string>
+    <string name="home_spotlight_details">Ver detalhes</string>
+    <string name="home_spotlight_surprise">Surpreenda-me</string>
     <string name="home_type_show">Série</string>
     <string name="home_type_movie">Filme</string>
     <string name="home_minutes">%1$d min</string>

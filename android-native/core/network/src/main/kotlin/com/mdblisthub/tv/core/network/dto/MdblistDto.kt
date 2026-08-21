@@ -145,11 +145,24 @@ data class BucketTitleDto(
     val runtime: Int? = null,
 )
 
+/** `next_cursor` is what the following page is asked for by. */
+@Serializable
+data class BucketPaginationDto(
+    @SerialName("has_more") val hasMore: Boolean = false,
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
 @Serializable
 data class BucketResponseDto(
     val movies: List<BucketEntryDto> = emptyList(),
     val shows: List<BucketEntryDto> = emptyList(),
     val episodes: List<BucketEpisodeEntryDto> = emptyList(),
+    /**
+     * Absent on a response this app assembled by concatenating pages — see
+     * `wholeBucket`. Its absence there is the point: a merged bucket is not a
+     * page and has no page after it.
+     */
+    val pagination: BucketPaginationDto? = null,
 ) {
     fun tmdbIds(): List<Int> = (movies + shows).mapNotNull {
         it.movie?.ids?.tmdb ?: it.show?.ids?.tmdb ?: it.ids?.tmdb ?: it.id

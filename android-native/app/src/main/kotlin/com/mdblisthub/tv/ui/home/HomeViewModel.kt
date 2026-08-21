@@ -21,11 +21,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 
@@ -376,10 +379,147 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     private val _becauseYouWatched = MutableStateFlow<List<RecommendationRow>>(emptyList())
     val becauseYouWatched: StateFlow<List<RecommendationRow>> = _becauseYouWatched.asStateFlow()
 
+    /**
+     * "Destaques" — the titles the home hero pans across.
+     *
+     * Same lifetime and same reasoning as [becauseYouWatched]: derived from
+     * the watch history as it stands on this visit, nothing worth persisting.
+     */
+    private val _spotlight = MutableStateFlow<List<MediaItem>>(emptyList())
+    val spotlight: StateFlow<List<MediaItem>> = _spotlight.asStateFlow()
+
+    /**
+     * Whether the spotlight query has come back — however it came back.
+     *
+     * The screen needs the empty *result* told apart from the empty *initial
+     * value*, and a `List` cannot carry that distinction. While this is false
+     * the hero holds its place as a skeleton; once it is true an empty
+     * [spotlight] means the account genuinely has nothing to feature — no
+     * watch history, or nothing recommended off it that clears the bar — and
+     * the hero gives its space back to the rows instead of sitting empty.
+     */
+    private val _spotlightLoaded = MutableStateFlow(false)
+    val spotlightLoaded: StateFlow<Boolean> = _spotlightLoaded.asStateFlow()
+
+    /**
+     * Whether the viewer wants the hero at all — the Settings toggle.
+     *
+     * Seeded from the synchronous mirror rather than from a hard-coded
+     * default, so the very first composition already knows the answer. Seeded
+     * with `true` instead, a viewer who had turned the hero off would get a
+     * screen of skeleton on every cold start before the flow corrected it.
+     */
+    val spotlightEnabled: StateFlow<Boolean> = graph.uiPreferences.spotlightHero
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            graph.uiPreferences.startupSpotlightHero(),
+        )
+
+    private val _spotlightIndex = MutableStateFlow(0)
+
+    /**
+     * Which destaque is on screen.
+     *
+     * Held here rather than in the hero itself because the hero is an item in
+     * a `LazyColumn`: scrolling down to the third row disposes it, and state
+     * kept inside it would put the rotation back to the first title — and
+     * back to a `KenBurns` starting from zero — every time the viewer came
+     * back up to the top.
+     */
+    val spotlightItem: StateFlow<MediaItem?> =
+        kotlinx.coroutines.flow.combine(_spotlight, _spotlightIndex) { items, index ->
+            items.getOrNull(index)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** Advances the spotlight, wrapping. Drives both the timer and "Surpreenda-me". */
+    fun nextSpotlight() {
+        val size = _spotlight.value.size
+        if (size == 0) return
+        _spotlightIndex.value = (_spotlightIndex.value + 1) % size
+    }
+
+    /**
+     * The synopsis, genres and clearlogo behind the hero copy.
+     *
+     * Undebounced, unlike [focusedDetail]: the spotlight changes on a timer
+     * measured in seconds, never on a remote sweep, so there is no burst of
+     * intermediate values to settle. [MediaRepository.ensureDetail] is called
+     * first because nothing else warms these — they are TMDB recommendations
+     * the viewer has not focused, so Room has no row for them until asked.
+     */
+    val spotlightDetail: StateFlow<com.mdblisthub.tv.core.model.MediaDetail?> = spotlightItem
+        .flatMapLatest { item ->
+            if (item == null || item.tmdbId <= 0) {
+                flowOf(null)
+            } else {
+                kotlinx.coroutines.flow.flow<com.mdblisthub.tv.core.model.MediaDetail?> {
+                    // Null first, and it is not a formality. A `StateFlow`
+                    // holds its last value until the next one arrives, and
+                    // everything below this line is slower than the title
+                    // above it — so without this the hero spent the first
+                    // moment of every swap showing the new film's name over
+                    // the previous film's synopsis and genres, which reads as
+                    // the app having the wrong data rather than as loading.
+                    emit(null)
+
+                    coroutineScope {
+                        // Concurrently, not before: `observeDetail` answers
+                        // from Room, so a destaque that has already been
+                        // warmed — which, thanks to the prefetch below, is
+                        // nearly all of them — repaints on the next frame
+                        // instead of waiting out a network round trip that
+                        // is only there to refresh it.
+                        launch { graph.media.ensureDetail(item.type, item.tmdbId) }
+                        emitAll(graph.media.observeDetail(item.type, item.tmdbId))
+                    }
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     init {
         refreshDynamicRows()
         viewModelScope.launch {
             _becauseYouWatched.value = graph.recommendations.becauseYouWatched()
+        }
+        viewModelScope.launch {
+            // Warms the destaque *after* the one on screen.
+            //
+            // The rotation is the rare case where what comes next is known
+            // well in advance — sixteen seconds of it — and spending that on
+            // the fetch is what closes the gap the `emit(null)` above would
+            // otherwise leave visible. Keyed on the item rather than the
+            // index so that "Surpreenda-me" jumping the queue re-aims it.
+            kotlinx.coroutines.flow.combine(_spotlight, _spotlightIndex) { items, index ->
+                if (items.isEmpty()) null else items[(index + 1) % items.size]
+            }
+                .distinctUntilChanged()
+                .collect { next ->
+                    if (next != null && next.tmdbId > 0) {
+                        graph.prefetcher.prefetch(next.type, next.tmdbId)
+                    }
+                }
+        }
+        viewModelScope.launch {
+            // Driven by the preference rather than fired once: turning the
+            // hero off has to stop costing a `sync/watched` plus five TMDB
+            // calls per launch, and turning it back on has to fill it without
+            // waiting for a restart. `collectLatest` cancels a fetch still in
+            // flight when the switch is flipped back the other way.
+            spotlightEnabled.collectLatest { enabled ->
+                if (!enabled) {
+                    _spotlight.value = emptyList()
+                    _spotlightLoaded.value = true
+                    return@collectLatest
+                }
+                _spotlightLoaded.value = false
+                try {
+                    _spotlight.value = graph.recommendations.spotlight()
+                } finally {
+                    _spotlightLoaded.value = true
+                }
+            }
         }
     }
 
