@@ -38,6 +38,7 @@ data class ReleaseInfo(
     val tag: String,
     val pageUrl: String,
     val assets: List<ReleaseAsset>,
+    val notes: String? = null,
 )
 
 sealed interface UpdateUiState {
@@ -222,6 +223,7 @@ class AppUpdateManager(
             ReleaseInfo(
                 tag = response.tagName,
                 pageUrl = response.htmlUrl,
+                notes = formatReleaseNotes(response.body),
                 assets = response.assets
                     .filter { it.name.endsWith(".apk", ignoreCase = true) }
                     .map { asset ->
@@ -324,6 +326,20 @@ internal fun compareVersions(remote: String, local: String): Int? {
     return 0
 }
 
+/** Turns the common GitHub Release Markdown into readable Compose text. */
+internal fun formatReleaseNotes(markdown: String?): String? = markdown
+    ?.replace(Regex("(?s)<!--.*?-->"), "")
+    ?.replace(Regex("""(?m)^[ \t]{0,3}#{1,6}[ \t]*"""), "")
+    ?.replace(Regex("""!\[([^]]*)]\([^)]+\)"""), "$1")
+    ?.replace(Regex("""\[([^]]+)]\([^)]+\)"""), "$1")
+    ?.replace(Regex("""(?m)^[ \t]*[-*+][ \t]+"""), "• ")
+    ?.replace("**", "")
+    ?.replace("__", "")
+    ?.replace("`", "")
+    ?.replace(Regex("\n{3,}"), "\n\n")
+    ?.trim()
+    ?.takeIf(String::isNotEmpty)
+
 private fun versionParts(version: String): List<Int>? {
     val parts = Regex("\\d+").findAll(version).mapNotNull { it.value.toIntOrNull() }.toList()
     return parts.takeIf { it.isNotEmpty() }
@@ -346,6 +362,7 @@ private fun sha256(file: File): String {
 private data class GitHubReleaseResponse(
     @SerialName("tag_name") val tagName: String,
     @SerialName("html_url") val htmlUrl: String,
+    val body: String? = null,
     val assets: List<GitHubAssetResponse> = emptyList(),
 )
 

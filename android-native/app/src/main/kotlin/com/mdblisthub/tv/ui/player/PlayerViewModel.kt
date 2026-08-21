@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.data.mapper.Languages
 import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaDetail
@@ -379,7 +380,7 @@ class PlayerViewModel(
         // seen, not to be chosen.
         val embedded = playback.subtitleTracks.indexOfFirst { track ->
             track.playable && (
-                track.language?.lowercase()?.startsWith(preferredLang) == true ||
+                Languages.matches(track.language, preferredLang) ||
                     track.label?.lowercase()?.contains(preferredLang) == true
                 )
         }

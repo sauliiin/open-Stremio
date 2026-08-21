@@ -41,6 +41,10 @@ class MainActivity : ComponentActivity() {
             val language by graph.uiPreferences.language
                 .collectAsStateWithLifecycle(initialValue = DEFAULT_LANGUAGE)
 
+            LaunchedEffect(Unit) {
+                appUpdateManager.checkForUpdate()
+            }
+
             val activity = this
             val localeContext = remember(language) {
                 val locale = Locale.forLanguageTag(language)
@@ -78,8 +82,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-
-        appUpdateManager.checkForUpdate()
     }
 
     override fun onResume() {

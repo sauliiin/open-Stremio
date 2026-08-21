@@ -31,6 +31,23 @@ class AppUpdateManagerTest {
         assertEquals(universal, selectApkAsset(listOf(arm64, universal), listOf("riscv64")))
     }
 
+    @Test
+    fun releaseNotesAreConvertedFromMarkdownToReadableText() {
+        val markdown = """
+            <!-- generated -->
+            ## What changed
+
+            - Added **Croatian** subtitles
+            - Read the [full notes](https://example.test/notes)
+        """.trimIndent()
+
+        assertEquals(
+            "What changed\n\n• Added Croatian subtitles\n• Read the full notes",
+            formatReleaseNotes(markdown),
+        )
+        assertNull(formatReleaseNotes("   "))
+    }
+
     private fun asset(name: String) = ReleaseAsset(
         name = name,
         downloadUrl = "https://example.test/$name",

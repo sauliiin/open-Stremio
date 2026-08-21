@@ -370,7 +370,7 @@ class StreamsRepository(
         return runCatching {
             openSubtitlesApi.search(
                 imdbId = imdbId,
-                languages = "pt-br,en",
+                languages = "pt-br,en,hr,sr,bs",
                 season = season,
                 episode = episode,
                 type = if (season != null) "episode" else "movie",
@@ -390,7 +390,14 @@ class StreamsRepository(
         val season = parts.getOrNull(1)?.toIntOrNull()
         val episode = parts.getOrNull(2)?.toIntOrNull()
 
-        listOf("pb" to "pob", "pt" to "por", "en" to "eng")
+        listOf(
+            "pb" to "pob",
+            "pt" to "por",
+            "en" to "eng",
+            "hr" to "hrv",
+            "sr" to "srp",
+            "bs" to "bos",
+        )
             .map { (wyzieLang, normalizedLang) ->
                 async {
                     runCatching {

@@ -67,7 +67,10 @@ val ALL_LANGUAGES = listOf(
     "hi" to "हिन्दी",
     "tr" to "Türkçe",
     "pl" to "Polski",
-    "nl" to "Nederlands"
+    "nl" to "Nederlands",
+    "hr" to "Hrvatski",
+    "sr" to "Српски",
+    "bs" to "Bosanski"
 )
 
 data class SettingsUiState(
@@ -97,7 +100,7 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     init {
         viewModelScope.launch {
             // Nested rather than one call: `combine` has typed overloads up to
-            // five flows, and this needs seven.
+            // five flows, and this screen observes more than that.
             combine(
                 graph.uiPreferences.language,
                 graph.uiPreferences.autotrailer,
@@ -266,7 +269,11 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
         item(key = "interface") {
             SettingsCard(title = stringResource(R.string.settings_section_interface)) {
                 SettingsRow(label = stringResource(R.string.settings_language)) {
-                    val langs = listOf("pt" to stringResource(R.string.lang_pt), "en" to stringResource(R.string.lang_en))
+                    val langs = listOf(
+                        "pt" to stringResource(R.string.lang_pt),
+                        "en" to stringResource(R.string.lang_en),
+                        "es" to stringResource(R.string.lang_es),
+                    )
                     langs.forEach { (code, name) ->
                         HubButton(
                             text = name,
@@ -285,6 +292,7 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                         onClick = viewModel::toggleAutotrailer,
                     )
                 }
+
             }
         }
 

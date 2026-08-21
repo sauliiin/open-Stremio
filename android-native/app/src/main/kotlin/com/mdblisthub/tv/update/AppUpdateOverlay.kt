@@ -1,15 +1,19 @@
 package com.mdblisthub.tv.update
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -73,6 +77,7 @@ private fun AvailableContent(state: UpdateUiState.Available, manager: AppUpdateM
         style = MaterialTheme.typography.bodyLarge,
         color = HubColors.TextDim,
     )
+    ReleaseNotes(state.release.notes)
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         HubButton(
             text = stringResource(R.string.update_now),
@@ -80,6 +85,30 @@ private fun AvailableContent(state: UpdateUiState.Available, manager: AppUpdateM
             onClick = { manager.downloadAndInstall(state.release) },
         )
         HubButton(text = stringResource(R.string.update_later), onClick = manager::dismiss)
+    }
+}
+
+@Composable
+private fun ReleaseNotes(notes: String?) {
+    Text(
+        text = stringResource(R.string.update_whats_new),
+        style = MaterialTheme.typography.titleMedium,
+        color = HubColors.Text,
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 220.dp)
+            .background(HubColors.SurfaceStrong, RoundedCornerShape(10.dp))
+            .verticalScroll(rememberScrollState())
+            .focusable()
+            .padding(14.dp),
+    ) {
+        Text(
+            text = notes ?: stringResource(R.string.update_notes_unavailable),
+            style = MaterialTheme.typography.bodyMedium,
+            color = HubColors.TextDim,
+        )
     }
 }
 

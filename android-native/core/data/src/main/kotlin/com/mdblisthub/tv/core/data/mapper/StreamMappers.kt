@@ -221,6 +221,19 @@ object Languages {
         "tib" to "bo", "wel" to "cy", "alb" to "sq", "dut_be" to "nl-BE",
     )
 
+    /** ISO 639-2 codes used by subtitle addons, reduced to picker codes. */
+    private val PRIMARY_ALIASES = mapOf(
+        "por" to "pt", "pob" to "pt", "pb" to "pt",
+        "eng" to "en", "spa" to "es",
+        "fre" to "fr", "fra" to "fr",
+        "ita" to "it", "ger" to "de", "deu" to "de",
+        "rus" to "ru", "jpn" to "ja", "kor" to "ko",
+        "chi" to "zh", "zho" to "zh", "ara" to "ar",
+        "hin" to "hi", "tur" to "tr", "pol" to "pl",
+        "dut" to "nl", "nld" to "nl",
+        "hrv" to "hr", "srp" to "sr", "bos" to "bs",
+    )
+
     /**
      * The language's name **in the interface's own language**, not in a fixed one.
      *
@@ -258,12 +271,22 @@ object Languages {
     private fun unknownLabel(locale: Locale): String =
         if (locale.language == "pt") "Desconhecido" else "Unknown"
 
+    /** Matches two- and three-letter spellings of the same language. */
+    fun matches(code: String?, preferred: String?): Boolean {
+        val candidate = primary(code)
+        return candidate.isNotBlank() && candidate == primary(preferred)
+    }
+
+    private fun primary(code: String?): String {
+        val base = code.orEmpty().lowercase().trim().replace('_', '-').substringBefore('-')
+        return PRIMARY_ALIASES[base] ?: base
+    }
+
     /** Portuguese first, then English, then everything else. */
     fun rank(code: String?): Int {
-        val key = code.orEmpty().lowercase()
-        return when {
-            key.startsWith("po") || key.startsWith("pt") -> 0
-            key.startsWith("en") -> 1
+        return when (primary(code)) {
+            "pt" -> 0
+            "en" -> 1
             else -> 2
         }
     }

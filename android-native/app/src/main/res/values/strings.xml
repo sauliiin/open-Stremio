@@ -34,6 +34,7 @@
     <string name="settings_audio_preferred_lang">Faixa de Áudio Preferida</string>
     <string name="lang_pt">Português</string>
     <string name="lang_en">English</string>
+    <string name="lang_es">Espanhol</string>
     <string name="detail_watch">Assistir</string>
     <string name="detail_watch_episode">Assistir T%1$dE%2$d</string>
     <string name="detail_select_source">Selecionar Fonte</string>
@@ -267,6 +268,8 @@
     <!-- Atualização automática via GitHub Releases -->
     <string name="update_title">Atualização do OmniStream</string>
     <string name="update_available">A versão %1$s está disponível. Baixe agora o APK mais recente do GitHub.</string>
+    <string name="update_whats_new">O que mudou</string>
+    <string name="update_notes_unavailable">Não foram informadas notas para esta versão.</string>
     <string name="update_now">Atualizar agora</string>
     <string name="update_later">Mais tarde</string>
     <string name="update_downloading">Baixando e verificando a atualização… %1$d%%</string>

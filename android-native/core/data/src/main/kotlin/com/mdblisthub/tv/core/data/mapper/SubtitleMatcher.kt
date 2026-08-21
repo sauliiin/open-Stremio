@@ -24,7 +24,7 @@ object SubtitleMatcher {
         val releaseTokens = playingRelease?.let(::tokens) ?: emptySet()
 
         if (preferredLang != null) {
-            val preferred = bestOf(options.filter { it.lang.lowercase().startsWith(preferredLang) }, releaseTokens)
+            val preferred = bestOf(options.filter { Languages.matches(it.lang, preferredLang) }, releaseTokens)
             if (preferred != null) return preferred
         }
 

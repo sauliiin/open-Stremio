@@ -82,4 +82,17 @@ class SubtitleMatcherTest {
         assertEquals("a", SubtitleMatcher.bestMatch(listOf(english), null)?.key)
         assertEquals(null, SubtitleMatcher.bestMatch(emptyList(), null))
     }
+
+    @Test
+    fun `preferred Balkan languages match addon ISO 639-2 codes`() {
+        val options = listOf(
+            option("croatian", "hrv", releaseHint = null),
+            option("serbian", "srp", releaseHint = null),
+            option("bosnian", "bos", releaseHint = null),
+        )
+
+        assertEquals("croatian", SubtitleMatcher.bestMatch(options, null, "hr")?.key)
+        assertEquals("serbian", SubtitleMatcher.bestMatch(options, null, "sr")?.key)
+        assertEquals("bosnian", SubtitleMatcher.bestMatch(options, null, "bs")?.key)
+    }
 }

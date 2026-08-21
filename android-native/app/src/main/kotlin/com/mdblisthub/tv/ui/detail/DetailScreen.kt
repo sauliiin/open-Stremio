@@ -773,11 +773,11 @@ private const val UNWATCHED_ALPHA_FALLBACK = 0.45f
 
 /**
  * TMDB's `air_date` ("2026-12-18") as a short weekday + date, matching the
- * two formats this app ships strings for:
+ * three formats this app ships strings for:
  *
- * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"
+ * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"   es: "vie., 18 dic 2026"
  *
- * Takes the raw "pt"/"en" code rather than a `Locale` — `Locale.forLanguageTag`
+ * Takes the raw "pt"/"en"/"es" code rather than a `Locale` — `Locale.forLanguageTag`
  * on a bare "pt" resolves to European Portuguese, whose CLDR weekday
  * abbreviations don't reliably match Brazil's; building the locale explicitly
  * for each branch pins the exact one this format was written against.
@@ -790,10 +790,10 @@ private fun formatAirDate(airDate: String, language: String): String? {
     val parsed = runCatching {
         SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(airDate)
     }.getOrNull() ?: return null
-    return if (language == "pt") {
-        SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
-    } else {
-        SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
+    return when (language) {
+        "pt" -> SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
+        "es" -> SimpleDateFormat("EEE, d MMM yyyy", Locale.forLanguageTag("es")).format(parsed)
+        else -> SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
     }
 }
 
