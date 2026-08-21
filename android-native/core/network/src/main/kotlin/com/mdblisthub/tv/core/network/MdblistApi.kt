@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.network
 
+import com.mdblisthub.tv.core.network.dto.BucketPaginationDto
 import com.mdblisthub.tv.core.network.dto.BucketResponseDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteDto
 import com.mdblisthub.tv.core.network.dto.MdbInfoDto
@@ -62,8 +63,20 @@ interface MdblistApi {
         @Query("append_to_response") append: String,
     ): MdbInfoDto
 
+    /**
+     * One page of a library bucket.
+     *
+     * [cursor] is null for the first page and [BucketPaginationDto.nextCursor]
+     * thereafter. Callers want `wholeBucket`, not this — a single page is
+     * almost never the answer to "what has this account watched".
+     */
     @GET
-    suspend fun bucket(@Url url: String, @Query("apikey") apiKey: String): BucketResponseDto
+    suspend fun bucket(
+        @Url url: String,
+        @Query("apikey") apiKey: String,
+        @Query("limit") limit: Int,
+        @Query("cursor") cursor: String?,
+    ): BucketResponseDto
 
     @POST
     suspend fun bucketWrite(

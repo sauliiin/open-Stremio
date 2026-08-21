@@ -99,6 +99,51 @@ class UiPreferencesStore(context: Context) {
         prefs[KEY_AUTOTRAILER] ?: false
     }
 
+    /** Whether the bundled opening video is shown when the app starts. */
+    val introEnabled: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_INTRO_ENABLED] ?: true
+    }
+
+    /**
+     * Read before the first composition so a disabled intro never flashes
+     * while DataStore is loading.
+     */
+    fun startupIntroEnabled(): Boolean =
+        startupMirror.getBoolean(KEY_INTRO_ENABLED.name, true)
+
+    suspend fun saveIntroEnabled(enabled: Boolean) {
+        startupMirror.edit().putBoolean(KEY_INTRO_ENABLED.name, enabled).apply()
+        store.edit { it[KEY_INTRO_ENABLED] = enabled }
+    }
+
+    /**
+     * Whether the home opens on the "destaques" hero.
+     *
+     * Defaults to on: it is the home screen's own shape, not an extra, and a
+     * new install should look the way the app is meant to look.
+     */
+    val spotlightHero: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_SPOTLIGHT_HERO] ?: true
+    }
+
+    /**
+     * The same preference, readable synchronously.
+     *
+     * Exists for the one frame that cannot wait for DataStore: the home
+     * decides whether to lay out a hero before the flow has emitted, and
+     * without this a viewer who turned the hero *off* would still get a
+     * screen's worth of skeleton on every cold start, followed by the rows
+     * jumping up to replace it. Same mirror, and same reason, as
+     * [startupTheme].
+     */
+    fun startupSpotlightHero(): Boolean =
+        startupMirror.getBoolean(KEY_SPOTLIGHT_HERO.name, true)
+
+    suspend fun saveSpotlightHero(enabled: Boolean) {
+        startupMirror.edit().putBoolean(KEY_SPOTLIGHT_HERO.name, enabled).apply()
+        store.edit { it[KEY_SPOTLIGHT_HERO] = enabled }
+    }
+
     suspend fun saveAutotrailer(enabled: Boolean) {
         startupMirror.edit().putBoolean(KEY_AUTOTRAILER.name, enabled).apply()
         store.edit { it[KEY_AUTOTRAILER] = enabled }
@@ -192,6 +237,8 @@ class UiPreferencesStore(context: Context) {
         const val STARTUP_MIRROR = "ui-preferences-startup"
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")
+        val KEY_INTRO_ENABLED = booleanPreferencesKey("intro_enabled")
+        val KEY_SPOTLIGHT_HERO = booleanPreferencesKey("spotlight_hero")
         val KEY_LIBRARY_PROVIDER = stringPreferencesKey("library_provider")
         val KEY_LANGUAGE = stringPreferencesKey("language")
         val KEY_SUBTITLE_AUTO_DOWNLOAD = booleanPreferencesKey("subtitle_auto_download")

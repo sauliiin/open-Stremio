@@ -135,6 +135,15 @@ data class TmdbSearchResultDto(
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     @SerialName("vote_average") val voteAverage: Double = 0.0,
+    /**
+     * How many people that average is made of.
+     *
+     * Only the spotlight reads it, and it is the difference between a real
+     * recommendation and a title carrying a 9.0 built out of three votes —
+     * which, sorted by score, is exactly what floats to the top of a
+     * "destaques" carousel. See `RecommendationsRepository.MIN_SPOTLIGHT_VOTES`.
+     */
+    @SerialName("vote_count") val voteCount: Int = 0,
 )
 
 @Serializable

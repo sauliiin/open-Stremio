@@ -653,12 +653,12 @@ private fun AutoScrollText(
     val scrollState = rememberScrollState()
     LaunchedEffect(text) {
         scrollState.scrollTo(0)
-        delay(4000)
+        delay(7000)
         while (isActive) {
             val max = scrollState.maxValue
             if (max > 0) {
-                // 80ms/px
-                scrollState.animateScrollTo(max, animationSpec = tween(durationMillis = max * 80, easing = LinearEasing))
+                // 190ms/px, matching the home hero's copy of this helper.
+                scrollState.animateScrollTo(max, animationSpec = tween(durationMillis = max * 190, easing = LinearEasing))
                 delay(4000)
                 scrollState.animateScrollTo(0, animationSpec = tween(durationMillis = 800))
                 delay(3000)

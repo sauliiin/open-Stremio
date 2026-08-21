@@ -76,6 +76,9 @@ val ALL_LANGUAGES = listOf(
 data class SettingsUiState(
     val language: String = "en",
     val autotrailer: Boolean = false,
+    val introEnabled: Boolean = true,
+    /** Defaults to on, matching `UiPreferencesStore.spotlightHero`. */
+    val spotlightHero: Boolean = true,
     val subtitleAutoDownload: Boolean = true,
     val subtitleLanguage: String = "pt",
     val subtitleColor: String = "white",
@@ -124,6 +127,12 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.dimUnwatchedEpisodes) { partial, dim ->
                     partial.copy(dimUnwatchedEpisodes = dim)
+                }
+                .combine(graph.uiPreferences.introEnabled) { partial, enabled ->
+                    partial.copy(introEnabled = enabled)
+                }
+                .combine(graph.uiPreferences.spotlightHero) { partial, hero ->
+                    partial.copy(spotlightHero = hero)
                 }
                 .combine(graph.traktAuth.account) { partial, account ->
                     partial.copy(
@@ -210,6 +219,14 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
 
     fun setLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveLanguage(lang) }
     fun toggleAutotrailer() = viewModelScope.launch { graph.uiPreferences.saveAutotrailer(!_state.value.autotrailer) }
+
+    fun toggleIntro() = viewModelScope.launch {
+        graph.uiPreferences.saveIntroEnabled(!_state.value.introEnabled)
+    }
+
+    fun toggleSpotlightHero() = viewModelScope.launch {
+        graph.uiPreferences.saveSpotlightHero(!_state.value.spotlightHero)
+    }
     fun toggleSubtitleAutoDownload() = viewModelScope.launch { graph.uiPreferences.saveSubtitleAutoDownload(!_state.value.subtitleAutoDownload) }
     fun setSubtitleLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleLanguage(lang) }
     fun setSubtitleColor(color: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleColor(color) }
@@ -290,6 +307,26 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                         ),
                         primary = state.autotrailer,
                         onClick = viewModel::toggleAutotrailer,
+                    )
+                }
+
+                SettingsRow(label = stringResource(R.string.settings_intro)) {
+                    HubButton(
+                        text = stringResource(
+                            if (state.introEnabled) R.string.settings_on else R.string.settings_off,
+                        ),
+                        primary = state.introEnabled,
+                        onClick = viewModel::toggleIntro,
+                    )
+                }
+
+                SettingsRow(label = stringResource(R.string.settings_spotlight_hero)) {
+                    HubButton(
+                        text = stringResource(
+                            if (state.spotlightHero) R.string.settings_on else R.string.settings_off,
+                        ),
+                        primary = state.spotlightHero,
+                        onClick = viewModel::toggleSpotlightHero,
                     )
                 }
 
