@@ -127,6 +127,7 @@ fun SpotlightHero(
     modifier: Modifier = Modifier,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
+    primaryFocusRequester: FocusRequester? = null,
 ) {
     val heroHeight = spotlightHeroHeight()
 
@@ -223,6 +224,7 @@ fun SpotlightHero(
                 onNext = onNext,
                 requestInitialFocus = requestInitialFocus,
                 onInitialFocusHandled = onInitialFocusHandled,
+                primaryFocusRequester = primaryFocusRequester,
             )
         }
     }
@@ -434,8 +436,10 @@ private fun SpotlightActions(
     onNext: () -> Unit,
     requestInitialFocus: Boolean,
     onInitialFocusHandled: () -> Unit,
+    primaryFocusRequester: FocusRequester?,
 ) {
-    val primaryFocus = remember { FocusRequester() }
+    val defaultPrimaryFocus = remember { FocusRequester() }
+    val primaryFocus = primaryFocusRequester ?: defaultPrimaryFocus
     LaunchedEffect(requestInitialFocus) {
         if (requestInitialFocus && primaryFocus.requestFocus()) {
             onInitialFocusHandled()

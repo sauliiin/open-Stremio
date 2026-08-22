@@ -29,6 +29,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
@@ -77,6 +82,13 @@ fun SideRail(
      */
     focusRequester: FocusRequester? = null,
     /**
+     * Explicit exit for Right from a rail item.
+     *
+     * The rail can be painted over content, so geometric focus search no
+     * longer has a dependable sibling width to use as its exit route.
+     */
+    onMoveFocusRight: (() -> Boolean)? = null,
+    /**
      * Holds the rail open even though nothing here has focus yet.
      *
      * Needed because the collapsed rail is `width(0.dp)`, and a zero-width node
@@ -121,6 +133,7 @@ fun SideRail(
                 expanded = expanded,
                 selected = item.key == selectedKey,
                 onSelect = { onSelect(item) },
+                onMoveFocusRight = onMoveFocusRight,
             )
         }
     }
@@ -132,6 +145,7 @@ private fun RailRow(
     expanded: Boolean,
     selected: Boolean,
     onSelect: () -> Unit,
+    onMoveFocusRight: (() -> Boolean)?,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -169,6 +183,11 @@ private fun RailRow(
                   }
             }
             .background(background)
+            .onPreviewKeyEvent { event ->
+                event.type == KeyEventType.KeyDown &&
+                    event.key == Key.DirectionRight &&
+                    (onMoveFocusRight?.invoke() == true)
+            }
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
             .padding(horizontal = 14.dp, vertical = 11.dp),
     ) {

@@ -9,6 +9,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.SolidColor
@@ -311,6 +313,8 @@ fun HomeScreen(
         !isNormalTheme
     val hasResumeItem = resumePoints.isNotEmpty() && !isEditMode
     val homeListState = rememberLazyListState()
+    val heroPrimaryFocusRequester = remember { FocusRequester() }
+    var lastContentFocusWasSpotlight by remember { mutableStateOf(false) }
     var browsingRowsWithFocusedHero by remember(HubColors.variant) { mutableStateOf(false) }
     val showFocusedHeroForRows = hasSpotlightHero &&
         HubColors.hasHeroTrailer &&
@@ -328,6 +332,7 @@ fun HomeScreen(
     }
 
     val onShelfItemFocused = {
+        lastContentFocusWasSpotlight = false
         if (hasSpotlightHero && HubColors.hasHeroTrailer) {
             browsingRowsWithFocusedHero = true
         }
@@ -460,6 +465,7 @@ fun HomeScreen(
     var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
     val railFocusRequester = remember { FocusRequester() }
+    val contentFocusRequester = remember { FocusRequester() }
     /**
      * Whether anything at all on this screen holds focus.
      *
@@ -490,6 +496,7 @@ fun HomeScreen(
      */
     val pinnedForRail = remember { mutableStateOf(false) }
     var railFocused by remember { mutableStateOf(false) }
+    var railReturnListPosition by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /**
      * The row focus should come back to, named for the list's `enter` below.
      *
@@ -503,9 +510,7 @@ fun HomeScreen(
      */
     var lastFocusedRow by remember { mutableStateOf<FocusRequester?>(null) }
     LaunchedEffect(railFocused) {
-        if (railFocused) {
-            pinnedForRail.value = true
-        } else if (pinnedForRail.value) {
+        if (!railFocused && pinnedForRail.value) {
             // Long enough to cover the restore's bring-into-view, short enough
             // that a D-pad press the user makes after it is scrolled normally.
             kotlinx.coroutines.delay(200)
@@ -811,12 +816,52 @@ fun HomeScreen(
             FocusedBackdrop(viewModel)
         }
 
-        Row(Modifier.fillMaxSize()) {
+        // The rail belongs on top of Home, not beside it. Giving it a share
+        // of this layout's width remeasures the spotlight while it opens: a
+        // long title can gain a line, pushing the action row below the
+        // hero's clipped bottom, and the backdrop visibly recrops on every
+        // trip to the menu. Keeping the content full-width makes both focus
+        // states the same Hero; the rail merely covers its left edge.
+        Box(Modifier.fillMaxSize()) content@{
             SideRail(
                 items = rail,
                 selectedKey = "home",
                 focusRequester = railFocusRequester,
+                onMoveFocusRight = {
+                    when {
+                        lastContentFocusWasSpotlight ->
+                            heroPrimaryFocusRequester.requestFocus()
+                        lastFocusedRow != null -> {
+                            val rowFocus = lastFocusedRow
+                            val listPosition = railReturnListPosition
+                            if (listPosition == null) {
+                                rowFocus?.requestFocus() == true
+                            } else {
+                                // A playing trailer adds an AndroidView to the
+                                // fixed hero while focus is on the rail. That
+                                // re-layout can make LazyColumn re-anchor to
+                                // its first item (the Spotlight) before the
+                                // card receives focus again, producing two
+                                // heroes stacked on screen. Restore the exact
+                                // position captured on entry before handing
+                                // focus back to the row.
+                                scope.launch {
+                                    homeListState.scrollToItem(
+                                        listPosition.first,
+                                        listPosition.second,
+                                    )
+                                    if (rowFocus?.requestFocus() != true) {
+                                        contentFocusRequester.requestFocus()
+                                    }
+                                }
+                                true
+                            }
+                        }
+                        else -> contentFocusRequester.requestFocus()
+                    }
+                },
                 forceExpanded = railRescue,
+                modifier = Modifier.zIndex(1f),
                 onSelect = { item ->
                     when (item.key) {
                         "search" -> onOpenSearch()
@@ -829,7 +874,21 @@ fun HomeScreen(
                         "exit" -> showExitDialog = true
                     }
                 },
-                onFocusChanged = { railFocused = it },
+                onFocusChanged = { focused ->
+                    railFocused = focused
+                    if (focused) {
+                        // This must be synchronous with the focus hand-off.
+                        // A LaunchedEffect can start a frame later, after a
+                        // fast Right press has already asked the list to bring
+                        // its row back into view.
+                        pinnedForRail.value = true
+                        if (!lastContentFocusWasSpotlight && lastFocusedRow != null) {
+                            railReturnListPosition =
+                                homeListState.firstVisibleItemIndex to
+                                    homeListState.firstVisibleItemScrollOffset
+                        }
+                    }
+                },
             )
 
             if (!mdblistLinked && lists.isEmpty() && feeds.isEmpty() && resumePoints.isEmpty() && extraCatalogs.isEmpty()) {
@@ -858,7 +917,7 @@ fun HomeScreen(
                         modifier = Modifier.focusRequester(emptyStateFocusRequester),
                     )
                 }
-                return@Row
+                return@content
             }
 
             // Gated on the sync flag, not on the row lists. The old condition
@@ -905,10 +964,15 @@ fun HomeScreen(
                         modifier = Modifier.focusRequester(emptyStateFocusRequester),
                     )
                 }
-                return@Row
+                return@content
             }
 
-            Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .focusRequester(contentFocusRequester)
+                    .focusGroup(),
+            ) {
                 // Cyberflix and Optimus Prime restore their focused-title hero
                 // after focus leaves the spotlight for a shelf. That is where
                 // their clearlogo, synopsis and autoplaying trailer live.
@@ -1052,10 +1116,14 @@ fun HomeScreen(
                                     requestInitialFocus = initialNormalFocusPending &&
                                         spotlight.isNotEmpty(),
                                     onInitialFocusHandled = onInitialNormalFocusHandled,
+                                    primaryFocusRequester = heroPrimaryFocusRequester,
                                     modifier = Modifier.onFocusChanged { focus ->
-                                        if (focus.hasFocus && browsingRowsWithFocusedHero) {
-                                            browsingRowsWithFocusedHero = false
-                                            scope.launch { homeListState.animateScrollToItem(0) }
+                                        if (focus.hasFocus) {
+                                            lastContentFocusWasSpotlight = true
+                                            if (browsingRowsWithFocusedHero) {
+                                                browsingRowsWithFocusedHero = false
+                                                scope.launch { homeListState.animateScrollToItem(0) }
+                                            }
                                         }
                                     },
                                 )
@@ -1529,6 +1597,7 @@ private fun SpotlightHeroBlock(
     onOpenTitle: (MediaItem) -> Unit,
     requestInitialFocus: Boolean,
     onInitialFocusHandled: () -> Unit,
+    primaryFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     val item by viewModel.spotlightItem.collectAsStateWithLifecycle()
@@ -1541,6 +1610,7 @@ private fun SpotlightHeroBlock(
         onNext = viewModel::nextSpotlight,
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
+        primaryFocusRequester = primaryFocusRequester,
         modifier = modifier,
     )
 }
