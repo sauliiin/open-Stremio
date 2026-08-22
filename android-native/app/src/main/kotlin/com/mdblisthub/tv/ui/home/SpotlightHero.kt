@@ -704,7 +704,13 @@ private fun heroArtworkFilter(): ColorFilter {
  * the first row shows through the veil's lower fade, which is what tells the
  * viewer there is anything below the hero at all.
  */
-private const val HERO_HEIGHT_FRACTION = 0.84f
+/**
+ * Leaves the first shelf visible at rest so artwork and cards read as a single
+ * composition instead of two consecutive pages. The backdrop remains the
+ * dominant element, but its bottom gradient now lands immediately above the
+ * row the viewer is about to browse.
+ */
+private const val HERO_HEIGHT_FRACTION = 0.68f
 
 /**
  * How long one destaque holds the screen before the next takes over.
@@ -730,7 +736,7 @@ private const val SPOTLIGHT_DWELL_MS = 21_000L
 private const val KEN_BURNS_MS = 26_000
 
 /** The web hero's `hero-reveal`, also used for the swap between destaques. */
-private const val REVEAL_MS = 1_400
+private const val REVEAL_MS = 520
 
 /** `cubic-bezier(0.37, 0, 0.28, 1)` — the television keyframes' own easing. */
 private val KenBurnsEasing = CubicBezierEasing(0.37f, 0f, 0.28f, 1f)

@@ -7,8 +7,11 @@ import android.net.Uri
 import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +60,9 @@ import com.mdblisthub.tv.core.model.StremioAccount
 import com.mdblisthub.tv.core.model.StremioImportReport
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
@@ -909,13 +915,14 @@ private fun GettingStartedCard(
     onInstall: () -> Unit,
     onConfigure: () -> Unit,
 ) {
+    val shape = RoundedCornerShape(HubShapes.Panel)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(HubColors.Surface.copy(alpha = 0.65f))
-            .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp))
-            .padding(20.dp),
+            .clip(shape)
+            .background(HubColors.Surface.copy(alpha = HubEffects.MutedSurfaceAlpha))
+            .border(HubStrokes.Hairline, HubColors.Border.copy(alpha = 0.62f), shape)
+            .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -927,9 +934,13 @@ private fun GettingStartedCard(
                 Spacer(Modifier.weight(1f))
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
+                        .clip(RoundedCornerShape(HubShapes.Pill))
                         .background(HubColors.Rotten.copy(alpha = 0.14f))
-                        .border(1.dp, HubColors.Rotten.copy(alpha = 0.4f), RoundedCornerShape(999.dp))
+                        .border(
+                            HubStrokes.Hairline,
+                            HubColors.Rotten.copy(alpha = 0.4f),
+                            RoundedCornerShape(HubShapes.Pill),
+                        )
                         .padding(horizontal = 10.dp, vertical = 4.dp),
                 ) {
                     Text(text = stringResource(it), style = MaterialTheme.typography.labelSmall, color = HubColors.Rotten)
@@ -966,12 +977,14 @@ private fun openUrl(context: Context, url: String) {
 
 @Composable
 private fun AddonRow(addon: Addon, onRemove: () -> Unit) {
+    val shape = RoundedCornerShape(HubShapes.Card)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(HubColors.Surface.copy(alpha = 0.65f))
-            .padding(16.dp),
+            .clip(shape)
+            .background(HubColors.Surface.copy(alpha = HubEffects.MutedSurfaceAlpha))
+            .border(HubStrokes.Hairline, HubColors.Border.copy(alpha = 0.55f), shape)
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -996,13 +1009,14 @@ private fun AddonRow(addon: Addon, onRemove: () -> Unit) {
 
 @Composable
 private fun SyncCard(accent: androidx.compose.ui.graphics.Color, content: @Composable ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(HubShapes.Panel)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(accent.copy(alpha = 0.07f))
-            .border(1.dp, accent.copy(alpha = 0.26f), RoundedCornerShape(14.dp))
-            .padding(20.dp),
+            .clip(shape)
+            .background(HubColors.Surface.copy(alpha = HubEffects.GlassSurfaceAlpha))
+            .border(HubStrokes.Hairline, accent.copy(alpha = 0.34f), shape)
+            .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         content = content,
     )
@@ -1014,12 +1028,12 @@ private typealias ColumnScope = androidx.compose.foundation.layout.ColumnScope
 private fun StatusPill(on: Boolean) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
+            .clip(RoundedCornerShape(HubShapes.Pill))
             .background(if (on) HubColors.Accent2.copy(alpha = 0.16f) else HubColors.Surface)
             .border(
-                1.dp,
+                HubStrokes.Hairline,
                 if (on) HubColors.Accent2.copy(alpha = 0.4f) else HubColors.Border,
-                RoundedCornerShape(999.dp),
+                RoundedCornerShape(HubShapes.Pill),
             )
             .padding(horizontal = 9.dp, vertical = 3.dp),
     ) {
@@ -1052,11 +1066,23 @@ private fun HubTextField(
     onImeAction: (() -> Unit)? = null,
     focusRequester: FocusRequester? = null,
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) HubColors.Accent2 else HubColors.Border,
+        label = "addon-field-border",
+    )
+    val shape = RoundedCornerShape(HubShapes.Field)
+
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(HubColors.Surface)
-            .border(1.dp, HubColors.Border, RoundedCornerShape(10.dp))
+            .clip(shape)
+            .background(HubColors.SurfaceStrong.copy(alpha = HubEffects.GlassSurfaceAlpha))
+            .border(
+                if (focused) HubStrokes.Focus else HubStrokes.Hairline,
+                borderColor,
+                shape,
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         if (value.isEmpty()) {
@@ -1066,10 +1092,11 @@ private fun HubTextField(
             value = value,
             onValueChange = onValueChange,
             modifier = if (focusRequester != null) {
-                Modifier.focusRequester(focusRequester)
+                Modifier.fillMaxWidth().focusRequester(focusRequester)
             } else {
-                Modifier
+                Modifier.fillMaxWidth()
             },
+            interactionSource = interactionSource,
             singleLine = true,
             textStyle = MaterialTheme.typography.titleMedium.copy(color = HubColors.Text),
             cursorBrush = SolidColor(HubColors.Accent2),

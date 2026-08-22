@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.ui.theme.HubMotion
 
 /**
  * The full-bleed artwork behind every screen.
@@ -40,7 +41,7 @@ fun FanartBackdrop(
     Box(modifier.fillMaxSize().background(HubColors.Background)) {
         Crossfade(
             targetState = url,
-            animationSpec = tween(durationMillis = 600),
+            animationSpec = tween(durationMillis = HubMotion.Scene, easing = HubMotion.StandardEasing),
             label = "fanart",
         ) { current ->
             if (current != null) {
@@ -61,9 +62,10 @@ fun FanartBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        0f to HubColors.Background.copy(alpha = actualScrim),
-                        0.55f to HubColors.Background.copy(alpha = actualScrim * 0.78f),
-                        1f to HubColors.Background.copy(alpha = actualScrim * 0.5f),
+                        0f to HubColors.Background.copy(alpha = (actualScrim + 0.18f).coerceAtMost(1f)),
+                        0.38f to HubColors.Background.copy(alpha = actualScrim),
+                        0.72f to HubColors.Background.copy(alpha = actualScrim * 0.52f),
+                        1f to HubColors.Background.copy(alpha = actualScrim * 0.28f),
                     )
                 )
         )
@@ -72,8 +74,10 @@ fun FanartBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to HubColors.Background.copy(alpha = baseVerticalAlpha1),
-                        0.45f to HubColors.Background.copy(alpha = baseVerticalAlpha2),
+                        0f to HubColors.Background.copy(alpha = baseVerticalAlpha1 * 0.72f),
+                        0.48f to HubColors.Background.copy(alpha = baseVerticalAlpha1),
+                        0.68f to HubColors.Background.copy(alpha = baseVerticalAlpha2),
+                        0.88f to HubColors.Background.copy(alpha = 0.88f),
                         1f to HubColors.Background,
                     )
                 )

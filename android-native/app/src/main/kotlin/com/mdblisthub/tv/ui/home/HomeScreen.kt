@@ -264,6 +264,11 @@ fun HomeScreen(
     val spotlight by viewModel.spotlight.collectAsStateWithLifecycle()
     val spotlightLoaded by viewModel.spotlightLoaded.collectAsStateWithLifecycle()
     val spotlightEnabled by viewModel.spotlightEnabled.collectAsStateWithLifecycle()
+    val posterLandscapeTransformation by
+        viewModel.posterLandscapeTransformation.collectAsStateWithLifecycle()
+    // Keep the State object unwrapped here: only visible PosterCards read its
+    // value, so a trailer frame does not invalidate this entire screen.
+    val trailerPlayingItemKey = viewModel.trailerPlayingItemKey.collectAsStateWithLifecycle()
     val isEditMode by viewModel.isEditMode.collectAsStateWithLifecycle()
     val watchedIds by viewModel.watchedIds.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
@@ -1021,6 +1026,7 @@ fun HomeScreen(
                         // the next.
                         verticalArrangement = Arrangement.spacedBy(
                             when {
+                                spotlightOwnsViewport -> 6.dp
                                 HubColors.isPrimefly -> 6.dp
                                 HubColors.isCyberpunk -> 8.dp
                                 else -> 14.dp
@@ -1102,6 +1108,9 @@ fun HomeScreen(
                                 !isEditMode &&
                                 !hasSpotlightHero,
                             onInitialFocusHandled = onInitialNormalFocusHandled,
+                            expandCardsOnFocus = posterLandscapeTransformation,
+                            expandedItemKey = trailerPlayingItemKey,
+                            synchronizeCardExpansion = HubColors.hasHeroTrailer,
                         )
                     }
                 }
@@ -1164,6 +1173,9 @@ fun HomeScreen(
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandedItemKey = trailerPlayingItemKey,
+                                synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
                         }
                         is HomeMediaRow.Stremio -> {
@@ -1196,6 +1208,9 @@ fun HomeScreen(
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandedItemKey = trailerPlayingItemKey,
+                                synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
                         }
                         is HomeMediaRow.Feed -> {
@@ -1245,6 +1260,9 @@ fun HomeScreen(
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandedItemKey = trailerPlayingItemKey,
+                                synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
                         }
                     }
@@ -1279,6 +1297,9 @@ fun HomeScreen(
                                 homeRows.isEmpty() &&
                                 index == 0,
                             onInitialFocusHandled = onInitialNormalFocusHandled,
+                            expandCardsOnFocus = posterLandscapeTransformation,
+                            expandedItemKey = trailerPlayingItemKey,
+                            synchronizeCardExpansion = HubColors.hasHeroTrailer,
                         )
                     }
                 }
@@ -1308,6 +1329,9 @@ private fun AddonCatalogRow(
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
+    expandCardsOnFocus: Boolean = true,
+    expandedItemKey: State<String?>? = null,
+    synchronizeCardExpansion: Boolean = false,
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
     LaunchedEffect(catalog.addonBase, catalog.key) { onEnsure() }
@@ -1329,6 +1353,9 @@ private fun AddonCatalogRow(
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         rowFocusRequester = rowFocusRequester,
+        expandCardsOnFocus = expandCardsOnFocus,
+        expandedItemKey = expandedItemKey,
+        synchronizeCardExpansion = synchronizeCardExpansion,
     )
 }
 
@@ -1375,6 +1402,9 @@ private fun ListRow(
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
+    expandCardsOnFocus: Boolean = true,
+    expandedItemKey: State<String?>? = null,
+    synchronizeCardExpansion: Boolean = false,
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
 
@@ -1399,6 +1429,9 @@ private fun ListRow(
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         rowFocusRequester = rowFocusRequester,
+        expandCardsOnFocus = expandCardsOnFocus,
+        expandedItemKey = expandedItemKey,
+        synchronizeCardExpansion = synchronizeCardExpansion,
     )
 }
 
@@ -1467,10 +1500,13 @@ private fun FocusedBackdrop(viewModel: HomeViewModel) {
 private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
     val backdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
     val trailerUrl by viewModel.focusedTrailerUrl.collectAsStateWithLifecycle()
+    val focused by viewModel.focused.collectAsStateWithLifecycle()
 
     HeroArt(
         backdropUrl = backdropUrl,
         trailerUrl = trailerUrl,
+        trailerItemKey = focused?.key,
+        onTrailerPlaybackChanged = viewModel::onTrailerPlaybackChanged,
         modifier = modifier,
         // Aloud, the way the streaming apps this theme is named after do it:
         // an auto-preview is meant to be a preview, and a silent one is just a

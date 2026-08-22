@@ -99,6 +99,15 @@ class UiPreferencesStore(context: Context) {
         prefs[KEY_AUTOTRAILER] ?: false
     }
 
+    /** Whether focused poster cards may expand into a landscape preview. */
+    val posterLandscapeTransformation: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_POSTER_LANDSCAPE_TRANSFORMATION] ?: true
+    }
+
+    suspend fun savePosterLandscapeTransformation(enabled: Boolean) {
+        store.edit { it[KEY_POSTER_LANDSCAPE_TRANSFORMATION] = enabled }
+    }
+
     /** Whether the bundled opening video is shown when the app starts. */
     val introEnabled: Flow<Boolean> = store.data.map { prefs ->
         prefs[KEY_INTRO_ENABLED] ?: true
@@ -237,6 +246,8 @@ class UiPreferencesStore(context: Context) {
         const val STARTUP_MIRROR = "ui-preferences-startup"
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")
+        val KEY_POSTER_LANDSCAPE_TRANSFORMATION =
+            booleanPreferencesKey("poster_landscape_transformation")
         val KEY_INTRO_ENABLED = booleanPreferencesKey("intro_enabled")
         val KEY_SPOTLIGHT_HERO = booleanPreferencesKey("spotlight_hero")
         val KEY_LIBRARY_PROVIDER = stringPreferencesKey("library_provider")

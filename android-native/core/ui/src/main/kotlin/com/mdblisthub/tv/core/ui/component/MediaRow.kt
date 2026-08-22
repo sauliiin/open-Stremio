@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -149,6 +150,12 @@ fun MediaRow(
      * row above showing at the pivot, is the row above.
      */
     rowFocusRequester: FocusRequester? = null,
+    /** Enables the modern poster-to-backdrop preview while keeping this row's data and focus model unchanged. */
+    expandCardsOnFocus: Boolean = true,
+    /** The card whose inline trailer has rendered its first frame. */
+    expandedItemKey: State<String?>? = null,
+    /** True only while autoplay owns expansion timing; false uses the three-second dwell. */
+    synchronizeCardExpansion: Boolean = false,
 ) {
     if (items.isEmpty() && !isEditMode) return
 
@@ -299,6 +306,12 @@ fun MediaRow(
                         isWatched = isWatched?.invoke(index, item) ?: false,
                         onLongClick = onItemLongClickIndexed?.let { handler ->
                             { handler(index, item) }
+                        },
+                        expandOnFocus = expandCardsOnFocus && !isEditMode,
+                        expansionTrigger = if (synchronizeCardExpansion) {
+                            expandedItemKey?.value == item.key
+                        } else {
+                            null
                         },
                         modifier = Modifier.focusProperties { canFocus = !isEditMode },
                     )

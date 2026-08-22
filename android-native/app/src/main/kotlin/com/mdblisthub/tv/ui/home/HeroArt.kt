@@ -71,8 +71,15 @@ fun HeroArt(
     modifier: Modifier = Modifier,
     /** Muting is the caller's call; see the home screen for why it plays aloud. */
     muted: Boolean = false,
+    /** Identity of the focused card that owns [trailerUrl]. */
+    trailerItemKey: String? = null,
+    /** Reports the first real video frame, rather than URL resolution or buffering. */
+    onTrailerPlaybackChanged: (String?, Boolean) -> Unit = { _, _ -> },
 ) {
     var trailerPlaying by remember(trailerUrl) { mutableStateOf(false) }
+    DisposableEffect(trailerUrl, trailerItemKey) {
+        onDispose { onTrailerPlaybackChanged(trailerItemKey, false) }
+    }
 
     // Only the *video* fades in. The still fades out against it, so for the
     // length of the transition both are painted and neither edge shows.
@@ -113,8 +120,14 @@ fun HeroArt(
             TrailerSurface(
                 url = trailerUrl,
                 muted = muted,
-                onFirstFrame = { trailerPlaying = true },
-                onFailed = { trailerPlaying = false },
+                onFirstFrame = {
+                    trailerPlaying = true
+                    onTrailerPlaybackChanged(trailerItemKey, true)
+                },
+                onFailed = {
+                    trailerPlaying = false
+                    onTrailerPlaybackChanged(trailerItemKey, false)
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .alpha(trailerAlpha)

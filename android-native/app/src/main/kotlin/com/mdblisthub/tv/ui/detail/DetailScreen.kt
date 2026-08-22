@@ -100,6 +100,9 @@ import com.mdblisthub.tv.core.ui.component.MediaRow
 import com.mdblisthub.tv.core.ui.component.RatingBadges
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
@@ -128,6 +131,8 @@ fun DetailScreen(
     val appLanguage by viewModel.language.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
     val dimUnwatchedEpisodes by viewModel.dimUnwatchedEpisodes.collectAsStateWithLifecycle()
+    val posterLandscapeTransformation by graph.uiPreferences.posterLandscapeTransformation
+        .collectAsStateWithLifecycle(initialValue = true)
     val library by viewModel.library.collectAsStateWithLifecycle()
     val resumePoint by viewModel.resumePoint.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
@@ -210,7 +215,10 @@ fun DetailScreen(
     }
 
     Box(Modifier.fillMaxSize()) {
-        FanartBackdrop(url = current.backdropUrl, scrim = 0.86f)
+        // Keep the artwork present as part of the page instead of reducing it
+        // to a barely visible wallpaper; the shared left/bottom gradients keep
+        // metadata and the rows readable.
+        FanartBackdrop(url = current.backdropUrl, scrim = 0.56f)
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides pinWhileOnButtons) {
         LazyColumn(
@@ -443,6 +451,7 @@ fun DetailScreen(
                         title = stringResource(R.string.detail_recommendations),
                         items = current.recommendations,
                         onItemClick = onOpenTitle,
+                        expandCardsOnFocus = posterLandscapeTransformation,
                     )
                 }
             }
@@ -511,13 +520,14 @@ private fun EpisodeDetailsDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
+        val dialogShape = RoundedCornerShape(HubShapes.Dialog)
         Column(
             modifier = Modifier
                 .fillMaxWidth(0.72f)
                 .widthIn(max = 900.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(HubColors.Surface)
-                .border(1.dp, HubColors.Border, RoundedCornerShape(18.dp))
+                .clip(dialogShape)
+                .background(HubColors.Surface.copy(alpha = 0.96f))
+                .border(HubStrokes.Hairline, HubColors.Border, dialogShape)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -677,12 +687,13 @@ private fun EpisodeRow(
                 // signal at minimal cost.
                 val blurActive = dimUnwatched && !watched && !focused
 
+                val episodeShape = RoundedCornerShape(HubShapes.Card)
                 Column(
                     modifier = Modifier
                         .width(260.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(episodeShape)
                         .background(background)
-                        .border(borderWidth, borderColor, RoundedCornerShape(10.dp))
+                        .border(borderWidth, borderColor, episodeShape)
                         .combinedClickable(
                             interactionSource = interaction,
                             indication = null,
@@ -900,14 +911,19 @@ private fun CastBioOverlay(
             .background(HubColors.Background.copy(alpha = 0.75f))
             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }, onClick = onDismiss),
     ) {
+        val dialogShape = RoundedCornerShape(HubShapes.Dialog)
         Column(
             modifier = Modifier
                 .align(Alignment.Center)
                 .widthIn(max = 560.dp)
                 .heightIn(max = 520.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(HubColors.Surface)
-                .border(1.dp, HubColors.Border, RoundedCornerShape(16.dp))
+                .clip(dialogShape)
+                .background(HubColors.Surface.copy(alpha = 0.96f))
+                .border(
+                    HubStrokes.Hairline,
+                    HubColors.Border.copy(alpha = HubEffects.SoftBorderAlpha),
+                    dialogShape,
+                )
                 // Consumes taps inside the card so they do not also reach the
                 // scrim's dismiss handler behind it.
                 .pointerInput(Unit) { detectTapGestures {} }
@@ -996,15 +1012,16 @@ private fun ReviewsRow(reviews: List<Review>) {
                 val interaction = remember { MutableInteractionSource() }
                 val focused by interaction.collectIsFocusedAsState()
 
+                val reviewShape = RoundedCornerShape(HubShapes.Card)
                 Column(
                     modifier = Modifier
                         .width(360.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(reviewShape)
                         .background(if (focused) HubColors.SurfaceStrong else HubColors.Surface.copy(alpha = 0.7f))
                         .border(
                             width = if (focused) 2.5.dp else 0.dp,
                             color = if (focused) HubColors.Accent else HubColors.Border,
-                            shape = RoundedCornerShape(10.dp),
+                            shape = reviewShape,
                         )
                         .focusable(interactionSource = interaction)
                         .padding(16.dp),

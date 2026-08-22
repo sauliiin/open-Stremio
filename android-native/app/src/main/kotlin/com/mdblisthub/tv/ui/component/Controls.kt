@@ -1,6 +1,8 @@
 package com.mdblisthub.tv.ui.component
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,10 +17,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubMotion
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 
 /**
  * A focusable button.
@@ -37,25 +44,55 @@ fun HubButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
+    val motion = tween<Float>(HubMotion.Focus, easing = HubMotion.StandardEasing)
+    val scale by animateFloatAsState(
+        targetValue = if (focused && enabled) HubMotion.FocusScale else 1f,
+        animationSpec = motion,
+        label = "button-scale",
+    )
 
     val background by animateColorAsState(
         targetValue = when {
             !enabled -> HubColors.Surface.copy(alpha = 0.4f)
             focused -> HubColors.Accent
-            primary -> HubColors.SurfaceStrong
-            else -> HubColors.Surface.copy(alpha = 0.6f)
+            primary -> HubColors.Accent.copy(alpha = HubEffects.SelectedWashAlpha)
+            else -> HubColors.Surface.copy(alpha = HubEffects.GlassSurfaceAlpha)
         },
+        animationSpec = tween(HubMotion.Focus, easing = HubMotion.StandardEasing),
         label = "button-background",
+    )
+    val border by animateColorAsState(
+        targetValue = when {
+            focused -> HubColors.AccentSoft
+            primary -> HubColors.Accent.copy(alpha = 0.56f)
+            else -> HubColors.Border.copy(alpha = HubEffects.SoftBorderAlpha)
+        },
+        animationSpec = tween(HubMotion.Focus, easing = HubMotion.StandardEasing),
+        label = "button-border",
+    )
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            !enabled -> HubColors.TextFaint
+            focused -> HubColors.Text
+            primary -> HubColors.Text
+            else -> HubColors.TextDim
+        },
+        animationSpec = tween(HubMotion.Focus, easing = HubMotion.StandardEasing),
+        label = "button-content",
     )
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(HubShapes.Control))
             .background(background)
             .border(
-                width = 1.dp,
-                color = if (focused) background else HubColors.Border,
-                shape = RoundedCornerShape(10.dp),
+                width = if (focused) HubStrokes.Focus else HubStrokes.Hairline,
+                color = border,
+                shape = RoundedCornerShape(HubShapes.Control),
             )
             .clickable(
                 interactionSource = interaction,
@@ -63,17 +100,13 @@ fun HubButton(
                 enabled = enabled,
                 onClick = onClick,
             )
-            .padding(horizontal = 26.dp, vertical = 13.dp),
+            .padding(horizontal = 25.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.titleMedium,
-            color = when {
-                !enabled -> HubColors.TextFaint
-                focused -> HubColors.Text
-                else -> HubColors.TextDim
-            },
+            color = contentColor,
         )
     }
 }

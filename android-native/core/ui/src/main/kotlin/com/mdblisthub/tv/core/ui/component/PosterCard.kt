@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.ui.component
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -27,7 +28,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.animateFloat
@@ -53,6 +56,9 @@ import coil3.compose.AsyncImage
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubMotion
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import kotlinx.coroutines.delay
 
 /**
  * One title in a row.
@@ -80,9 +86,46 @@ fun PosterCard(
      */
     onLongClick: (() -> Unit)? = null,
     isWatched: Boolean = false,
+    /**
+     * Lets a shelf card become a landscape preview after focus settles.
+     * Its height never changes, so the row remains stable; only the width is
+     * animated, which is what produces the gentle slide of neighbouring cards.
+     */
+    expandOnFocus: Boolean = false,
+    /**
+     * When non-null, replaces the dwell timer with an external event. The
+     * home screen uses the trailer player's first rendered frame here, so the
+     * poster and the video change shape at the same perceptible instant.
+     */
+    expansionTrigger: Boolean? = null,
+    expansionDelayMillis: Long = HubMotion.FocusedCardDelayMillis,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
+    val canExpand = expandOnFocus && !HubColors.isPrimefly
+    var backdropExpanded by remember(item.key) { mutableStateOf(false) }
+
+    LaunchedEffect(focused, canExpand, item.key, expansionTrigger, expansionDelayMillis) {
+        if (!focused || !canExpand) {
+            backdropExpanded = false
+            return@LaunchedEffect
+        }
+
+        if (expansionTrigger != null) {
+            backdropExpanded = expansionTrigger
+            return@LaunchedEffect
+        }
+
+        delay(expansionDelayMillis)
+        if (focused) backdropExpanded = true
+    }
+
+    val expandedWidth = HubDimens.PosterHeight * (16f / 9f)
+    val animatedWidth by animateDpAsState(
+        targetValue = if (backdropExpanded) expandedWidth else HubDimens.PosterWidth,
+        animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+        label = "poster-preview-width",
+    )
     val targetBorderWidth = if (focused) {
         if (HubColors.isCyberpunk) 4.5.dp else 2.5.dp
     } else 0.dp
@@ -129,13 +172,13 @@ fun PosterCard(
     }
 
     Column(
-        modifier = modifier.width(HubDimens.PosterWidth),
+        modifier = modifier.width(animatedWidth),
         verticalArrangement = Arrangement.spacedBy(if (HubColors.isPrimefly) 4.dp else 8.dp),
     ) {
-        val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 10.dp
+        val cornerRadius = if (HubColors.isCyberpunk) 0.dp else HubShapes.Card
         Box(
             Modifier
-                .width(HubDimens.PosterWidth)
+                .width(animatedWidth)
                 .height(HubDimens.PosterHeight)
                 .let {
                     if (HubColors.isCyberpunk && focused) {
@@ -172,7 +215,9 @@ fun PosterCard(
                     }
                 },
         ) {
-            val artworkUrl = if (HubColors.isPrimefly) {
+            val artworkUrl = if (backdropExpanded) {
+                item.landscapeUrl ?: item.backdropUrl ?: item.posterUrl
+            } else if (HubColors.isPrimefly) {
                 // Never crop a portrait poster into a landscape card.
                 resolvedArtwork?.landscapeUrl
                     ?: item.landscapeUrl
@@ -181,23 +226,32 @@ fun PosterCard(
             } else {
                 item.posterUrl
             }
-            if (artworkUrl != null) {
-                AsyncImage(
-                    model = artworkUrl,
-                    contentDescription = displayTitle,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                // No poster is common on obscure titles; a readable fallback
-                // beats an empty rectangle the eye reads as a loading error.
-                Text(
-                    text = displayTitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = HubColors.TextFaint,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center).padding(10.dp),
-                )
+            Crossfade(
+                targetState = artworkUrl,
+                animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+                label = "poster-preview-artwork",
+                modifier = Modifier.fillMaxSize(),
+            ) { url ->
+                if (url != null) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = displayTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    // No poster is common on obscure titles; a readable fallback
+                    // beats an empty rectangle the eye reads as a loading error.
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = displayTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HubColors.TextFaint,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                }
             }
 
             val watched = progressPercent?.coerceIn(0f, 100f)?.takeIf { it > 0f }
@@ -262,6 +316,9 @@ fun PosterCard(
         }
 
         Text(
+            // The preview widens only the artwork. Identity stays in the same
+            // fixed poster column below it, so the title never jumps into the
+            // image or travels with the landscape width.
             text = displayTitle,
             style = if (HubColors.isCyberpunk) {
                 MaterialTheme.typography.labelSmall

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,10 +35,10 @@ private val HubTypography = Typography(
 
 /** Overscan inset. TVs still crop the edges, and Kodi budgets for it too. */
 object HubDimens {
-    val ScreenPaddingHorizontal = 36.dp
-    val ScreenPaddingVertical = 27.dp
-    val RowSpacing = 28.dp
-    val CardSpacing = 14.dp
+    val ScreenPaddingHorizontal = 40.dp
+    val ScreenPaddingVertical = 24.dp
+    val RowSpacing = 24.dp
+    val CardSpacing = 12.dp
     /** Primefly follows a streaming-service shelf: wide 16:9 art instead of posters. */
     // Primefly cards are 15% smaller than the previous 166.4 × 93.6 dp,
     // while preserving the authored 16:9 landscape ratio.
@@ -67,6 +68,16 @@ fun HubTheme(content: @Composable () -> Unit) {
         border = HubColors.Border,
     )
     MaterialTheme(colorScheme = colorScheme, typography = HubTypography) {
-        Box(Modifier.fillMaxSize().background(HubColors.Background)) { content() }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to HubColors.Surface.copy(alpha = 0.34f),
+                        0.32f to HubColors.Background,
+                        1f to HubColors.Background,
+                    )
+                )
+        ) { content() }
     }
 }

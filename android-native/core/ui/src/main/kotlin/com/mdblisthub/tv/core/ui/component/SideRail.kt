@@ -2,7 +2,6 @@ package com.mdblisthub.tv.core.ui.component
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,6 +34,9 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubMotion
+import com.mdblisthub.tv.core.ui.theme.HubShapes
 
 data class RailItem(
     val key: String,
@@ -102,15 +104,16 @@ fun SideRail(
             // and a spring's overshoot next to a tween's flat arrival is
             // exactly the kind of mismatch that reads as inconsistent.
             .animateContentSize(animationSpec = railFocusTween())
-            .width(if (expanded) 232.dp else 0.dp)
+            .width(if (expanded) 248.dp else 0.dp)
             .background(
                 Brush.horizontalGradient(
-                    0f to HubColors.Background,
-                    1f to HubColors.Background.copy(alpha = if (expanded) 0.92f else 0f),
+                    0f to HubColors.Surface.copy(alpha = if (expanded) 0.96f else 0f),
+                    0.72f to HubColors.Background.copy(alpha = if (expanded) 0.92f else 0f),
+                    1f to HubColors.Background.copy(alpha = 0f),
                 )
             )
-            .padding(vertical = 32.dp, horizontal = if (expanded) 16.dp else 0.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(vertical = 30.dp, horizontal = if (expanded) 18.dp else 0.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items.forEach { item ->
             RailRow(
@@ -136,7 +139,7 @@ private fun RailRow(
     val background by animateColorAsState(
         targetValue = when {
             focused -> HubColors.Accent
-            selected -> HubColors.SurfaceStrong
+            selected -> HubColors.Accent.copy(alpha = HubEffects.SelectedWashAlpha)
             else -> HubColors.Background.copy(alpha = 0f)
         },
         animationSpec = railFocusTween(),
@@ -157,7 +160,7 @@ private fun RailRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         modifier = Modifier
             .let {
-                val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 10.dp
+                val cornerRadius = if (HubColors.isCyberpunk) 0.dp else HubShapes.Pill
                 it.clip(RoundedCornerShape(cornerRadius))
                   .let { mod ->
                       if (HubColors.isCyberpunk && focused) {
@@ -167,7 +170,7 @@ private fun RailRow(
             }
             .background(background)
             .clickable(interactionSource = interaction, indication = null, onClick = onSelect)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
         Icon(
             imageVector = item.icon,
@@ -186,4 +189,4 @@ private fun RailRow(
 }
 
 /** Matches [posterFocusTween] in `PosterCard` — one motion language for the screen. */
-private fun <T> railFocusTween() = tween<T>(durationMillis = 200, easing = FastOutSlowInEasing)
+private fun <T> railFocusTween() = tween<T>(durationMillis = HubMotion.Focus, easing = HubMotion.StandardEasing)

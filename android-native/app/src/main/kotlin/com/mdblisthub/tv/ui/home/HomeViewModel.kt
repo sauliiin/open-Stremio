@@ -139,6 +139,18 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     val autotrailer: StateFlow<Boolean> = graph.uiPreferences.autotrailer
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val posterLandscapeTransformation: StateFlow<Boolean> =
+        graph.uiPreferences.posterLandscapeTransformation
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    /**
+     * Non-null only after the focused title's trailer has rendered its first
+     * frame. Cards observe this separately from the URL so buffering never
+     * makes the poster expand before motion is actually visible.
+     */
+    private val _trailerPlayingItemKey = MutableStateFlow<String?>(null)
+    val trailerPlayingItemKey: StateFlow<String?> = _trailerPlayingItemKey.asStateFlow()
+
     /**
      * Advances the palette and writes the choice down, so the box comes back
      * in it. The repaint is immediate and the write is not waited on: the
@@ -556,10 +568,25 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     }
 
     fun onFocused(item: MediaItem) {
+        if (_focused.value?.key != item.key) {
+            _trailerPlayingItemKey.value = null
+        }
         _focused.value = item
         // Warming the detail on focus is what makes opening a title feel
         // instant: by the time the user presses OK, it is already in Room.
         if (item.tmdbId > 0) graph.prefetcher.prefetch(item.type, item.tmdbId)
+    }
+
+    fun onTrailerPlaybackChanged(itemKey: String?, playing: Boolean) {
+        if (playing) {
+            // A focus move can dispose an old player just as it reports READY.
+            // Never let that stale frame expand the newly focused card.
+            if (itemKey != null && _focused.value?.key == itemKey) {
+                _trailerPlayingItemKey.value = itemKey
+            }
+        } else if (_trailerPlayingItemKey.value == itemKey) {
+            _trailerPlayingItemKey.value = null
+        }
     }
 
     fun itemsForCatalog(catalog: AddonCatalog): StateFlow<List<MediaItem>> =

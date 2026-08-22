@@ -4,8 +4,11 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.core.net.toUri
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -54,6 +58,9 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
@@ -88,16 +95,37 @@ fun LoginScreen(
         if (!state.busy) focusRequester.requestFocus()
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.linearGradient(
+                    colors = listOf(
+                        HubColors.Accent.copy(alpha = 0.10f),
+                        HubColors.Background,
+                        HubColors.Background,
+                    ),
+                ),
+            )
+            .padding(horizontal = 36.dp, vertical = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
             modifier = Modifier
-                .fillMaxHeight()
-                .widthIn(max = 720.dp)
+                .fillMaxHeight(0.94f)
+                .widthIn(max = 760.dp)
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(HubShapes.Panel))
+                .background(HubColors.Surface.copy(alpha = HubEffects.GlassSurfaceAlpha))
+                .border(
+                    HubStrokes.Hairline,
+                    HubColors.Border.copy(alpha = HubEffects.SoftBorderAlpha),
+                    RoundedCornerShape(HubShapes.Panel),
+                )
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 28.dp),
+                .padding(horizontal = 36.dp, vertical = 28.dp),
         ) {
             AnimatedOpenStreamTitle(style = MaterialTheme.typography.displayLarge)
 
@@ -194,40 +222,12 @@ fun LoginScreen(
                 if (state.busy) {
                     HubSpinner()
                 } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(HubColors.Surface)
-                            .border(1.dp, HubColors.Border, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 18.dp, vertical = 16.dp),
-                    ) {
-                        if (state.key.isEmpty()) {
-                            Text(
-                                stringResource(R.string.login_key_placeholder),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = HubColors.TextFaint,
-                            )
-                        }
-                        BasicTextField(
-                            value = state.key,
-                            onValueChange = viewModel::onKeyChange,
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.titleLarge.copy(color = HubColors.Text),
-                            cursorBrush = SolidColor(HubColors.Accent2),
-                            // Shown in the clear. Masking it bought nothing —
-                            // this is an API key typed once on a television,
-                            // usually by pecking at an on-screen keyboard with
-                            // a remote, and a single wrong character is
-                            // impossible to spot behind dots. Anyone close
-                            // enough to read the screen already has the box.
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(
-                                onDone = { viewModel.signInWithMdblistOnly() },
-                            ),
-                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                        )
-                    }
+                    LoginKeyField(
+                        value = state.key,
+                        onValueChange = viewModel::onKeyChange,
+                        onDone = viewModel::signInWithMdblistOnly,
+                        focusRequester = focusRequester,
+                    )
 
                     HubButton(
                         text = stringResource(R.string.login_mdblist_only_submit),
@@ -266,33 +266,12 @@ fun LoginScreen(
                         color = HubColors.TextDim,
                     )
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(HubColors.Surface)
-                            .border(1.dp, HubColors.Border, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 18.dp, vertical = 16.dp),
-                    ) {
-                        if (state.key.isEmpty()) {
-                            Text(
-                                stringResource(R.string.login_key_placeholder),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = HubColors.TextFaint,
-                            )
-                        }
-                        BasicTextField(
-                            value = state.key,
-                            onValueChange = viewModel::onKeyChange,
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.titleLarge.copy(color = HubColors.Text),
-                            cursorBrush = SolidColor(HubColors.Accent2),
-                            // Same reasoning as the mdblist-only field above.
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = { viewModel.linkMdblist() }),
-                            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                        )
-                    }
+                    LoginKeyField(
+                        value = state.key,
+                        onValueChange = viewModel::onKeyChange,
+                        onDone = viewModel::linkMdblist,
+                        focusRequester = focusRequester,
+                    )
 
                     if (state.busy) {
                         HubSpinner()
@@ -345,4 +324,55 @@ fun LoginScreen(
             }
         }
     }
+}
+
+@Composable
+private fun LoginKeyField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val borderColor by animateColorAsState(
+        targetValue = if (focused) HubColors.Accent2 else HubColors.Border,
+        label = "login-key-border",
+    )
+
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.titleLarge.copy(color = HubColors.Text),
+        cursorBrush = SolidColor(HubColors.Accent2),
+        interactionSource = interactionSource,
+        // The key stays visible so a mistyped character can be found with a
+        // remote before submission. It is held only by the existing state.
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .clip(RoundedCornerShape(HubShapes.Field))
+            .background(HubColors.SurfaceStrong.copy(alpha = HubEffects.GlassSurfaceAlpha))
+            .border(
+                if (focused) HubStrokes.Focus else HubStrokes.Hairline,
+                borderColor,
+                RoundedCornerShape(HubShapes.Field),
+            )
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        decorationBox = { innerField ->
+            Box {
+                if (value.isEmpty()) {
+                    Text(
+                        stringResource(R.string.login_key_placeholder),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = HubColors.TextFaint,
+                    )
+                }
+                innerField()
+            }
+        },
+    )
 }

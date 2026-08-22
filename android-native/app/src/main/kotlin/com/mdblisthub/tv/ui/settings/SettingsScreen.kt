@@ -42,6 +42,9 @@ import com.mdblisthub.tv.core.model.TraktLinkFailure
 import com.mdblisthub.tv.core.model.TraktLinkState
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.Job
@@ -76,6 +79,7 @@ val ALL_LANGUAGES = listOf(
 data class SettingsUiState(
     val language: String = "en",
     val autotrailer: Boolean = false,
+    val posterLandscapeTransformation: Boolean = true,
     val introEnabled: Boolean = true,
     /** Defaults to on, matching `UiPreferencesStore.spotlightHero`. */
     val spotlightHero: Boolean = true,
@@ -133,6 +137,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.spotlightHero) { partial, hero ->
                     partial.copy(spotlightHero = hero)
+                }
+                .combine(graph.uiPreferences.posterLandscapeTransformation) { partial, enabled ->
+                    partial.copy(posterLandscapeTransformation = enabled)
                 }
                 .combine(graph.traktAuth.account) { partial, account ->
                     partial.copy(
@@ -219,6 +226,12 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
 
     fun setLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveLanguage(lang) }
     fun toggleAutotrailer() = viewModelScope.launch { graph.uiPreferences.saveAutotrailer(!_state.value.autotrailer) }
+
+    fun togglePosterLandscapeTransformation() = viewModelScope.launch {
+        graph.uiPreferences.savePosterLandscapeTransformation(
+            !_state.value.posterLandscapeTransformation,
+        )
+    }
 
     fun toggleIntro() = viewModelScope.launch {
         graph.uiPreferences.saveIntroEnabled(!_state.value.introEnabled)
@@ -307,6 +320,20 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
                         ),
                         primary = state.autotrailer,
                         onClick = viewModel::toggleAutotrailer,
+                    )
+                }
+
+                SettingsRow(label = stringResource(R.string.settings_poster_landscape_transformation)) {
+                    HubButton(
+                        text = stringResource(
+                            if (state.posterLandscapeTransformation) {
+                                R.string.settings_on
+                            } else {
+                                R.string.settings_off
+                            },
+                        ),
+                        primary = state.posterLandscapeTransformation,
+                        onClick = viewModel::togglePosterLandscapeTransformation,
                     )
                 }
 
@@ -466,23 +493,37 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    val shape = RoundedCornerShape(HubShapes.Panel)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(HubColors.Surface.copy(alpha = 0.65f))
-            .border(1.dp, HubColors.Border, RoundedCornerShape(14.dp))
-            .padding(20.dp),
+            .clip(shape)
+            .background(HubColors.Surface.copy(alpha = HubEffects.GlassSurfaceAlpha))
+            .border(
+                HubStrokes.Hairline,
+                HubColors.Border.copy(alpha = HubEffects.SoftBorderAlpha),
+                shape,
+            )
+            .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+        Text(title, style = MaterialTheme.typography.headlineSmall, color = HubColors.Text)
         content()
     }
 }
 
 @Composable
 private fun SettingsRow(label: String, content: @Composable () -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val shape = RoundedCornerShape(HubShapes.Field)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(HubColors.SurfaceStrong.copy(alpha = HubEffects.MutedSurfaceAlpha))
+            .border(HubStrokes.Hairline, HubColors.Border.copy(alpha = 0.45f), shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
         Text(label, style = MaterialTheme.typography.bodyLarge, color = HubColors.TextDim)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             content()
@@ -509,7 +550,17 @@ private fun LanguagePickerOverlay(
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(0.5f).fillMaxHeight(),
+            modifier = Modifier
+                .fillMaxWidth(0.55f)
+                .fillMaxHeight(0.88f)
+                .clip(RoundedCornerShape(HubShapes.Dialog))
+                .background(HubColors.Surface.copy(alpha = 0.96f))
+                .border(
+                    HubStrokes.Hairline,
+                    HubColors.Border.copy(alpha = HubEffects.SoftBorderAlpha),
+                    RoundedCornerShape(HubShapes.Dialog),
+                )
+                .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(title, style = MaterialTheme.typography.displayMedium, color = HubColors.Text)

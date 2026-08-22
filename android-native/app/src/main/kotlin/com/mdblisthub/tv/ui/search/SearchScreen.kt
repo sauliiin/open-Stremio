@@ -44,9 +44,13 @@ import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
+import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.component.PosterCard
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 
 @Composable
 fun SearchScreen(
@@ -82,7 +86,13 @@ fun SearchScreen(
 
         if (isLoading && results.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.search_searching), color = HubColors.TextDim)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    HubSpinner()
+                    Text(stringResource(R.string.search_searching), color = HubColors.TextDim)
+                }
             }
         } else if (results.isEmpty() && query.isNotBlank() && !isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -121,27 +131,36 @@ private fun SearchBar(
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     val borderColor by animateColorAsState(if (isFocused) HubColors.Accent else HubColors.Border)
-    val cornerRadius = if (HubColors.isCyberpunk) 0.dp else 8.dp
+    val cornerRadius = if (HubColors.isCyberpunk) 2.dp else HubShapes.Field
+    val shape = RoundedCornerShape(cornerRadius)
 
     BasicTextField(
         value = query,
         onValueChange = onQueryChange,
-        textStyle = MaterialTheme.typography.bodyMedium.copy(color = HubColors.Text),
+        textStyle = MaterialTheme.typography.titleMedium.copy(color = HubColors.Text),
         cursorBrush = SolidColor(HubColors.Accent),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
         interactionSource = interactionSource,
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(cornerRadius))
-            .background(HubColors.Surface)
-            .border(2.dp, borderColor, RoundedCornerShape(cornerRadius))
-            .padding(16.dp),
+            .clip(shape)
+            .background(HubColors.SurfaceStrong.copy(alpha = HubEffects.GlassSurfaceAlpha))
+            .border(
+                if (isFocused) HubStrokes.Focus else HubStrokes.Hairline,
+                borderColor,
+                shape,
+            )
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         decorationBox = { innerTextField ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.Search, contentDescription = null, tint = if (isFocused) HubColors.Accent else HubColors.TextDim)
                 Box(Modifier.weight(1f)) {
                     if (query.isEmpty()) {
-                        Text(stringResource(R.string.search_placeholder), color = HubColors.TextDim, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(R.string.search_placeholder),
+                            color = HubColors.TextDim,
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                     }
                     innerTextField()
                 }

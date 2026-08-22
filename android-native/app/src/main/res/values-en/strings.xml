@@ -22,6 +22,7 @@
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">App Language</string>
     <string name="settings_autotrailer">Autotrailer</string>
+    <string name="settings_poster_landscape_transformation">Expand posters to landscape</string>
     <string name="settings_intro">Play intro when opening the app</string>
     <string name="settings_spotlight_hero">Spotlight hero</string>
     <string name="settings_section_subtitles">Subtitles</string>

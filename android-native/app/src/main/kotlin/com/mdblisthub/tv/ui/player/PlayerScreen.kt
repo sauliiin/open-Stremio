@@ -3,7 +3,6 @@ package com.mdblisthub.tv.ui.player
 import android.os.SystemClock
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -112,6 +111,10 @@ import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.ui.theme.HubEffects
+import com.mdblisthub.tv.core.ui.theme.HubMotion
+import com.mdblisthub.tv.core.ui.theme.HubShapes
+import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.player.ExoVideoSurface
 import com.mdblisthub.tv.player.MAX_SUBTITLE_OFFSET_MS
 import com.mdblisthub.tv.player.NO_TRACK
@@ -738,7 +741,7 @@ private fun ResolvingVeil(
                 initialValue = 0.97f,
                 targetValue = 1.03f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(1500, easing = FastOutSlowInEasing),
+                    animation = tween(1500, easing = HubMotion.StandardEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
                 label = "ClearlogoScale"
@@ -1089,10 +1092,14 @@ private fun PlayerOsd(
             .onFocusChanged { onControlsFocusChanged(it.hasFocus) }
             .background(
                 Brush.verticalGradient(
-                    listOf(HubColors.Background.copy(alpha = 0f), HubColors.Background.copy(alpha = 0.94f))
+                    listOf(
+                        HubColors.Background.copy(alpha = 0f),
+                        HubColors.Background.copy(alpha = 0.64f),
+                        HubColors.Background.copy(alpha = 0.96f),
+                    )
                 )
             )
-            .padding(horizontal = 28.dp, vertical = 18.dp),
+            .padding(horizontal = 40.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
         if (castRailOpen) {
@@ -1152,12 +1159,12 @@ private fun PlayerOsd(
                 Modifier
                     .weight(1f)
                     .height(progressBarHeight)
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(HubShapes.Pill))
                     .background(Color(0xFFD9D9D9).copy(alpha = 0.6f))
                     .border(
                         width = progressBarGlow,
                         color = if (progressBarFocused) HubColors.Accent else Color.Transparent,
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(HubShapes.Pill),
                     )
                     .focusRequester(progressBarFocusRequester)
                     .focusable(interactionSource = progressBarInteraction)
@@ -1177,7 +1184,7 @@ private fun PlayerOsd(
                     Modifier
                         .fillMaxHeight()
                         .fillMaxWidth(fraction)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(HubShapes.Pill))
                         .background(if (progressBarFocused) HubColors.AccentSoft else HubColors.Accent),
                 )
             }
@@ -1279,7 +1286,7 @@ private fun TimelinePlayButton(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
-    val scale by animateFloatAsState(if (focused) 1.13f else 1f, focusTween(), label = "play-scale")
+    val scale by animateFloatAsState(if (focused) 1.08f else 1f, focusTween(), label = "play-scale")
 
     Box(
         modifier = modifier
@@ -1327,24 +1334,24 @@ private fun FlatOsdButton(
 
     Box(
         modifier = Modifier
-            .width(88.dp)
-            .height(27.dp),
+            .width(94.dp)
+            .height(32.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             modifier = modifier
-                .width(75.dp)
-                .height(27.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .width(82.dp)
+                .height(30.dp)
+                .clip(RoundedCornerShape(HubShapes.Pill))
                 .background(background)
                 .border(
-                    width = 1.dp,
+                    width = if (focused && enabled) HubStrokes.Focus else HubStrokes.Hairline,
                     color = when {
                         focused && enabled -> Color.White
                         active -> HubColors.Accent
                         else -> HubColors.Border
                     },
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(HubShapes.Pill),
                 )
                 .clickable(
                     interactionSource = interaction,
@@ -1385,12 +1392,13 @@ private fun CastRail(
         }
     }
 
+    val railShape = RoundedCornerShape(HubShapes.Card)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(HubColors.Surface.copy(alpha = 0.88f))
-            .border(1.dp, HubColors.Border.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+            .clip(railShape)
+            .background(HubColors.Surface.copy(alpha = HubEffects.GlassSurfaceAlpha + 0.12f))
+            .border(HubStrokes.Hairline, HubColors.Border.copy(alpha = 0.7f), railShape)
             .padding(vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -1544,7 +1552,10 @@ private fun CastBubble(
 }
 
 /** Shared by every OSD control so the row moves as one consistent motion. */
-private fun <T> focusTween(): FiniteAnimationSpec<T> = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+private fun <T> focusTween(): FiniteAnimationSpec<T> = tween(
+    durationMillis = HubMotion.Focus,
+    easing = HubMotion.StandardEasing,
+)
 
 @Composable
 private fun SubtitlePickerOverlay(

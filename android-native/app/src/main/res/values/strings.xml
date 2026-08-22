@@ -22,6 +22,7 @@
     <string name="settings_section_interface">Interface</string>
     <string name="settings_language">Idioma do App</string>
     <string name="settings_autotrailer">Autotrailer</string>
+    <string name="settings_poster_landscape_transformation">Expandir poster para formato paisagem</string>
     <string name="settings_intro">Reproduzir introdução ao abrir o app</string>
     <string name="settings_spotlight_hero">Hero de destaques</string>
     <string name="settings_section_subtitles">Legendas</string>
