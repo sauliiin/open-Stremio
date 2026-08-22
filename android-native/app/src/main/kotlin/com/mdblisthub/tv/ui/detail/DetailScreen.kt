@@ -121,6 +121,11 @@ fun DetailScreen(
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onSelectSource: (season: Int?, episode: Int?) -> Unit,
     onOpenTitle: (MediaItem) -> Unit,
+    /** The backdrop already on screen for this title, carried over from
+     * wherever it was opened — see `Routes.detail`. Painted immediately so
+     * the page never sits on a bare [LoadingScreen] before its own fetch
+     * resolves. */
+    heroBackdropUrl: String? = null,
 ) {
     val viewModel = hubViewModel(key = "detail-$type-$tmdbId") {
         DetailViewModel(graph, type, tmdbId)
@@ -209,16 +214,20 @@ fun DetailScreen(
     }
 
     val current = detail
-    if (current == null) {
-        LoadingScreen(message = stringResource(R.string.loading_fetching))
-        return
-    }
 
     Box(Modifier.fillMaxSize()) {
         // Keep the artwork present as part of the page instead of reducing it
         // to a barely visible wallpaper; the shared left/bottom gradients keep
-        // metadata and the rows readable.
-        FanartBackdrop(url = current.backdropUrl, scrim = 0.56f)
+        // metadata and the rows readable. Falls back to the backdrop already
+        // on screen wherever this title was opened from — home, search, a
+        // recommendations row — so arriving here never shows a blank page
+        // while the fetch below is still in flight.
+        FanartBackdrop(url = current?.backdropUrl ?: heroBackdropUrl, scrim = 0.56f)
+
+        if (current == null) {
+            LoadingScreen(message = stringResource(R.string.loading_fetching))
+            return@Box
+        }
 
         CompositionLocalProvider(LocalBringIntoViewSpec provides pinWhileOnButtons) {
         LazyColumn(

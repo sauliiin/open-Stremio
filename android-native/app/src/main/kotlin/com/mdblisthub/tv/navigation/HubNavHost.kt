@@ -2,6 +2,10 @@ package com.mdblisthub.tv.navigation
 import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 
+import android.net.Uri
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +27,7 @@ import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.ui.component.LandscapeArtworkLoader
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.LocalLandscapeArtworkLoader
+import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.ui.addons.AddonsScreen
 import com.mdblisthub.tv.ui.detail.DetailScreen
 import com.mdblisthub.tv.ui.home.HomeScreen
@@ -41,10 +46,19 @@ object Routes {
     const val SEARCH = "search"
     const val ADDONS = "addons"
     const val SETTINGS = "settings"
-    const val DETAIL = "detail/{type}/{tmdbId}"
+    const val DETAIL = "detail/{type}/{tmdbId}?heroBackdropUrl={heroBackdropUrl}"
     const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}&select={select}"
 
-    fun detail(type: MediaType, tmdbId: Int) = "detail/${type.mdblist}/$tmdbId"
+    /**
+     * [heroBackdropUrl] is the backdrop already on screen for this title —
+     * its poster row, the home hero, a search result — passed through so
+     * Detail can paint it immediately instead of sitting on a blank
+     * [LoadingScreen] until its own fetch resolves. See `DetailScreen`.
+     */
+    fun detail(type: MediaType, tmdbId: Int, heroBackdropUrl: String? = null): String {
+        val base = "detail/${type.mdblist}/$tmdbId"
+        return if (heroBackdropUrl.isNullOrBlank()) base else "$base?heroBackdropUrl=${Uri.encode(heroBackdropUrl)}"
+    }
 
     fun player(type: MediaType, tmdbId: Int, season: Int? = null, episode: Int? = null, select: Boolean = false) =
         "player/${type.mdblist}/$tmdbId?season=${season ?: -1}&episode=${episode ?: -1}&select=$select"
@@ -146,6 +160,14 @@ fun HubNavHost(graph: DataGraph) {
         NavHost(
             navController = navController,
             startDestination = start,
+            // Bare `NavHost` defaults to an instant cut between screens.
+            // A shared fade is cheap insurance against that jump on every
+            // transition the more specific fixes below don't already cover
+            // (Detail's own hero continuity, the player's own transitions).
+            enterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+            exitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+            popEnterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+            popExitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
         ) {
         composable(Routes.LOGIN) {
             LoginScreen(
@@ -161,7 +183,7 @@ fun HubNavHost(graph: DataGraph) {
         composable(Routes.HOME) {
             HomeScreen(
                 graph = graph,
-                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) },
+                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) },
                 onOpenSearch = { navController.navigate(Routes.SEARCH) },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
@@ -187,7 +209,7 @@ fun HubNavHost(graph: DataGraph) {
         composable(Routes.SEARCH) {
             SearchScreen(
                 graph = graph,
-                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) }
+                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) }
             )
         }
 
@@ -196,15 +218,22 @@ fun HubNavHost(graph: DataGraph) {
             arguments = listOf(
                 navArgument("type") { type = NavType.StringType },
                 navArgument("tmdbId") { type = NavType.IntType },
+                navArgument("heroBackdropUrl") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
         ) { entry ->
             val type = MediaType.parse(entry.arguments?.getString("type"))
             val tmdbId = entry.arguments?.getInt("tmdbId") ?: 0
+            val heroBackdropUrl = entry.arguments?.getString("heroBackdropUrl")?.takeIf { it.isNotBlank() }
 
             DetailScreen(
                 graph = graph,
                 type = type,
                 tmdbId = tmdbId,
+                heroBackdropUrl = heroBackdropUrl,
                 onBack = { navController.popBackStack() },
                 onPlay = { season, episode ->
                     navController.navigate(Routes.player(type, tmdbId, season, episode))
@@ -212,7 +241,7 @@ fun HubNavHost(graph: DataGraph) {
                 onSelectSource = { season, episode ->
                     navController.navigate(Routes.player(type, tmdbId, season, episode, select = true))
                 },
-                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId)) },
+                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) },
             )
         }
 

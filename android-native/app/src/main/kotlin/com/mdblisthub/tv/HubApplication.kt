@@ -10,9 +10,10 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ImageRequest
-import coil3.request.crossfade
+import coil3.request.transitionFactory
 import coil3.PlatformContext as CoilPlatformContext
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.ui.coil.AlwaysCrossfadeTransitionFactory
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
 import com.mdblisthub.tv.core.data.work.ImageMemoryTrimmer
 import com.mdblisthub.tv.core.data.work.ImageWarmer
@@ -132,7 +133,12 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
                     .maxSizeBytes(512L * 1024 * 1024)
                     .build()
             }
-            .crossfade(true)
+            // Plain `.crossfade(true)` skips the animation whenever Coil
+            // serves the image from memory cache — which, revisiting rows
+            // browsed moments ago, is most posters most of the time. This
+            // factory crossfades any genuinely new image regardless of
+            // where it was served from. See `AlwaysCrossfadeTransitionFactory`.
+            .transitionFactory(AlwaysCrossfadeTransitionFactory())
             .build()
 }
 
