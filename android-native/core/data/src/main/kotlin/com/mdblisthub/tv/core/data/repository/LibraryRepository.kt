@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.map
 class LibraryRepository(
     private val mdblist: LibrarySource,
     private val trakt: LibrarySource,
+    private val simkl: LibrarySource,
     private val preferences: UiPreferencesStore,
     private val database: HubDatabase,
 ) {
@@ -119,8 +120,9 @@ class LibraryRepository(
     }
 
     private suspend fun source(): LibrarySource = when (preferences.currentLibraryProvider()) {
-        LibraryProvider.TRAKT -> trakt
-        LibraryProvider.MDBLIST -> mdblist
+            LibraryProvider.TRAKT -> trakt
+            LibraryProvider.SIMKL -> simkl
+            LibraryProvider.MDBLIST -> mdblist
     }
 
     /** In-memory, because a bucket's freshness is per-session, not per-row. */

@@ -97,6 +97,10 @@ class NetworkModule(context: Context) {
     /** A different host from [trakt] — see [ApiConfig.TRAKT_AUTH_BASE]. */
     val traktAuth: TraktAuthApi = retrofit(ApiConfig.TRAKT_AUTH_BASE, traktAuthClient).create()
 
+    @Volatile var simklToken: () -> String = { "" }
+    private val simklClient: OkHttpClient = HttpClients.simkl(metadataClient) { simklToken() }
+    val simkl: SimklApi = retrofit(ApiConfig.SIMKL_API_BASE, simklClient).create()
+
     private fun retrofit(base: String, client: OkHttpClient): Retrofit =
         Retrofit.Builder()
             .baseUrl(base)

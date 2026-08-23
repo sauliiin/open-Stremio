@@ -15,6 +15,7 @@ import com.mdblisthub.tv.core.data.repository.StreamsRepository
 import com.mdblisthub.tv.core.data.repository.StremioAccountRepository
 import com.mdblisthub.tv.core.data.repository.TrailerRepository
 import com.mdblisthub.tv.core.data.repository.TraktAuthRepository
+import com.mdblisthub.tv.core.data.repository.SimklAuthRepository
 import com.mdblisthub.tv.core.data.repository.WikipediaRepository
 import com.mdblisthub.tv.core.data.repository.source.MdblistHomeFeedSource
 import com.mdblisthub.tv.core.data.repository.source.MdblistLibrarySource
@@ -22,6 +23,9 @@ import com.mdblisthub.tv.core.data.repository.source.MdblistPlaybackSource
 import com.mdblisthub.tv.core.data.repository.source.TraktHomeFeedSource
 import com.mdblisthub.tv.core.data.repository.source.TraktLibrarySource
 import com.mdblisthub.tv.core.data.repository.source.TraktPlaybackSource
+import com.mdblisthub.tv.core.data.repository.source.SimklHomeFeedSource
+import com.mdblisthub.tv.core.data.repository.source.SimklLibrarySource
+import com.mdblisthub.tv.core.data.repository.source.SimklPlaybackSource
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.data.work.ImageMemoryTrimmer
 import com.mdblisthub.tv.core.data.work.ImageWarmer
@@ -54,8 +58,10 @@ class DataGraph(context: Context) {
     val uiPreferences = UiPreferencesStore(appContext)
     val stremioAccountStore = StremioAccountStore(appContext)
     val traktTokenStore = TraktTokenStore(appContext)
+    val simklTokenStore = SimklTokenStore(appContext)
 
     val traktAuth = TraktAuthRepository(network.traktAuth, network.trakt, traktTokenStore)
+    val simklAuth = SimklAuthRepository(network.simkl, simklTokenStore)
 
     init {
         // The HTTP layer reads the Trakt credential through this — see
@@ -64,6 +70,7 @@ class DataGraph(context: Context) {
         // of the network module, not underneath it. Same late binding as
         // [imageWarmer] below.
         network.traktTokens = traktAuth
+        network.simklToken = { kotlinx.coroutines.runBlocking { simklTokenStore.accessToken() } }
     }
 
     val auth = AuthRepository(
@@ -94,6 +101,7 @@ class DataGraph(context: Context) {
     val homeFeeds = HomeFeedsRepository(
         mdblist = MdblistHomeFeedSource(network.mdblist, session),
         trakt = TraktHomeFeedSource(network.trakt, traktTokenStore),
+        simkl = SimklHomeFeedSource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         session = session,
         media = media,
@@ -112,12 +120,14 @@ class DataGraph(context: Context) {
     val library = LibraryRepository(
         mdblist = MdblistLibrarySource(network.mdblist, session),
         trakt = TraktLibrarySource(network.trakt, traktTokenStore),
+        simkl = SimklLibrarySource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         database = database,
     )
     val playback = PlaybackRepository(
         mdblist = MdblistPlaybackSource(network.mdblist, session),
         trakt = TraktPlaybackSource(network.trakt, traktTokenStore),
+        simkl = SimklPlaybackSource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         database = database,
         media = media,
@@ -184,5 +194,10 @@ class DataGraph(context: Context) {
     suspend fun unlinkTrakt() {
         switchLibraryProvider(LibraryProvider.MDBLIST)
         traktAuth.unlink()
+    }
+
+    suspend fun unlinkSimkl() {
+        switchLibraryProvider(LibraryProvider.MDBLIST)
+        simklAuth.unlink()
     }
 }

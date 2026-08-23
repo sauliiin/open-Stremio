@@ -65,6 +65,12 @@ object ApiConfig {
     val traktConfigured: Boolean
         get() = TRAKT_CLIENT_ID.isNotBlank() && TRAKT_CLIENT_SECRET.isNotBlank()
 
+    /** Simkl's PIN flow for TVs uses only this public application identifier. */
+    const val SIMKL_API_BASE = "https://api.simkl.com/"
+    const val SIMKL_CLIENT_ID = "61c8667bd61f4ec4a16f09f0c061328f491cd7c8138adf4b59a253d854074576"
+    const val SIMKL_APP_NAME = "omnistream"
+    const val SIMKL_APP_VERSION = "1.1.9.2"
+
     /**
      * OpenSubtitles.com's own API — a different service from the "OpenSubtitles
      * v3" Stremio addon of a similar name. Queried directly for [SubtitleMatcher]:

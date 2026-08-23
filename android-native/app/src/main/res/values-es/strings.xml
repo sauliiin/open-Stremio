@@ -280,10 +280,22 @@
     <!-- Biblioteca: MDBList o Trakt -->
     <string name="settings_section_library">Biblioteca</string>
     <string name="settings_library_provider">Watchlist, vistos, colección y continuar viendo</string>
+    <string name="settings_library_provider_simkl">Watchlist, vistos y continuar viendo</string>
     <string name="settings_library_mdblist">MDBList</string>
     <string name="settings_library_trakt">Trakt</string>
+    <string name="settings_library_simkl">Simkl</string>
     <string name="settings_trakt_not_connected">Ninguna cuenta de Trakt conectada</string>
     <string name="settings_trakt_connect">Conectar Trakt</string>
+    <string name="settings_simkl_not_connected">Ninguna cuenta Simkl conectada</string>
+    <string name="settings_simkl_connect">Conectar Simkl</string>
+    <string name="settings_simkl_connected">Cuenta Simkl conectada</string>
+    <string name="settings_simkl_disconnect">Desconectar</string>
+    <string name="simkl_link_title">Conectar a Simkl</string>
+    <string name="simkl_link_requesting">Solicitando un código…</string>
+    <string name="simkl_link_instruction">Abre %1$s en el móvil e introduce:</string>
+    <string name="simkl_link_expires">Expira en %1$d:%2$02d</string>
+    <string name="simkl_link_connected">Simkl conectado</string>
+    <string name="simkl_link_failed">No se pudo conectar a Simkl.</string>
     <string name="settings_trakt_disconnect">Desconectar</string>
     <string name="settings_dim_unwatched_episodes">Difuminar episodios no vistos</string>
 

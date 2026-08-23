@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.map
 class PlaybackRepository(
     private val mdblist: PlaybackSource,
     private val trakt: PlaybackSource,
+    private val simkl: PlaybackSource,
     private val preferences: UiPreferencesStore,
     private val database: HubDatabase,
     private val media: MediaRepository,
@@ -120,8 +121,9 @@ class PlaybackRepository(
     }
 
     private suspend fun source(): PlaybackSource = when (preferences.currentLibraryProvider()) {
-        LibraryProvider.TRAKT -> trakt
-        LibraryProvider.MDBLIST -> mdblist
+            LibraryProvider.TRAKT -> trakt
+            LibraryProvider.SIMKL -> simkl
+            LibraryProvider.MDBLIST -> mdblist
     }
 
     private fun keyFor(target: ScrobbleTarget): String =

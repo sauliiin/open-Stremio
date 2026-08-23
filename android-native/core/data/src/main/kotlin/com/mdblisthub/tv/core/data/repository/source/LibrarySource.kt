@@ -2,12 +2,14 @@ package com.mdblisthub.tv.core.data.repository.source
 
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
+import com.mdblisthub.tv.core.data.SimklTokenStore
 import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.TraktApi
+import com.mdblisthub.tv.core.network.SimklApi
 import com.mdblisthub.tv.core.network.dto.LibraryKeyDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteDto
@@ -17,6 +19,16 @@ import com.mdblisthub.tv.core.network.dto.TraktSyncWriteDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteItemDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteSeasonDto
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 /**
  * Where watchlist / watched / collection membership comes from.
@@ -327,3 +339,89 @@ class TraktLibrarySource(
         const val MAX_PAGES = 20
     }
 }
+
+class SimklLibrarySource(
+    private val api: SimklApi,
+    private val tokens: SimklTokenStore,
+) : LibrarySource {
+    override suspend fun membership(bucket: LibraryBucket): LibrarySyncResult? {
+        if (!tokens.isLinked()) return null
+        if (bucket == LibraryBucket.COLLECTION) return LibrarySyncResult(emptyList())
+        val status = if (bucket == LibraryBucket.WATCHLIST) "plantowatch" else "completed"
+        val full = bucket == LibraryBucket.WATCHED
+        val movies = api.items("movies", status, if (full) "full" else "ids_only",
+            if (full) "yes" else null, if (full) "yes" else null)
+        val shows = api.items("shows", status, if (full) "full" else "ids_only",
+            if (full) "yes" else null, if (full) "yes" else null)
+        val watching = if (full) api.items("shows", "watching", "full", "yes", "yes") else null
+        val entries = movies["movies"].asArray() + shows["shows"].asArray() + shows["anime"].asArray() +
+            watching?.get("shows").asArray() + watching?.get("anime").asArray()
+        val titleIds = entries.mapNotNull { it.jsonObject.titleObject()?.tmdbId() }
+        val episodes = if (!full) emptyList() else entries.flatMap { entry ->
+            val obj = entry.jsonObject
+            val tmdb = obj.titleObject()?.tmdbId() ?: return@flatMap emptyList()
+            obj["seasons"].asArray().flatMap { seasonEl ->
+                val season = seasonEl.jsonObject
+                val number = season["number"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@flatMap emptyList()
+                season["episodes"].asArray().mapNotNull { episodeEl ->
+                    episodeEl.jsonObject["number"]?.jsonPrimitive?.content?.toIntOrNull()
+                        ?.let { WatchedEpisodeId(tmdb, number, it) }
+                }
+            }
+        }
+        return LibrarySyncResult(titleIds.distinct(), episodes.distinct())
+    }
+
+    override suspend fun write(bucket: LibraryBucket, type: MediaType, tmdbId: Int, imdbId: String?, add: Boolean) {
+        check(tokens.isLinked()) { "Simkl is not connected" }
+        check(bucket != LibraryBucket.COLLECTION) { "Simkl does not provide Collection" }
+        val body = syncBody(
+            type = type,
+            tmdbId = tmdbId,
+            imdbId = imdbId,
+            watchlistStatus = "plantowatch".takeIf { bucket == LibraryBucket.WATCHLIST && add },
+            markWholeShowWatched = bucket == LibraryBucket.WATCHED && add && type == MediaType.SHOW,
+        )
+        val response = when {
+            bucket == LibraryBucket.WATCHLIST && add -> api.addToList(body)
+            add -> api.addHistory(body)
+            else -> api.removeHistory(body)
+        }
+        requireResolved(response)
+    }
+
+    override suspend fun writeEpisodeWatched(showTmdbId: Int, showImdbId: String?, season: Int, episode: Int, add: Boolean) {
+        check(tokens.isLinked()) { "Simkl is not connected" }
+        val body = buildJsonObject { putJsonArray("shows") { add(buildJsonObject {
+            putJsonObject("ids") { showImdbId?.let { put("imdb", it) }; put("tmdb", showTmdbId.toString()) }
+            putJsonArray("seasons") { add(buildJsonObject { put("number", season); putJsonArray("episodes") { add(buildJsonObject { put("number", episode) }) } }) }
+        }) } }
+        val response = if (add) api.addHistory(body) else api.removeHistory(body)
+        requireResolved(response)
+    }
+
+    private fun syncBody(
+        type: MediaType,
+        tmdbId: Int,
+        imdbId: String?,
+        watchlistStatus: String? = null,
+        markWholeShowWatched: Boolean = false,
+    ) = buildJsonObject {
+        putJsonArray(if (type == MediaType.SHOW) "shows" else "movies") { add(buildJsonObject {
+            watchlistStatus?.let { put("to", it) }
+            if (markWholeShowWatched) put("status", "completed")
+            putJsonObject("ids") { imdbId?.let { put("imdb", it) }; put("tmdb", tmdbId.toString()) }
+        }) }
+    }
+
+    private fun requireResolved(response: JsonObject) {
+        val notFound = response["not_found"] as? JsonObject
+        val rejected = listOf("movies", "shows", "episodes")
+            .sumOf { key -> notFound?.get(key).asArray().size }
+        check(rejected == 0) { "Simkl could not identify this title or episode" }
+    }
+}
+
+private fun kotlinx.serialization.json.JsonElement?.asArray(): JsonArray = this as? JsonArray ?: JsonArray(emptyList())
+private fun JsonObject.titleObject(): JsonObject? = (this["show"] ?: this["movie"]) as? JsonObject
+private fun JsonObject.tmdbId(): Int? = this["ids"]?.jsonObject?.get("tmdb")?.jsonPrimitive?.content?.toIntOrNull()

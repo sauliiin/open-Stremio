@@ -67,6 +67,21 @@ internal class TraktHeadersInterceptor(private val tokens: () -> TraktTokens) : 
     }
 }
 
+/** Adds Simkl's application identity and the linked user's token per request. */
+internal class SimklHeadersInterceptor(private val token: () -> String) : Interceptor {
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val url = chain.request().url.newBuilder()
+            .addQueryParameter("client_id", ApiConfig.SIMKL_CLIENT_ID)
+            .addQueryParameter("app-name", ApiConfig.SIMKL_APP_NAME)
+            .addQueryParameter("app-version", ApiConfig.SIMKL_APP_VERSION)
+            .build()
+        return chain.proceed(chain.request().newBuilder().url(url).apply {
+            header("User-Agent", "${ApiConfig.SIMKL_APP_NAME}/${ApiConfig.SIMKL_APP_VERSION}")
+            token().takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") }
+        }.build())
+    }
+}
+
 /**
  * Renews the token once when Trakt rejects it, then replays the request.
  *

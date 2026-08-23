@@ -3,6 +3,7 @@ package com.mdblisthub.tv.core.data.repository.source
 import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
+import com.mdblisthub.tv.core.data.SimklTokenStore
 import com.mdblisthub.tv.core.model.MdblistHomeFeedItem
 import com.mdblisthub.tv.core.model.MdblistHomeFeedKeys
 import com.mdblisthub.tv.core.model.MediaItem
@@ -10,6 +11,7 @@ import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.TraktApi
+import com.mdblisthub.tv.core.network.SimklApi
 import com.mdblisthub.tv.core.network.dto.BucketEntryDto
 import com.mdblisthub.tv.core.network.dto.BucketTitleDto
 import com.mdblisthub.tv.core.network.dto.MdbItemDto
@@ -20,6 +22,10 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Where the four account-owned home rows come from.
@@ -173,6 +179,59 @@ class TraktHomeFeedSource(
                 },
             ).awaitAll().filterNotNull().toMap()
         }
+    }
+}
+
+class SimklHomeFeedSource(private val api: SimklApi, private val tokens: SimklTokenStore) : HomeFeedSource {
+    override suspend fun load(limit: Int): Map<String, List<MdblistHomeFeedItem>> {
+        if (!tokens.isLinked()) return emptyMap()
+        val plannedMovies = api.items("movies", "plantowatch", "full")
+        val plannedShows = api.items("shows", "plantowatch", "full")
+        val completedMovies = api.items("movies", "completed", "full")
+        val completedShows = api.items("shows", "completed", "full")
+        val watching = api.items("shows", "watching", "full", nextWatchInfo = "yes")
+        fun entries(root: JsonObject) = listOf("movies", "shows", "anime")
+            .flatMap { (root[it] as? JsonArray).orEmpty() }
+        fun feed(roots: List<JsonObject>, sortField: String) = roots
+            .flatMap(::entries)
+            .mapNotNull { el ->
+            val obj = el.jsonObject
+            val movie = obj["movie"] as? JsonObject
+            val show = obj["show"] as? JsonObject
+            val title = show ?: movie ?: return@mapNotNull null
+            val tmdb = title["ids"]?.jsonObject?.get("tmdb")?.jsonPrimitive?.content?.toIntOrNull() ?: return@mapNotNull null
+            val item = MdblistHomeFeedItem(MediaItem(tmdbId = tmdb, type = if (show != null) MediaType.SHOW else MediaType.MOVIE,
+                title = title["title"]?.jsonPrimitive?.content ?: CoreText.untitled,
+                imdbId = title["ids"]?.jsonObject?.get("imdb")?.jsonPrimitive?.content,
+                year = title["year"]?.jsonPrimitive?.content?.toIntOrNull()))
+            item to obj[sortField]?.jsonPrimitive?.content.orEmpty()
+        }
+            .sortedByDescending { it.second }
+            .map { it.first }
+            .distinctBy { it.media.key }
+            .take(limit)
+        val upNext = entries(watching).mapNotNull { el ->
+            val obj = el.jsonObject
+            val show = obj["show"] as? JsonObject ?: return@mapNotNull null
+            val info = obj["next_to_watch_info"] as? JsonObject ?: return@mapNotNull null
+            val season = info["season"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@mapNotNull null
+            val episode = info["episode"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@mapNotNull null
+            val tmdb = show["ids"]?.jsonObject?.get("tmdb")?.jsonPrimitive?.content?.toIntOrNull() ?: return@mapNotNull null
+            val item = MdblistHomeFeedItem(MediaItem(tmdb, MediaType.SHOW, episodeLabel(show["title"]?.jsonPrimitive?.content.orEmpty(), season, episode, info["title"]?.jsonPrimitive?.content),
+                imdbId = show["ids"]?.jsonObject?.get("imdb")?.jsonPrimitive?.content), season, episode)
+            item to obj["last_watched_at"]?.jsonPrimitive?.content.orEmpty()
+        }.sortedByDescending { it.second }.map { it.first }.take(limit)
+        return mapOf(
+            MdblistHomeFeedKeys.UP_NEXT to upNext,
+            MdblistHomeFeedKeys.WATCHLIST to feed(
+                listOf(plannedMovies, plannedShows),
+                "added_to_watchlist_at",
+            ),
+            MdblistHomeFeedKeys.RECENTLY_WATCHED to feed(
+                listOf(completedMovies, completedShows, watching),
+                "last_watched_at",
+            ),
+        )
     }
 }
 

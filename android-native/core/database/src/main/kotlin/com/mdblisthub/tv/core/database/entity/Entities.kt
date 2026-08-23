@@ -199,7 +199,7 @@ data class ResumeEntity(
     /**
      * The session's own id at the provider, when it has one.
      *
-     * Only Trakt needs it: dropping a paused session there is
+     * Trakt and Simkl need it: dropping a paused session there is
      * `DELETE /sync/playback/{id}` against the *session*, not the title, and
      * that id exists nowhere else in this app. mdblist clears by scrobbling
      * the title itself and leaves this null.

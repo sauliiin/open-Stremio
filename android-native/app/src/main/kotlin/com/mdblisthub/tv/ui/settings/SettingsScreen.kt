@@ -80,6 +80,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
+import com.mdblisthub.tv.core.data.repository.SimklLinkState
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.model.TraktAccount
@@ -141,6 +142,7 @@ data class SettingsUiState(
     val traktAccount: TraktAccount? = null,
     /** False when the build ships no Trakt client id — see `ApiConfig`. */
     val traktConfigured: Boolean = false,
+    val simklLinked: Boolean = false,
 )
 
 class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
@@ -150,6 +152,8 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     /** Non-null only while the device-link overlay is up. */
     private val _traktLink = MutableStateFlow<TraktLinkState?>(null)
     val traktLink = _traktLink.asStateFlow()
+    private val _simklLink = MutableStateFlow<SimklLinkState?>(null)
+    val simklLink = _simklLink.asStateFlow()
 
     private var linkJob: Job? = null
 
@@ -208,6 +212,7 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                         traktConfigured = graph.traktAuth.configured,
                     )
                 }
+                .combine(graph.simklTokenStore.linked) { partial, linked -> partial.copy(simklLinked = linked) }
                 .collect { _state.value = it }
         }
     }
@@ -221,6 +226,10 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch {
             if (provider == LibraryProvider.TRAKT && _state.value.traktAccount == null) {
                 beginTraktLink()
+                return@launch
+            }
+            if (provider == LibraryProvider.SIMKL && !_state.value.simklLinked) {
+                beginSimklLink()
                 return@launch
             }
             graph.switchLibraryProvider(provider)
@@ -264,6 +273,27 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
         linkJob = null
         _traktLink.value = null
     }
+
+    fun beginSimklLink() {
+        if (linkJob?.isActive == true) return
+        _simklLink.value = SimklLinkState.Requesting
+        linkJob = viewModelScope.launch {
+            runCatching { graph.simklAuth.start() }.onSuccess { pin ->
+                graph.simklAuth.poll(pin).collect {
+                    _simklLink.value = it
+                    if (it is SimklLinkState.Linked) {
+                        graph.switchLibraryProvider(LibraryProvider.SIMKL)
+                        refreshLibraryRows()
+                        delay(LINKED_VISIBLE_MS)
+                        _simklLink.value = null
+                    }
+                }
+            }.onFailure { _simklLink.value = SimklLinkState.Failed }
+        }
+    }
+
+    fun dismissSimklLink() { linkJob?.cancel(); linkJob = null; _simklLink.value = null }
+    fun unlinkSimkl() = viewModelScope.launch { graph.unlinkSimkl(); refreshLibraryRows() }
 
     fun unlinkTrakt() {
         viewModelScope.launch {
@@ -358,6 +388,7 @@ fun SettingsScreen(
     val viewModel = hubViewModel { SettingsViewModel(graph) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val traktLink by viewModel.traktLink.collectAsStateWithLifecycle()
+    val simklLink by viewModel.simklLink.collectAsStateWithLifecycle()
     var selectedSection by rememberSaveable { mutableStateOf(initialSection) }
     var subtitlePickerOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
@@ -406,6 +437,7 @@ fun SettingsScreen(
     BackHandler {
         when {
             traktLink != null -> viewModel.dismissTraktLink()
+            simklLink != null -> viewModel.dismissSimklLink()
             subtitlePickerOpen -> subtitlePickerOpen = false
             audioPickerOpen -> audioPickerOpen = false
             else -> onBack()
@@ -557,6 +589,7 @@ fun SettingsScreen(
                 onDismiss = viewModel::dismissTraktLink,
             )
         }
+        simklLink?.let { link -> SimklLinkOverlay(link, viewModel::beginSimklLink, viewModel::dismissSimklLink) }
     }
 }
 
@@ -776,10 +809,11 @@ private fun LibrarySettingsContent(state: SettingsUiState, viewModel: SettingsVi
                 title = stringResource(R.string.settings_section_library),
                 subtitle = stringResource(R.string.settings_category_library_desc),
             ) {
-                SettingsRow(label = stringResource(R.string.settings_library_provider)) {
+                SettingsRow(label = stringResource(if (state.libraryProvider == LibraryProvider.SIMKL) R.string.settings_library_provider_simkl else R.string.settings_library_provider)) {
                     listOf(
                         LibraryProvider.MDBLIST to stringResource(R.string.settings_library_mdblist),
                         LibraryProvider.TRAKT to stringResource(R.string.settings_library_trakt),
+                        LibraryProvider.SIMKL to stringResource(R.string.settings_library_simkl),
                     ).forEach { (provider, name) ->
                         HubButton(text = name, primary = state.libraryProvider == provider, onClick = { viewModel.setLibraryProvider(provider) })
                     }
@@ -795,6 +829,10 @@ private fun LibrarySettingsContent(state: SettingsUiState, viewModel: SettingsVi
                     } else {
                         HubButton(text = stringResource(R.string.settings_trakt_disconnect), onClick = viewModel::unlinkTrakt)
                     }
+                }
+                SettingsRow(label = stringResource(if (state.simklLinked) R.string.settings_simkl_connected else R.string.settings_simkl_not_connected)) {
+                    if (state.simklLinked) HubButton(text = stringResource(R.string.settings_simkl_disconnect), onClick = viewModel::unlinkSimkl)
+                    else HubButton(text = stringResource(R.string.settings_simkl_connect), primary = true, onClick = viewModel::beginSimklLink)
                 }
             }
         }
