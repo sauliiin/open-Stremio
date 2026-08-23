@@ -82,6 +82,10 @@
     <string name="detail_cast">Reparto</string>
     <string name="detail_watched">Visto</string>
     <string name="detail_mark_watched">Marcar como visto</string>
+    <string name="media_options_mark_unwatched">Marcar como no visto</string>
+    <string name="home_item_options_title">Opciones</string>
+    <string name="media_options_play">Reproducir</string>
+    <string name="media_options_info">Información</string>
     <string name="detail_clear_progress">Restablecer progreso</string>
     <string name="detail_reviews">Reseñas</string>
     <string name="search_title">Buscar en TMDB</string>
@@ -217,8 +221,8 @@
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Arrastra o usa ◀ ▶  •  OK para terminar</string>
     <string name="player_scale">Ajuste: %1$s</string>
-    <string name="player_scale_fit">Ajustar a la pantalla</string>
-    <string name="player_scale_zoom">Rellenar</string>
+    <string name="player_scale_fit">Normal</string>
+    <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Estirar</string>
     <string name="player_track_language">Pista %1$s</string>
     <string name="player_track_index">Pista %1$d</string>

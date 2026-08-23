@@ -9,9 +9,11 @@ import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaDetail
+import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.ResumePoint
+import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.WikipediaLookup
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +83,9 @@ class DetailViewModel(
     val watchedEpisodes: StateFlow<Set<String>> = graph.library.observeWatchedEpisodes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
+    val watchedIds: StateFlow<Set<Int>> = graph.library.observeBucket(LibraryBucket.WATCHED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     /**
      * Whole-title membership across all three buckets. A show's "watched"
      * marks the series, the same as the web build — mdblist has no
@@ -136,6 +141,24 @@ class DetailViewModel(
     fun toggleWatchlist() = toggleBucket(LibraryBucket.WATCHLIST)
     fun toggleCollection() = toggleBucket(LibraryBucket.COLLECTION)
     fun toggleWatched() = toggleBucket(LibraryBucket.WATCHED)
+
+    fun setWatched(item: MediaItem, watched: Boolean) {
+        if (item.tmdbId <= 0) return
+        viewModelScope.launch {
+            val result = graph.library.toggle(
+                LibraryBucket.WATCHED,
+                item.type,
+                item.tmdbId,
+                item.imdbId,
+                add = watched,
+            )
+            if (result.isSuccess && watched) {
+                graph.playback.clear(
+                    ScrobbleTarget(item.type, item.tmdbId, item.imdbId),
+                )
+            }
+        }
+    }
 
     fun clearProgress() {
         val point = resumePoint.value ?: return

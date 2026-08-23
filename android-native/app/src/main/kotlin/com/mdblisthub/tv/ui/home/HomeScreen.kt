@@ -59,6 +59,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -74,8 +76,10 @@ import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
+import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.MediaList
 import com.mdblisthub.tv.core.model.MdblistHomeFeed
+import com.mdblisthub.tv.core.model.MdblistHomeFeedKeys
 import com.mdblisthub.tv.core.model.AddonCatalog
 import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
@@ -91,6 +95,7 @@ import com.mdblisthub.tv.core.model.HubThemeVariant
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.MediaOptionsDialog
 import com.mdblisthub.tv.ui.hubViewModel
 import com.mdblisthub.tv.ui.player.MiniPlayerCoordinator
 import kotlinx.coroutines.flow.StateFlow
@@ -117,6 +122,13 @@ private sealed interface EditableListTarget {
         override val displayName: String get() = feed.name
     }
 }
+
+private data class HomeOptionTarget(
+    val item: MediaItem,
+    val season: Int? = null,
+    val episode: Int? = null,
+    val resumePoint: ResumePoint? = null,
+)
 
 /**
  * How the column scrolls when focus moves between rows.
@@ -268,6 +280,8 @@ fun HomeScreen(
     onOpenAddons: () -> Unit,
     onOpenSettings: () -> Unit,
     onResume: (ResumePoint) -> Unit,
+    onPlay: (MediaItem, Int?, Int?) -> Unit,
+    onChooseSource: (MediaItem, Int?, Int?) -> Unit,
     onSignOut: () -> Unit,
 ) {
     val viewModel = hubViewModel { HomeViewModel(graph) }
@@ -512,12 +526,29 @@ fun HomeScreen(
             }
         }
     }
+    val playOption: (HomeOptionTarget) -> Unit = { target ->
+        if (target.item.tmdbId > 0) {
+            onPlay(target.item, target.season, target.episode)
+        } else {
+            target.item.imdbId?.let { imdbId ->
+                scope.launch {
+                    graph.media.resolveImdb(target.item.type, imdbId).onSuccess { tmdbId ->
+                        onPlay(
+                            target.item.copy(tmdbId = tmdbId),
+                            target.season,
+                            target.episode,
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     var showExitDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<EditableListTarget?>(null) }
     var renameValue by remember { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<EditableListTarget?>(null) }
-    var resumeRemovalTarget by remember { mutableStateOf<ResumePoint?>(null) }
+    var optionTarget by remember { mutableStateOf<HomeOptionTarget?>(null) }
     val emptyStateFocusRequester = remember { FocusRequester() }
     val railFocusRequester = remember { FocusRequester() }
     val contentFocusRequester = remember { FocusRequester() }
@@ -645,38 +676,37 @@ fun HomeScreen(
     }
     val onInitialNormalFocusHandled = { initialNormalFocusPending = false }
 
-    resumeRemovalTarget?.let { point ->
-        Dialog(onDismissRequest = { resumeRemovalTarget = null }) {
-            Column(
-                modifier = Modifier
-                    .width(560.dp)
-                    .background(HubColors.Surface, RoundedCornerShape(16.dp))
-                    .padding(28.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(
-                    stringResource(R.string.home_resume_remove_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = HubColors.Text,
-                )
-                Text(
-                    stringResource(R.string.home_resume_remove_body, point.title),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = HubColors.TextDim,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(
-                        onClick = {
-                            viewModel.removeResumePoint(point)
-                            resumeRemovalTarget = null
-                        },
-                    ) { Text(stringResource(R.string.home_delete)) }
-                    Button(onClick = { resumeRemovalTarget = null }) {
-                        Text(stringResource(R.string.home_cancel))
-                    }
-                }
-            }
+    optionTarget?.let { target ->
+        val isWatched = if (
+            target.item.type == MediaType.SHOW &&
+            target.season != null &&
+            target.episode != null
+        ) {
+            watchedEpisodes.contains("${target.item.tmdbId}:${target.season}:${target.episode}")
+        } else {
+            watchedIds.contains(target.item.tmdbId)
         }
+        MediaOptionsDialog(
+            isWatched = isWatched,
+            onPlay = {
+                playOption(target)
+                optionTarget = null
+            },
+            onInfo = {
+                openCatalogItem(target.item)
+                optionTarget = null
+            },
+            onToggleWatched = {
+                viewModel.setWatched(target.item, target.season, target.episode, !isWatched)
+                optionTarget = null
+            },
+            onChooseSource = {
+                target.resumePoint?.let(resumePlayback)
+                    ?: onChooseSource(target.item, target.season, target.episode)
+                optionTarget = null
+            },
+            onDismiss = { optionTarget = null },
+        )
     }
 
     if (showExitDialog) {
@@ -870,6 +900,17 @@ fun HomeScreen(
     Box(
         Modifier
             .fillMaxSize()
+            // The app shell has a subtle Surface -> Background gradient at
+            // the top. That works for ordinary screens, but the bounded hero
+            // dissolves into the theme's solid Background; letting the shell
+            // show through here placed two near-black tones side by side and
+            // revealed the artwork rectangle. Streaming-layout homes own a
+            // solid canvas so the Nuvio-style edge veil and the page end in
+            // exactly the same colour.
+            .let {
+                if (usesFocusedShelfHero) it.background(HubColors.Background)
+                else it
+            }
             .onFocusChanged { screenHasFocus = it.hasFocus },
     ) {
         // The fanart follows focus, the way Estuary does it: whatever the
@@ -1074,7 +1115,16 @@ fun HomeScreen(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .fillMaxHeight()
-                                .fillMaxWidth(HERO_ART_WIDTH_FRACTION),
+                                .fillMaxWidth(HERO_ART_WIDTH_FRACTION)
+                                // Drawing-only overscan: the hero grows from
+                                // the physical top-right corner, but its
+                                // measured size remains unchanged, so neither
+                                // the metadata nor the rows move by a pixel.
+                                .graphicsLayer {
+                                    scaleX = HERO_ART_OVERSCAN_X
+                                    scaleY = HERO_ART_OVERSCAN_Y
+                                    transformOrigin = TransformOrigin(1f, 0f)
+                                },
                         )
                         HeroPanel(viewModel)
                     }
@@ -1215,10 +1265,32 @@ fun HomeScreen(
                             rowFocusRequester = resumeRowFocus,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
                             onItemClickIndexed = { index, _ ->
-                                resumeCards.getOrNull(index)?.let(openCatalogItem)
+                                val point = resumePoints.getOrNull(index)
+                                val card = resumeCards.getOrNull(index)
+                                if (point != null && card != null && point.type == MediaType.SHOW &&
+                                    point.season != null && point.episode != null
+                                ) {
+                                    optionTarget = HomeOptionTarget(
+                                        item = card,
+                                        season = point.season,
+                                        episode = point.episode,
+                                        resumePoint = point,
+                                    )
+                                } else {
+                                    card?.let(openCatalogItem)
+                                }
                             },
                             onItemLongClickIndexed = { index, _ ->
-                                resumeRemovalTarget = resumePoints.getOrNull(index)
+                                val point = resumePoints.getOrNull(index)
+                                val card = resumeCards.getOrNull(index)
+                                if (point != null && card != null) {
+                                    optionTarget = HomeOptionTarget(
+                                        item = card,
+                                        season = point.season,
+                                        episode = point.episode,
+                                        resumePoint = point,
+                                    )
+                                }
                             },
                             progressPercent = { index, _ -> resumePoints.getOrNull(index)?.progress },
                             isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
@@ -1287,6 +1359,7 @@ fun HomeScreen(
                                 },
                                 onEnsure = { viewModel.ensureItems(list.id) },
                                 onItemClick = onOpenTitle,
+                                onItemLongClick = { optionTarget = HomeOptionTarget(it) },
                                 onItemFocused = trackFocus,
                                 onReachedEnd = { viewModel.loadMore(list.id) },
                                 isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
@@ -1323,6 +1396,7 @@ fun HomeScreen(
                                 },
                                 onEnsure = { viewModel.ensureCatalog(catalog) },
                                 onItemClick = openCatalogItem,
+                                onItemLongClick = { optionTarget = HomeOptionTarget(it) },
                                 onItemFocused = trackFocus,
                                 isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                                 requestInitialFocus = requestInitialFocus,
@@ -1365,8 +1439,27 @@ fun HomeScreen(
                                     val feedItem = feed.items.getOrNull(itemIndex)
                                     "${item.key}:${feedItem?.season ?: 0}:${feedItem?.episode ?: 0}"
                                 },
-                                onItemClickIndexed = { _, item ->
-                                    openCatalogItem(item)
+                                onItemClickIndexed = { itemIndex, item ->
+                                    val feedItem = feed.items.getOrNull(itemIndex)
+                                    if (feed.key == MdblistHomeFeedKeys.UP_NEXT &&
+                                        feedItem?.season != null && feedItem.episode != null
+                                    ) {
+                                        optionTarget = HomeOptionTarget(
+                                            item = item,
+                                            season = feedItem.season,
+                                            episode = feedItem.episode,
+                                        )
+                                    } else {
+                                        openCatalogItem(item)
+                                    }
+                                },
+                                onItemLongClickIndexed = { itemIndex, item ->
+                                    val feedItem = feed.items.getOrNull(itemIndex)
+                                    optionTarget = HomeOptionTarget(
+                                        item = item,
+                                        season = feedItem?.season,
+                                        episode = feedItem?.episode,
+                                    )
                                 },
                                 isWatched = { itemIndex, item ->
                                     val feedItem = feed.items.getOrNull(itemIndex)
@@ -1403,6 +1496,9 @@ fun HomeScreen(
                             title = stringResource(R.string.home_because_you_watched, row.seedTitle),
                             items = row.items,
                             onItemClick = onOpenTitle,
+                            onItemLongClickIndexed = { _, item ->
+                                optionTarget = HomeOptionTarget(item)
+                            },
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = bywRowFocus
@@ -1445,6 +1541,7 @@ private fun AddonCatalogRow(
     onDelete: () -> Unit,
     onEnsure: () -> Unit,
     onItemClick: (MediaItem) -> Unit,
+    onItemLongClick: (MediaItem) -> Unit,
     onItemFocused: (MediaItem) -> Unit,
     isWatched: ((Int, MediaItem) -> Boolean)? = null,
     requestInitialFocus: Boolean = false,
@@ -1469,6 +1566,7 @@ private fun AddonCatalogRow(
         onRename = onRename,
         onDelete = onDelete,
         onItemClick = onItemClick,
+        onItemLongClickIndexed = { _, item -> onItemLongClick(item) },
         onItemFocused = onItemFocused,
         isWatched = isWatched,
         requestInitialFocus = requestInitialFocus,
@@ -1517,6 +1615,7 @@ private fun ListRow(
     onDelete: () -> Unit = {},
     onEnsure: () -> Unit,
     onItemClick: (MediaItem) -> Unit,
+    onItemLongClick: (MediaItem) -> Unit,
     onItemFocused: (MediaItem) -> Unit,
     isWatched: ((Int, MediaItem) -> Boolean)? = null,
     onReachedEnd: () -> Unit,
@@ -1544,6 +1643,7 @@ private fun ListRow(
         onRename = onRename,
         onDelete = onDelete,
         onItemClick = onItemClick,
+        onItemLongClickIndexed = { _, item -> onItemLongClick(item) },
         onItemFocused = onItemFocused,
         isWatched = isWatched,
         onReachedEnd = onReachedEnd,
@@ -1852,33 +1952,16 @@ private const val POLL_MS = 1_000L
 /**
  * Share of the hero's width CyberFlix gives the artwork block.
  *
- * The block is right-aligned and its own left edge is feathered away over the
- * first third of itself, so the artwork stops well before the title card
- * rather than at this line — which is why the number can be this generous
- * without the two ever colliding.
- *
- * A width-only increase was tried here to grow the block's area, on the
- * reasoning that the block already fills the hero's full height so width was
- * the only lever left. It was reverted: the height itself is already capped
- * by the hero `Box`'s share of the column (screen height minus the row
- * strip's fixed height below it), so widening alone could not deliver a real
- * area increase — it only stretched the same silhouette sideways. Growing
- * the area for real means growing what the hero `Box` is given, which means
- * taking height from the rows below; that call has since been made, in the
- * strip heights CyberFlix and OptimusPrime ask for above.
- *
- * Which leaves this constant where it already was: at its ceiling. The left
- * ramp has to have finished erasing the artwork by the time it reaches the
- * synopsis, and the synopsis ends 0.55 of the padded width in — 524 dp on the
- * 960 dp canvas a television gives. The block is right-aligned, so its opaque
- * edge sits at `width − W + LEFT_FEATHER · W`, and holding that at or past
- * 524 allows W ≤ 660 dp, i.e. 0.6875. Every dp past that is artwork printed
- * under the text; every dp of width bought by widening the ramp instead is
- * artwork drawn at partial alpha while the aspect — and with it the crop
- * taken out of a 16:9 backdrop — gets worse. Height was the only honest
- * lever, and it is the one that was pulled.
+ * The block is right-aligned and its Nuvio-style veil spends a little over
+ * half of it blending into the page, so opaque artwork stops before the title
+ * card. Its measured share stays fixed; the 20% enlargement below is a draw
+ * transform and therefore cannot remeasure or push the synopsis and rows.
  */
 private const val HERO_ART_WIDTH_FRACTION = 0.68f
+
+/** Visual-only enlargement; [graphicsLayer] does not participate in layout. */
+private const val HERO_ART_OVERSCAN_X = 1.18f
+private const val HERO_ART_OVERSCAN_Y = 1.18f
 
 /**
  * Ceiling on the clearlogo's width, as a share of the hero panel.

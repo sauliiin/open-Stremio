@@ -81,7 +81,11 @@
     <string name="detail_episodes">Episódios</string>
     <string name="detail_cast">Elenco</string>
     <string name="detail_watched">Assistido</string>
-    <string name="detail_mark_watched">Marcar assistido</string>
+    <string name="detail_mark_watched">Marcar como assistido</string>
+    <string name="media_options_mark_unwatched">Marcar como não assistido</string>
+    <string name="home_item_options_title">Opções</string>
+    <string name="media_options_play">Reproduzir</string>
+    <string name="media_options_info">Informações</string>
     <string name="detail_clear_progress">Resetar Progresso</string>
     <string name="detail_reviews">Reviews</string>
     <string name="search_title">Buscar no TMDB</string>
@@ -217,8 +221,8 @@
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Arraste ou use ◀ ▶  •  OK conclui</string>
     <string name="player_scale">Esticar: %1$s</string>
-    <string name="player_scale_fit">Ajustar à tela</string>
-    <string name="player_scale_zoom">Preencher</string>
+    <string name="player_scale_fit">Normal</string>
+    <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Esticar</string>
     <string name="player_track_language">Faixa %1$s</string>
     <string name="player_track_index">Faixa %1$d</string>

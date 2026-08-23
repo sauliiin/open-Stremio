@@ -4,17 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
+import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaType
+import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.model.TmdbImages
 import com.mdblisthub.tv.core.network.dto.TmdbSearchResultDto
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 
@@ -31,7 +35,11 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
+    val watchedIds: StateFlow<Set<Int>> = graph.library.observeBucket(LibraryBucket.WATCHED)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
     init {
+        viewModelScope.launch { graph.library.refresh(LibraryBucket.WATCHED) }
         @OptIn(FlowPreview::class)
         viewModelScope.launch {
             _query
@@ -49,6 +57,24 @@ class SearchViewModel(private val graph: DataGraph) : ViewModel() {
 
     fun onQueryChange(newQuery: String) {
         _query.value = newQuery
+    }
+
+    fun setWatched(item: MediaItem, watched: Boolean) {
+        if (item.tmdbId <= 0) return
+        viewModelScope.launch {
+            val result = graph.library.toggle(
+                LibraryBucket.WATCHED,
+                item.type,
+                item.tmdbId,
+                item.imdbId,
+                add = watched,
+            )
+            if (result.isSuccess && watched) {
+                graph.playback.clear(
+                    ScrobbleTarget(item.type, item.tmdbId, item.imdbId),
+                )
+            }
+        }
     }
 
     private suspend fun performSearch(query: String) {

@@ -122,6 +122,7 @@ import com.mdblisthub.tv.player.PlaybackFailure
 import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.PlaybackPosition
 import com.mdblisthub.tv.player.TrackInfo
+import com.mdblisthub.tv.player.VideoScaleType
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlin.math.roundToInt
@@ -266,10 +267,15 @@ fun PlayerScreen(
     // see the key handler below.
     var controlsFocused by remember { mutableStateOf(false) }
     val playButtonFocusRequester = remember { FocusRequester() }
+    val firstFlatControlFocusRequester = remember { FocusRequester() }
     // Set the moment OK/Enter wakes a hidden OSD, so focus can land on Play
     // as soon as it composes — the button does not exist yet in the same
     // frame the key press arrives in.
     var wantsPlayFocus by remember { mutableStateOf(false) }
+    // Direction Down has a different intent from OK: it means "enter the
+    // controls", so land directly on the first action row (Subtitles) rather
+    // than making the viewer press Down a second time from Play.
+    var wantsFlatControlFocus by remember { mutableStateOf(false) }
 
     // Paused: the OSD has nothing to hide behind, so it stays up.
     // Buffering no longer forces the OSD visible to prevent flashing during micro-stutters.
@@ -291,20 +297,36 @@ fun PlayerScreen(
     LaunchedEffect(osdVisible) { viewModel.controller.setOsdVisible(osdVisible) }
 
     // Closing a picker and re-composing the OSD happen in the same snapshot.
-    // Wait a frame so the picker's disappearing focus target cannot clear the
-    // new Play focus afterwards. Only consume the intent once Compose reports
-    // that the newly attached button accepted focus.
-    LaunchedEffect(osdVisible, wantsPlayFocus, playback.canShowVideo, overlayOpen) {
-        if (!osdVisible || !wantsPlayFocus || !playback.canShowVideo || overlayOpen) {
+    // Wait a frame so a disappearing focus target cannot clear the new OSD
+    // focus afterwards. Only consume the intent once Compose reports that
+    // the newly attached button accepted focus.
+    LaunchedEffect(
+        osdVisible,
+        wantsPlayFocus,
+        wantsFlatControlFocus,
+        playback.canShowVideo,
+        overlayOpen,
+    ) {
+        if (!osdVisible || (!wantsPlayFocus && !wantsFlatControlFocus) ||
+            !playback.canShowVideo || overlayOpen
+        ) {
             return@LaunchedEffect
         }
         repeat(FOCUS_RESTORE_ATTEMPTS) {
             withFrameNanos { }
-            if (!osdVisible || !wantsPlayFocus || !playback.canShowVideo || overlayOpen) {
+            if (!osdVisible || (!wantsPlayFocus && !wantsFlatControlFocus) ||
+                !playback.canShowVideo || overlayOpen
+            ) {
                 return@LaunchedEffect
             }
-            if (playButtonFocusRequester.requestFocus(FocusDirection.Enter)) {
+            val accepted = if (wantsFlatControlFocus) {
+                firstFlatControlFocusRequester.requestFocus(FocusDirection.Enter)
+            } else {
+                playButtonFocusRequester.requestFocus(FocusDirection.Enter)
+            }
+            if (accepted) {
                 wantsPlayFocus = false
+                wantsFlatControlFocus = false
                 return@LaunchedEffect
             }
         }
@@ -413,6 +435,7 @@ fun PlayerScreen(
                         when {
                             controlsFocused -> false
                             wasHidden -> {
+                                wantsFlatControlFocus = false
                                 wantsPlayFocus = true
                                 true
                             }
@@ -440,6 +463,15 @@ fun PlayerScreen(
                             false
                         } else {
                             viewModel.controller.seekBy(-SEEK_STEP_MS); true
+                        }
+                    }
+                    Key.DirectionDown -> {
+                        if (controlsFocused) {
+                            false
+                        } else {
+                            wantsPlayFocus = false
+                            wantsFlatControlFocus = true
+                            true
                         }
                     }
                     Key.MediaFastForward -> {
@@ -586,6 +618,7 @@ fun PlayerScreen(
                 playing = playback.isPlaying,
                 subtitleActive = playback.externalSubtitle != null ||
                     playback.currentSubtitleId != NO_TRACK,
+                scaleType = playback.scaleType,
                 onTogglePlay = { viewModel.controller.togglePlayPause(); poke() },
                 onCycleScale = { viewModel.controller.cycleScale(); poke() },
                 onOpenSubtitles = {
@@ -611,6 +644,7 @@ fun PlayerScreen(
                 },
                 onControlsFocusChanged = { controlsFocused = it },
                 playButtonFocusRequester = playButtonFocusRequester,
+                firstFlatControlFocusRequester = firstFlatControlFocusRequester,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -1106,6 +1140,7 @@ private fun PlayerOsd(
     position: StateFlow<PlaybackPosition>,
     playing: Boolean,
     subtitleActive: Boolean,
+    scaleType: VideoScaleType,
     onTogglePlay: () -> Unit,
     onCycleScale: () -> Unit,
     onOpenSubtitles: () -> Unit,
@@ -1117,10 +1152,10 @@ private fun PlayerOsd(
     onPreviewCast: (CastMember) -> Unit,
     onControlsFocusChanged: (Boolean) -> Unit,
     playButtonFocusRequester: FocusRequester,
+    firstFlatControlFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     val progressBarFocusRequester = remember { FocusRequester() }
-    val firstFlatControlFocusRequester = remember { FocusRequester() }
 
     // Collected here rather than passed in as two Longs. The tick is twice a
     // second while the controls are up, and this is the deepest point that
@@ -1130,6 +1165,13 @@ private fun PlayerOsd(
     val playhead by position.collectAsStateWithLifecycle()
     val positionMs = playhead.positionMs
     val durationMs = playhead.durationMs
+    val scaleLabel = stringResource(
+        when (scaleType) {
+            VideoScaleType.FIT -> R.string.player_scale_fit
+            VideoScaleType.STRETCH -> R.string.player_scale_stretch
+            VideoScaleType.ZOOM -> R.string.player_scale_zoom
+        },
+    )
 
     Column(
         modifier = modifier
@@ -1270,7 +1312,7 @@ private fun PlayerOsd(
                 onClick = onOpenAudio,
             )
             FlatOsdButton(
-                label = stringResource(R.string.player_scale_short),
+                label = scaleLabel,
                 onClick = onCycleScale,
             )
             FlatOsdButton(

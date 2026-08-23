@@ -44,4 +44,17 @@ data class LibraryWriteDto(
 )
 
 @kotlinx.serialization.Serializable
-data class LibraryKeyDto(val imdb: String? = null, val tmdb: Int? = null)
+data class LibraryKeyDto(
+    val imdb: String? = null,
+    val tmdb: Int? = null,
+    val seasons: List<LibraryWriteSeasonDto>? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class LibraryWriteSeasonDto(
+    val number: Int,
+    val episodes: List<LibraryWriteEpisodeDto>? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class LibraryWriteEpisodeDto(val number: Int)

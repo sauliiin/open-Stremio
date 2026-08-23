@@ -26,6 +26,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,11 +53,14 @@ import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.ui.theme.HubEffects
 import com.mdblisthub.tv.core.ui.theme.HubShapes
 import com.mdblisthub.tv.core.ui.theme.HubStrokes
+import com.mdblisthub.tv.ui.component.MediaOptionsDialog
 
 @Composable
 fun SearchScreen(
     graph: DataGraph,
     onOpenTitle: (MediaItem) -> Unit,
+    onPlay: (MediaItem) -> Unit,
+    onChooseSource: (MediaItem) -> Unit,
 ) {
     val viewModel = viewModel<SearchViewModel>(factory = object : androidx.lifecycle.ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -65,8 +70,34 @@ fun SearchScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val watchedIds by viewModel.watchedIds.collectAsStateWithLifecycle()
 
     val focusRequester = remember { FocusRequester() }
+    var optionTarget by remember { mutableStateOf<MediaItem?>(null) }
+
+    optionTarget?.let { item ->
+        val isWatched = watchedIds.contains(item.tmdbId)
+        MediaOptionsDialog(
+            isWatched = isWatched,
+            onPlay = {
+                onPlay(item)
+                optionTarget = null
+            },
+            onInfo = {
+                onOpenTitle(item)
+                optionTarget = null
+            },
+            onToggleWatched = {
+                viewModel.setWatched(item, !isWatched)
+                optionTarget = null
+            },
+            onChooseSource = {
+                onChooseSource(item)
+                optionTarget = null
+            },
+            onDismiss = { optionTarget = null },
+        )
+    }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -113,7 +144,8 @@ fun SearchScreen(
                 items(results, key = { it.key }) { item ->
                     PosterCard(
                         item = item,
-                        onClick = { onOpenTitle(item) }
+                        onClick = { onOpenTitle(item) },
+                        onLongClick = { optionTarget = item },
                     )
                 }
             }

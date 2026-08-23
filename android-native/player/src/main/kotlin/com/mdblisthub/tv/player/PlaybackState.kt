@@ -6,23 +6,23 @@ import com.mdblisthub.tv.core.model.SubtitleOption
 /**
  * The cycle the "esticar" button walks, in the order it walks it.
  *
- * Three modes, not the five the mpv engine had: these map one-to-one onto
- * what ExoPlayer's own resize modes do, and the two that went away
+ * Three modes, not the five the mpv engine had. Normal preserves the source,
+ * Stretch fills by distorting it, and Zoom is the fixed 134% scale familiar
+ * from Kodi. The two modes that went away
  * (forcing 16:9 or 4:3 regardless of the source) were mpv-specific knobs
  * that only ever produced a wrong-looking picture on correctly-tagged
  * content — which is nearly all of it.
  *
- * `FIT` is the default: letterboxed, nothing cropped. `ZOOM` is the one
- * people actually reach for on a widescreen release, cropping top and bottom
- * rather than pillarboxing to nothing. `STRETCH` distorts to fill and is
- * last on purpose.
+ * `FIT` is the default: letterboxed, nothing cropped. `STRETCH` distorts to
+ * fill. `ZOOM` keeps the aspect ratio and enlarges the normal picture by 34%,
+ * cropping only what moves beyond the screen.
  */
 enum class VideoScaleType { FIT, ZOOM, STRETCH }
 
 val SCALE_CYCLE = listOf(
     VideoScaleType.FIT,
-    VideoScaleType.ZOOM,
     VideoScaleType.STRETCH,
+    VideoScaleType.ZOOM,
 )
 
 // The human-readable name for each mode lives in the app's string resources,

@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.toArgb
 import androidx.media3.common.util.UnstableApi
@@ -34,9 +35,15 @@ fun ExoVideoSurface(
     modifier: Modifier = Modifier,
     subtitleColor: ComposeColor = ComposeColor.Yellow,
     subtitleBackgroundOpacity: Float = 0f,
+    cropToFill: Boolean = false,
 ) {
+    val fixedZoom = scaleType == VideoScaleType.ZOOM && !cropToFill
     AndroidView(
-        modifier = modifier,
+        modifier = modifier.graphicsLayer {
+            val zoom = if (fixedZoom) FIXED_ZOOM_SCALE else 1f
+            scaleX = zoom
+            scaleY = zoom
+        },
         factory = { context ->
             PlayerView(context).apply {
                 useController = false
@@ -70,10 +77,14 @@ fun ExoVideoSurface(
             }
         },
         update = { view ->
-            view.resizeMode = when (scaleType) {
-                VideoScaleType.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
-                VideoScaleType.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-                VideoScaleType.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+            view.resizeMode = if (cropToFill) {
+                AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+            } else {
+                when (scaleType) {
+                    VideoScaleType.FIT -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    VideoScaleType.ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    VideoScaleType.STRETCH -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                }
             }
             // Applied here rather than in `factory`, which runs exactly once:
             // set there, the caption colour was frozen at whatever it was the
@@ -100,3 +111,5 @@ fun ExoVideoSurface(
         },
     )
 }
+
+private const val FIXED_ZOOM_SCALE = 1.34f

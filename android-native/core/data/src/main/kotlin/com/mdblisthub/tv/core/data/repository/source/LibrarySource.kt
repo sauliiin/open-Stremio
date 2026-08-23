@@ -9,10 +9,14 @@ import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.TraktApi
 import com.mdblisthub.tv.core.network.dto.LibraryKeyDto
+import com.mdblisthub.tv.core.network.dto.LibraryWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteDto
+import com.mdblisthub.tv.core.network.dto.LibraryWriteSeasonDto
 import com.mdblisthub.tv.core.network.dto.TraktIdsDto
 import com.mdblisthub.tv.core.network.dto.TraktSyncWriteDto
+import com.mdblisthub.tv.core.network.dto.TraktWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteItemDto
+import com.mdblisthub.tv.core.network.dto.TraktWriteSeasonDto
 
 /**
  * Where watchlist / watched / collection membership comes from.
@@ -45,6 +49,15 @@ interface LibrarySource {
         type: MediaType,
         tmdbId: Int,
         imdbId: String?,
+        add: Boolean,
+    )
+
+    /** Adds or removes one concrete episode from watched history. */
+    suspend fun writeEpisodeWatched(
+        showTmdbId: Int,
+        showImdbId: String?,
+        season: Int,
+        episode: Int,
         add: Boolean,
     )
 }
@@ -100,6 +113,35 @@ class MdblistLibrarySource(
         }
 
         val path = if (add) bucket.addPath else bucket.removePath
+        val response = api.bucketWrite("$ROOT$path", key, body)
+        requireOrFail(response.isSuccessful) { AppError.MdblistWriteRejected(response.code()) }
+    }
+
+    override suspend fun writeEpisodeWatched(
+        showTmdbId: Int,
+        showImdbId: String?,
+        season: Int,
+        episode: Int,
+        add: Boolean,
+    ) {
+        val key = session.currentKey()
+        requireOrFail(key.isNotBlank()) { AppError.MdblistSessionExpired }
+
+        val body = LibraryWriteDto(
+            shows = listOf(
+                LibraryKeyDto(
+                    imdb = showImdbId,
+                    tmdb = showTmdbId.takeIf { it > 0 },
+                    seasons = listOf(
+                        LibraryWriteSeasonDto(
+                            number = season,
+                            episodes = listOf(LibraryWriteEpisodeDto(episode)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val path = if (add) LibraryBucket.WATCHED.addPath else LibraryBucket.WATCHED.removePath
         val response = api.bucketWrite("$ROOT$path", key, body)
         requireOrFail(response.isSuccessful) { AppError.MdblistWriteRejected(response.code()) }
     }
@@ -226,6 +268,35 @@ class TraktLibrarySource(
         // A `201` whose every id landed in `not_found` is a failure wearing a
         // success code — see [TraktSyncResponseDto.resolvedNothing]. Without
         // this the button would settle on a state Trakt never stored.
+        requireOrFail(!response.resolvedNothing()) { AppError.TraktTitleNotRecognized }
+    }
+
+    override suspend fun writeEpisodeWatched(
+        showTmdbId: Int,
+        showImdbId: String?,
+        season: Int,
+        episode: Int,
+        add: Boolean,
+    ) {
+        requireOrFail(tokens.isLinked()) { AppError.TraktNotLinked }
+
+        val body = TraktSyncWriteDto(
+            shows = listOf(
+                TraktWriteItemDto(
+                    ids = TraktIdsDto(
+                        imdb = showImdbId,
+                        tmdb = showTmdbId.takeIf { it > 0 },
+                    ),
+                    seasons = listOf(
+                        TraktWriteSeasonDto(
+                            number = season,
+                            episodes = listOf(TraktWriteEpisodeDto(episode)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val response = if (add) api.addToHistory(body) else api.removeFromHistory(body)
         requireOrFail(!response.resolvedNothing()) { AppError.TraktTitleNotRecognized }
     }
 
