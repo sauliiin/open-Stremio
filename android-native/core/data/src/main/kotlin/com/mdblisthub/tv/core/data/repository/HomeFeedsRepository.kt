@@ -32,6 +32,7 @@ import kotlinx.coroutines.sync.withPermit
 class HomeFeedsRepository(
     private val mdblist: HomeFeedSource,
     private val trakt: HomeFeedSource,
+    private val simkl: HomeFeedSource,
     private val preferences: UiPreferencesStore,
     private val session: SessionStore,
     private val media: MediaRepository,
@@ -58,6 +59,9 @@ class HomeFeedsRepository(
         val items = content.items.takeIf { content.ownerKey == ownerKey(provider, apiKey) }.orEmpty()
         val byKey = catalogPreferences.associateBy { it.key }
         defaults().mapNotNull { default ->
+            if (provider == LibraryProvider.SIMKL && default.key == MdblistHomeFeedKeys.RECENTLY_ADDED) {
+                return@mapNotNull null
+            }
             val preference = byKey[default.key]
             if (preference?.deleted == true) return@mapNotNull null
             default.copy(
@@ -77,6 +81,7 @@ class HomeFeedsRepository(
         val owner = ownerKey(provider, apiKey)
         val loaded = when (provider) {
             LibraryProvider.TRAKT -> trakt
+            LibraryProvider.SIMKL -> simkl
             LibraryProvider.MDBLIST -> mdblist
         }.load(FEED_LIMIT)
 

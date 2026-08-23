@@ -89,6 +89,7 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.LibraryBucket
+import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PersonSummary
@@ -145,6 +146,7 @@ fun DetailScreen(
     val posterLandscapeTransformation by graph.uiPreferences.posterLandscapeTransformation
         .collectAsStateWithLifecycle(initialValue = true)
     val library by viewModel.library.collectAsStateWithLifecycle()
+    val libraryProvider by graph.uiPreferences.libraryProvider.collectAsStateWithLifecycle(initialValue = LibraryProvider.MDBLIST)
     val resumePoint by viewModel.resumePoint.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
@@ -392,12 +394,14 @@ fun DetailScreen(
                             onClick = viewModel::toggleWatchlist,
                             modifier = Modifier.fillMaxHeight(),
                         )
-                        HubButton(
-                            text = if (library.collection) stringResource(R.string.detail_in_collection) else stringResource(R.string.detail_add_collection),
-                            enabled = LibraryBucket.COLLECTION !in pending,
-                            onClick = viewModel::toggleCollection,
-                            modifier = Modifier.fillMaxHeight(),
-                        )
+                        if (libraryProvider != LibraryProvider.SIMKL) {
+                            HubButton(
+                                text = if (library.collection) stringResource(R.string.detail_in_collection) else stringResource(R.string.detail_add_collection),
+                                enabled = LibraryBucket.COLLECTION !in pending,
+                                onClick = viewModel::toggleCollection,
+                                modifier = Modifier.fillMaxHeight(),
+                            )
+                        }
                         HubButton(
                             text = if (library.watched) stringResource(R.string.detail_watched) else stringResource(R.string.detail_mark_watched),
                             enabled = LibraryBucket.WATCHED !in pending,

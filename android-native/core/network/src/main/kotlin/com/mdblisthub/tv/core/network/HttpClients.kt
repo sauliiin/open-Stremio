@@ -222,6 +222,11 @@ object HttpClients {
         .addInterceptor(TraktHeadersInterceptor(tokens))
         .build()
 
+    fun simkl(base: OkHttpClient, token: () -> String): OkHttpClient = base.newBuilder()
+        .cache(null)
+        .addInterceptor(SimklHeadersInterceptor(token))
+        .build()
+
     /** Never serve a stale answer for something the user just asked to refresh. */
     val NO_CACHE: CacheControl = CacheControl.Builder().noCache().noStore().build()
 }

@@ -9,11 +9,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -35,6 +43,10 @@ fun MediaOptionsDialog(
     onDismiss: () -> Unit,
 ) {
     val firstActionFocus = remember { FocusRequester() }
+    // The long-press that opened this dialog is still physically held when
+    // focus moves to Play. Consume its matching release so the TV Button does
+    // not interpret it as a new click on the first action.
+    var consumeOpeningConfirmRelease by remember { mutableStateOf(true) }
     val actionScale = ButtonDefaults.scale(focusedScale = 1.03f)
     LaunchedEffect(Unit) {
         repeat(3) {
@@ -48,6 +60,18 @@ fun MediaOptionsDialog(
             modifier = Modifier
                 .width(230.dp)
                 .background(HubColors.Surface, RoundedCornerShape(14.dp))
+                .onPreviewKeyEvent { event ->
+                    val isConfirm = event.key == Key.DirectionCenter ||
+                        event.key == Key.Enter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                    if (consumeOpeningConfirmRelease && isConfirm && event.type == KeyEventType.KeyUp) {
+                        consumeOpeningConfirmRelease = false
+                        true
+                    } else {
+                        false
+                    }
+                }
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {

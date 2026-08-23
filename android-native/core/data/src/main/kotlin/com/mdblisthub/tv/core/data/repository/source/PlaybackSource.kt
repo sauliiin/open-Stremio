@@ -3,12 +3,14 @@ package com.mdblisthub.tv.core.data.repository.source
 import com.mdblisthub.tv.core.model.CoreText
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.TraktTokenStore
+import com.mdblisthub.tv.core.data.SimklTokenStore
 import com.mdblisthub.tv.core.data.mapper.toResumeEntity
 import com.mdblisthub.tv.core.database.entity.ResumeEntity
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.TraktApi
+import com.mdblisthub.tv.core.network.SimklApi
 import com.mdblisthub.tv.core.network.dto.TraktIdsDto
 import com.mdblisthub.tv.core.network.dto.TraktScrobbleDto
 import com.mdblisthub.tv.core.network.dto.TraktScrobbleEpisodeDto
@@ -17,6 +19,8 @@ import kotlin.math.roundToInt
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.Locale
 
 /**
@@ -44,8 +48,8 @@ interface PlaybackSource {
      * Drops a stored session — "remove from continue watching".
      *
      * [playbackId] is the provider's own id for the session, carried in
-     * `ResumeEntity.playbackId`. Only Trakt needs it; mdblist addresses the
-     * title instead.
+     * `ResumeEntity.playbackId`. Trakt and Simkl need it; mdblist addresses
+     * the title instead.
      */
     suspend fun clear(target: ScrobbleTarget, playbackId: Long?)
 }
@@ -208,5 +212,77 @@ class TraktPlaybackSource(
 
     private companion object {
         const val LIMIT = 100
+    }
+}
+
+class SimklPlaybackSource(
+    private val api: SimklApi,
+    private val tokens: SimklTokenStore,
+) : PlaybackSource {
+    override suspend fun sessions(now: Long): List<ResumeEntity>? {
+        if (!tokens.isLinked()) return null
+        return api.playback().mapNotNull { element ->
+            val obj = element.jsonObject
+            val movie = obj["movie"] as? kotlinx.serialization.json.JsonObject
+            val show = (obj["show"] ?: obj["anime"]) as? kotlinx.serialization.json.JsonObject
+            val title = show ?: movie ?: return@mapNotNull null
+            val ids = title["ids"]?.jsonObject
+            val tmdb = ids?.get("tmdb")?.jsonPrimitive?.content?.toIntOrNull()
+            val imdb = ids?.get("imdb")?.jsonPrimitive?.content
+            if (tmdb == null && imdb.isNullOrBlank()) return@mapNotNull null
+            val ep = obj["episode"] as? kotlinx.serialization.json.JsonObject
+            val type = if (show != null) MediaType.SHOW else MediaType.MOVIE
+            val season = ep?.get("season")?.jsonPrimitive?.content?.toIntOrNull()
+            val episode = ep?.get("number")?.jsonPrimitive?.content?.toIntOrNull()
+            ResumeEntity(
+                key = "${type.mdblist}:${tmdb ?: imdb}:${season ?: 0}:${episode ?: 0}",
+                type = type.mdblist, tmdbId = tmdb, imdbId = imdb,
+                title = title["title"]?.jsonPrimitive?.content ?: CoreText.untitled,
+                posterUrl = null, backdropUrl = null, score = null,
+                season = season, episode = episode,
+                progress = obj["progress"]?.jsonPrimitive?.content?.toFloatOrNull()?.coerceIn(0f, 100f) ?: 0f,
+                updatedAt = (obj["watched_at"] ?: obj["paused_at"])?.jsonPrimitive?.content,
+                fetchedAt = now,
+                playbackId = obj["id"]?.jsonPrimitive?.content?.toLongOrNull(),
+            )
+        }
+    }
+
+    override suspend fun start(target: ScrobbleTarget, progress: Float) = send("start", target, progress)
+    override suspend fun pause(target: ScrobbleTarget, progress: Float) = send("pause", target, progress)
+    override suspend fun stop(target: ScrobbleTarget, progress: Float) = send("stop", target, progress)
+    override suspend fun clear(target: ScrobbleTarget, playbackId: Long?) {
+        if (!tokens.isLinked() || playbackId == null) return
+        val response = api.deletePlayback(playbackId)
+        check(response.isSuccessful) { "Simkl playback delete returned ${response.code()}" }
+    }
+
+    private suspend fun send(action: String, target: ScrobbleTarget, progress: Float) {
+        if (!tokens.isLinked()) return
+        if (target.tmdbId == null && target.imdbId == null) return
+        val body = buildJsonObject {
+            val normalizedProgress =
+                (progress.coerceIn(0f, 100f) * 100f).roundToInt() / 100f
+            put("progress", normalizedProgress)
+            putJsonObject(if (target.type == MediaType.SHOW) "show" else "movie") {
+                putJsonObject("ids") {
+                    target.imdbId?.let { put("imdb", it) }
+                    target.tmdbId?.let { put("tmdb", it.toString()) }
+                }
+            }
+            if (target.type == MediaType.SHOW) {
+                val season = target.season ?: return
+                val episode = target.episode ?: return
+                putJsonObject("episode") { put("season", season); put("number", episode) }
+            }
+        }
+        val response = api.scrobble(action, body)
+        // Simkl answers 409 when the same >=80% stop was already finalized
+        // within the last hour. The watch event exists, so this is an
+        // idempotent success rather than a playback failure.
+        val alreadyFinalized = action == "stop" && response.code() == 409
+        check(response.isSuccessful || alreadyFinalized) {
+            "Simkl scrobble/$action returned ${response.code()}"
+        }
     }
 }

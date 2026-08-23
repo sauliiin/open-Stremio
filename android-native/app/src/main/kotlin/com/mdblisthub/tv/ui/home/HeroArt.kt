@@ -239,14 +239,14 @@ private fun HeroEdgeVeil(modifier: Modifier = Modifier) {
 
     Box(
         modifier.drawWithCache {
-            val leftFadeEndX = size.width * 0.52f
-            val bottomFadeStartY = size.height * 0.60f
+            val leftFadeEndX = size.width * 0.58f
+            val bottomFadeStartY = size.height * 0.50f
             val left = Brush.horizontalGradient(
                 colorStops = arrayOf(
-                    0.00f to background.copy(alpha = 0.99f),
-                    0.22f to background.copy(alpha = 0.91f),
-                    0.48f to background.copy(alpha = 0.62f),
-                    0.76f to background.copy(alpha = 0.24f),
+                    0.00f to background,
+                    0.20f to background.copy(alpha = 0.94f),
+                    0.45f to background.copy(alpha = 0.66f),
+                    0.72f to background.copy(alpha = 0.28f),
                     1.00f to Color.Transparent,
                 ),
                 startX = 0f,
@@ -255,9 +255,9 @@ private fun HeroEdgeVeil(modifier: Modifier = Modifier) {
             val bottom = Brush.verticalGradient(
                 colorStops = arrayOf(
                     0.00f to Color.Transparent,
-                    0.30f to background.copy(alpha = 0.22f),
-                    0.62f to background.copy(alpha = 0.58f),
-                    0.84f to background.copy(alpha = 0.86f),
+                    0.28f to background.copy(alpha = 0.24f),
+                    0.56f to background.copy(alpha = 0.60f),
+                    0.80f to background.copy(alpha = 0.88f),
                     1.00f to background,
                 ),
                 startY = bottomFadeStartY,

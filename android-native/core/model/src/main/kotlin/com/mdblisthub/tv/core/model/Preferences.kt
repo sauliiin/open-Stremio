@@ -25,4 +25,4 @@ enum class HubThemeVariant { NORMAL, CYBERPUNK, NETFLIXY, PRIMEFLY, CYBERFLIX, O
  * lists, aggregated ratings, recommendations and search. Trakt is an
  * alternative source for the personal library, not a replacement account.
  */
-enum class LibraryProvider { MDBLIST, TRAKT }
+enum class LibraryProvider { MDBLIST, TRAKT, SIMKL }
