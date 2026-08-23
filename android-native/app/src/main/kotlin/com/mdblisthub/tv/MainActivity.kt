@@ -1,8 +1,12 @@
 package com.mdblisthub.tv
 
+import android.Manifest
 import android.content.res.Configuration
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
@@ -33,6 +37,9 @@ import java.util.Locale
 class MainActivity : ComponentActivity() {
 
     private lateinit var appUpdateManager: AppUpdateManager
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -92,6 +99,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        requestNotificationPermissionOnce()
     }
 
     override fun onResume() {
@@ -104,8 +113,24 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private fun requestNotificationPermissionOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val preferences = getSharedPreferences(NOTIFICATION_PREFERENCES, MODE_PRIVATE)
+        if (preferences.getBoolean(NOTIFICATION_PERMISSION_REQUESTED, false)) return
+
+        preferences.edit().putBoolean(NOTIFICATION_PERMISSION_REQUESTED, true).apply()
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
     private companion object {
         const val DEFAULT_LANGUAGE = "en"
         const val GITHUB_REPOSITORY = "sauliiin/open-Stremio"
+        const val NOTIFICATION_PREFERENCES = "playback_notifications"
+        const val NOTIFICATION_PERMISSION_REQUESTED = "permission_requested"
     }
 }

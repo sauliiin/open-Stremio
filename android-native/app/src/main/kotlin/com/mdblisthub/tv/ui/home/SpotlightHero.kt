@@ -192,7 +192,18 @@ fun SpotlightHero(
                 // that from being unreadable rather than merely bright.
                 style = MaterialTheme.typography.displayLarge.copy(shadow = TITLE_SHADOW),
                 color = HubColors.Text,
-                maxLines = 2,
+                // One line, for the same reason `AutoScrollOverview` below is
+                // given a hard `height` rather than a `heightIn`: this
+                // `Column` is bottom-aligned inside a hero of fixed
+                // [spotlightHeroHeight], and the `Box` holding it clips. A
+                // title that wrapped to a second line pushed the copy block
+                // past the height it is measured against, and what went over
+                // the edge was the last thing in the column —
+                // [SpotlightActions]. The buttons were not merely nudged
+                // down, they were clipped away outright, so a rotation
+                // landing on a long title took "Surpreenda-me" off the screen
+                // together with the D-pad's only way to advance past it.
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth(TITLE_WIDTH_FRACTION),
             )
@@ -740,7 +751,7 @@ private const val SPOTLIGHT_DWELL_MS = 21_000L
 private const val KEN_BURNS_MS = 26_000
 
 /** The web hero's `hero-reveal`, also used for the swap between destaques. */
-private const val REVEAL_MS = 520
+private const val REVEAL_MS = 300
 
 /** `cubic-bezier(0.37, 0, 0.28, 1)` — the television keyframes' own easing. */
 private val KenBurnsEasing = CubicBezierEasing(0.37f, 0f, 0.28f, 1f)

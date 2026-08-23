@@ -19,7 +19,21 @@
     <string name="home_empty_button">Open Addons</string>
     <string name="home_syncing">Syncing your lists…</string>
     <string name="settings_title">Settings</string>
+    <string name="welcome_title">Welcome to OmniStream</string>
+    <string name="welcome_subtitle">Choose your home screen theme</string>
+    <string name="welcome_continue">Continue</string>
     <string name="settings_section_interface">Interface</string>
+    <string name="settings_section_themes">Themes</string>
+    <string name="settings_category_interface_desc">App language and visual behavior</string>
+    <string name="settings_category_themes_desc">OmniStream appearance and colors</string>
+    <string name="settings_category_library_desc">Library source and tracking</string>
+    <string name="settings_category_subtitles_desc">Language, color, background and opacity</string>
+    <string name="settings_category_player_desc">Audio and playback preferences</string>
+    <string name="settings_category_addons_desc">Stremio accounts, catalogs and sources</string>
+    <string name="settings_interface_group">Language and experience</string>
+    <string name="settings_theme_group">Visual theme</string>
+    <string name="settings_theme_group_desc">Choose the color set used throughout the app</string>
+    <string name="settings_theme_autotrailer">Autotrailer on Netflixy and Primefly</string>
     <string name="settings_language">App Language</string>
     <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_poster_landscape_transformation">Expand posters to landscape</string>
@@ -29,10 +43,14 @@
     <string name="settings_subtitle_auto_download">Auto-download Subtitles</string>
     <string name="settings_subtitle_default_lang">Default Subtitle Language</string>
     <string name="settings_subtitle_color">Subtitle Color</string>
+    <string name="settings_subtitle_text_opacity">Color opacity</string>
+    <string name="settings_subtitle_black_background">Black background</string>
+    <string name="settings_subtitle_background_opacity">Black background opacity</string>
     <string name="color_yellow">Yellow</string>
     <string name="color_white">White</string>
     <string name="color_red">Red</string>
     <string name="color_blue">Blue</string>
+    <string name="color_black">Black</string>
     <string name="settings_section_player">Player</string>
     <string name="settings_audio_preferred_lang">Preferred Audio Track</string>
     <string name="lang_pt">Portuguese</string>
@@ -116,6 +134,7 @@
     <string name="login_error_google">Could not sign in with Google.</string>
     <string name="login_error_mdblist_link">Could not link MDBList. Check the key and try again.</string>
     <string name="login_error_mdblist_required">Could not proceed without MDBList.</string>
+    <string name="login_error_guest">Could not start guest mode.</string>
     <string name="addons_mdblist_linked">MDBList linked. Enable lists addons only if you want to use them in Stremio.</string>
     <string name="addons_mdblist_link_error">Could not link MDBList. %1$s</string>
     <string name="addons_mdblist_disabled">Using MDBList lists as addons disabled.</string>
@@ -177,6 +196,13 @@
     <string name="player_back">Back</string>
     <string name="player_play">Play</string>
     <string name="player_pause">Pause</string>
+    <string name="mini_player_fullscreen">Full screen</string>
+    <string name="mini_player_stop">Stop</string>
+    <string name="playback_notification_channel">Playback completed</string>
+    <string name="playback_notification_channel_description">Notifies you when a movie or episode ends.</string>
+    <string name="playback_notification_movie_title">Movie finished</string>
+    <string name="playback_notification_episode_title">Episode finished</string>
+    <string name="playback_notification_episode_content">%1$s • %2$s</string>
     <string name="player_subtitles">Subtitles</string>
     <string name="player_audio">Audio track</string>
     <string name="player_audio_short">Audio</string>
@@ -221,6 +247,7 @@
     <!-- Login -->
     <string name="login_google_intro">Sign in with your Google account. It protects your data on Firebase and identifies the same account on every device.</string>
     <string name="login_google_button">Sign in with Google</string>
+    <string name="login_guest_button">Continue as guest</string>
     <string name="login_google_connected">Google connected: %1$s</string>
     <string name="login_checking_key">Checking for a saved MDBList key…</string>
     <string name="login_mdblist_intro">Enter an MDBList API key for ratings, trailers, lists and sync.</string>

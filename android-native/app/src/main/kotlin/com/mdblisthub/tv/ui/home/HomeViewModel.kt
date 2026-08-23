@@ -574,7 +574,26 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         _focused.value = item
         // Warming the detail on focus is what makes opening a title feel
         // instant: by the time the user presses OK, it is already in Room.
-        if (item.tmdbId > 0) graph.prefetcher.prefetch(item.type, item.tmdbId)
+        if (item.tmdbId > 0) {
+            graph.prefetcher.prefetch(item.type, item.tmdbId)
+        } else {
+            // Guest home rows commonly come straight from Stremio add-ons.
+            // Those catalogues identify titles by IMDb ID, whereas the hero's
+            // clearlogo and synopsis cache is TMDB-keyed. Previously IMDb was
+            // resolved only after pressing OK, leaving the focused home panel
+            // permanently without either piece of metadata for guests.
+            val imdbId = item.imdbId ?: return
+            viewModelScope.launch {
+                graph.media.resolveImdb(item.type, imdbId).onSuccess { tmdbId ->
+                    // Focus may have moved while the lookup was in flight;
+                    // never replace the currently displayed title with a
+                    // late result for an old card.
+                    if (_focused.value?.key != item.key) return@onSuccess
+                    _focused.value = item.copy(tmdbId = tmdbId)
+                    graph.prefetcher.prefetch(item.type, tmdbId)
+                }
+            }
+        }
     }
 
     fun onTrailerPlaybackChanged(itemKey: String?, playing: Boolean) {

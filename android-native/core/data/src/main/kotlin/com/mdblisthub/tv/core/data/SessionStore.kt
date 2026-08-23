@@ -57,6 +57,9 @@ class SessionStore(context: Context) {
      */
     val mdblistOnly: Flow<Boolean> = store.data.map { it[KEY_MDBLIST_ONLY] == true }
 
+    /** A local session with neither Google nor MDBList credentials. */
+    val guest: Flow<Boolean> = store.data.map { it[KEY_GUEST] == true }
+
     /** All row customizations, including deletion tombstones, owned by this Google session. */
     val listPreferences: Flow<List<FirebaseListPreferenceDto>> = store.data.map(::decodeListPreferences)
 
@@ -82,6 +85,8 @@ class SessionStore(context: Context) {
     suspend fun isMdblistSkipped(): Boolean = mdblistSkipped.first()
 
     suspend fun isMdblistOnly(): Boolean = mdblistOnly.first()
+
+    suspend fun isGuest(): Boolean = guest.first()
 
     suspend fun currentListPreferences(): List<FirebaseListPreferenceDto> = listPreferences.first()
 
@@ -168,6 +173,7 @@ class SessionStore(context: Context) {
             it[KEY_FIREBASE_UID] = firebaseUid
             it[KEY_MDBLIST_SKIPPED] = false
             it[KEY_MDBLIST_ONLY] = false
+            it.remove(KEY_GUEST)
         }
     }
 
@@ -184,6 +190,7 @@ class SessionStore(context: Context) {
             it.remove(KEY_FIREBASE_UID)
             it[KEY_MDBLIST_SKIPPED] = false
             it[KEY_MDBLIST_ONLY] = true
+            it.remove(KEY_GUEST)
         }
     }
 
@@ -193,6 +200,28 @@ class SessionStore(context: Context) {
             it.remove(KEY_USER)
             it[KEY_FIREBASE_UID] = firebaseUid
             it[KEY_MDBLIST_SKIPPED] = true
+            it.remove(KEY_MDBLIST_ONLY)
+            it.remove(KEY_GUEST)
+            it.remove(KEY_DELETED_LIST_IDS)
+            it.remove(KEY_LIST_PREFERENCES)
+            it.remove(KEY_CATALOG_PREFERENCES)
+            it.remove(KEY_LIST_PREFERENCES_DIRTY)
+        }
+    }
+
+    /**
+     * Lets a viewer use local features without creating or linking an
+     * account. Account-owned settings are removed so they cannot leak into a
+     * guest session after a sign-out or account switch.
+     */
+    suspend fun saveGuest() {
+        store.edit {
+            it.remove(KEY_API)
+            it.remove(KEY_USER)
+            it.remove(KEY_FIREBASE_UID)
+            it.remove(KEY_MDBLIST_SKIPPED)
+            it.remove(KEY_MDBLIST_ONLY)
+            it[KEY_GUEST] = true
             it.remove(KEY_DELETED_LIST_IDS)
             it.remove(KEY_LIST_PREFERENCES)
             it.remove(KEY_LIST_PREFERENCES_DIRTY)
@@ -209,6 +238,7 @@ class SessionStore(context: Context) {
         val KEY_FIREBASE_UID = stringPreferencesKey("firebase_uid")
         val KEY_MDBLIST_SKIPPED = booleanPreferencesKey("mdblist_skipped")
         val KEY_MDBLIST_ONLY = booleanPreferencesKey("mdblist_only")
+        val KEY_GUEST = booleanPreferencesKey("guest")
         val KEY_DELETED_LIST_IDS = stringSetPreferencesKey("deleted_list_ids")
         val KEY_LIST_PREFERENCES = stringPreferencesKey("list_preferences")
         val KEY_CATALOG_PREFERENCES = stringPreferencesKey("catalog_preferences")

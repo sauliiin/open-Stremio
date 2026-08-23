@@ -35,6 +35,7 @@ import com.mdblisthub.tv.ui.login.LoginScreen
 import com.mdblisthub.tv.ui.player.PlayerScreen
 import com.mdblisthub.tv.ui.search.SearchScreen
 import com.mdblisthub.tv.ui.settings.SettingsScreen
+import com.mdblisthub.tv.ui.welcome.WelcomeScreen
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -42,6 +43,7 @@ import kotlinx.coroutines.sync.withPermit
 
 object Routes {
     const val LOGIN = "login"
+    const val WELCOME = "welcome"
     const val HOME = "home"
     const val SEARCH = "search"
     const val ADDONS = "addons"
@@ -103,7 +105,11 @@ fun HubNavHost(graph: DataGraph) {
         graph.listPreferencesSync.restore()
         graph.firebaseSync.restore()
         graph.scheduler.syncNow()
-        startDestination = if (graph.auth.signedIn.first()) Routes.HOME else Routes.LOGIN
+        val signedIn = graph.auth.signedIn.first()
+        val setupCompleted = graph.uiPreferences.setupCompleted.first()
+        startDestination = if (signedIn) {
+            if (setupCompleted) Routes.HOME else Routes.WELCOME
+        } else Routes.LOGIN
     }
 
     val start = startDestination
@@ -170,11 +176,27 @@ fun HubNavHost(graph: DataGraph) {
             popExitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
         ) {
         composable(Routes.LOGIN) {
+            val scope = rememberCoroutineScope()
             LoginScreen(
                 graph = graph,
                 onSignedIn = {
+                    scope.launch {
+                        val setupCompleted = graph.uiPreferences.setupCompleted.first()
+                        val destination = if (setupCompleted) Routes.HOME else Routes.WELCOME
+                        navController.navigate(destination) {
+                            popUpTo(Routes.LOGIN) { inclusive = true }
+                        }
+                    }
+                },
+            )
+        }
+
+        composable(Routes.WELCOME) {
+            WelcomeScreen(
+                graph = graph,
+                onComplete = {
                     navController.navigate(Routes.HOME) {
-                        popUpTo(Routes.LOGIN) { inclusive = true }
+                        popUpTo(Routes.WELCOME) { inclusive = true }
                     }
                 },
             )

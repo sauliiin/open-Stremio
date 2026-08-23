@@ -45,6 +45,14 @@ interface TmdbApi {
         @Query("language") language: String,
     ): TmdbPageDto
 
+    /** Global movie picks used when there is no watch history to personalize from. */
+    @GET("movie/popular")
+    suspend fun popularMovies(
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+        @Query("page") page: Int = 1,
+    ): TmdbPageDto
+
     @GET("search/multi")
     suspend fun search(
         @Query("api_key") apiKey: String,
@@ -95,7 +103,7 @@ interface TmdbApi {
 
     companion object {
         const val DETAIL_APPEND =
-            "credits,aggregate_credits,external_ids,videos,recommendations,images,content_ratings,release_dates"
+            "credits,aggregate_credits,external_ids,videos,recommendations,images,content_ratings,release_dates,reviews"
 
         /** `null` is TMDB's spelling for "artwork with no text on it". */
         const val IMAGE_LANGUAGES = "pt,en,null"

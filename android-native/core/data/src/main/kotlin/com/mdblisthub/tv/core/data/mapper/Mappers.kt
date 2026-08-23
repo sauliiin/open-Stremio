@@ -127,10 +127,10 @@ private val WRITER_JOBS = setOf("Screenplay", "Writer", "Story")
 /**
  * Folds the three metadata sources into one cache row.
  *
- * TMDB is the spine because it resolves the IMDb id everything else is keyed
- * by; mdblist contributes the aggregated ratings, and OMDb only fills the gaps
- * mdblist left. Any of the three being absent degrades the row rather than
- * failing it — a detail screen with no Metacritic score is still a screen.
+ * TMDB owns editorial title metadata. MDBList contributes only ratings from
+ * other services and Trakt reviews; OMDb supplements a few external ratings.
+ * Any supplementary source may be absent without making the title itself
+ * incomplete.
  */
 fun buildDetailEntity(
     type: MediaType,
@@ -143,10 +143,13 @@ fun buildDetailEntity(
 ): MediaDetailEntity {
     val credits = tmdb.credits ?: tmdb.aggregateCredits
     val crew = credits?.crew.orEmpty()
-    val date = tmdb.date ?: info?.released
+    val date = tmdb.date
 
-    val ratings = RatingsMapper.fromMdblist(info?.ratings)
-        .ifEmpty { RatingsMapper.fromOmdb(omdb) }
+    val ratings = RatingsMapper.merge(
+        RatingsMapper.fromTmdb(tmdb.voteAverage, tmdb.voteCount),
+        RatingsMapper.fromMdblist(info?.ratings),
+        RatingsMapper.fromOmdb(omdb),
+    )
 
     // A logo with no text baked in reads best over fanart, and TMDB ranks its
     // artwork by votes — so the best-voted Portuguese or English one wins.
@@ -157,27 +160,25 @@ fun buildDetailEntity(
     return MediaDetailEntity(
         tmdbId = tmdbId,
         type = type.mdblist,
-        imdbId = tmdb.externalIds?.imdbId ?: info?.ids?.imdb,
-        title = tmdb.displayTitle.ifBlank { info?.title.orEmpty() },
+        imdbId = tmdb.externalIds?.imdbId,
+        title = tmdb.displayTitle,
         originalTitle = tmdb.displayOriginalTitle,
-        tagline = tmdb.tagline?.takeIf { it.isNotBlank() } ?: info?.tagline,
-        overview = tmdb.overview?.takeIf { it.isNotBlank() }
-            ?: info?.description
-            ?: omdb?.plot.orNullIfNA(),
+        tagline = tmdb.tagline?.takeIf { it.isNotBlank() },
+        overview = tmdb.overview?.takeIf { it.isNotBlank() } ?: omdb?.plot.orNullIfNA(),
         posterUrl = TmdbImages.url(tmdb.posterPath, TmdbImages.POSTER_LARGE),
         landscapeUrl = null,
         backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART),
         logoUrl = TmdbImages.url(logo?.filePath, TmdbImages.LOGO),
-        year = date?.take(4)?.toIntOrNull() ?: info?.year,
+        year = date?.take(4)?.toIntOrNull(),
         releaseDate = date,
-        runtimeMinutes = tmdb.minutes ?: info?.runtime,
+        runtimeMinutes = tmdb.minutes,
         seasonCount = tmdb.numberOfSeasons,
         episodeCount = tmdb.numberOfEpisodes,
         status = tmdb.status,
         certification = certificationOf(tmdb) ?: omdb?.rated.orNullIfNA(),
         trailerKey = trailerKeyOf(tmdb),
-        budget = tmdb.budget?.takeIf { it > 0 } ?: info?.budget,
-        revenue = tmdb.revenue?.takeIf { it > 0 } ?: info?.revenue,
+        budget = tmdb.budget?.takeIf { it > 0 },
+        revenue = tmdb.revenue?.takeIf { it > 0 },
         genres = tmdb.genres.map { it.name },
         directors = crew.filter { it.holds(DIRECTOR_JOBS) }.map { it.name }.distinct().take(3),
         writers = crew.filter { it.holds(WRITER_JOBS) }.map { it.name }.distinct().take(3),
@@ -214,14 +215,25 @@ fun buildDetailEntity(
                 score = (result.voteAverage * 10).roundToInt().takeIf { it > 0 },
             )
         },
-        reviews = info?.reviews.orEmpty().mapNotNull { review ->
+        reviews = tmdb.reviews?.results.orEmpty().mapNotNull { review ->
+            review.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            Review(
+                author = review.author.ifBlank {
+                    review.authorDetails?.name?.takeIf { it.isNotBlank() }
+                        ?: review.authorDetails?.username.orEmpty()
+                }.ifBlank { CoreText.anonymous },
+                content = review.content,
+                rating = review.authorDetails?.rating,
+                provider = ReviewProvider.TMDB,
+                updatedAt = review.updatedAt,
+            )
+        } + info?.reviews.orEmpty().filter { it.providerId == 1 }.mapNotNull { review ->
             review.content.takeIf { it.isNotBlank() } ?: return@mapNotNull null
             Review(
                 author = review.author.ifBlank { CoreText.anonymous },
                 content = review.content,
                 rating = review.rating,
-                // mdblist's `provider_id`: 1 = Trakt, 2 = TMDB.
-                provider = if (review.providerId == 1) ReviewProvider.TRAKT else ReviewProvider.TMDB,
+                provider = ReviewProvider.TRAKT,
                 updatedAt = review.updatedAt,
             )
         },

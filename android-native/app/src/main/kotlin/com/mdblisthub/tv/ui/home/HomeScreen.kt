@@ -1,11 +1,13 @@
 package com.mdblisthub.tv.ui.home
 
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -29,11 +31,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Settings
@@ -85,12 +85,14 @@ import com.mdblisthub.tv.core.ui.component.RailItem
 import com.mdblisthub.tv.core.ui.component.SideRail
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import coil3.compose.AsyncImage
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.hubViewModel
+import com.mdblisthub.tv.ui.player.MiniPlayerCoordinator
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -143,6 +145,7 @@ private sealed interface EditableListTarget {
 private class RowPivotScroll(
     private val variant: HubThemeVariant,
     private val normalFirstRowOffsetPx: Float,
+    private val focusedShelfViewportHeightPx: Float,
     /**
      * True while focus is away on the side rail, and for a moment after it
      * comes back. See [HomeScreen]'s `pinnedForRail` for why the pivot has to
@@ -151,6 +154,8 @@ private class RowPivotScroll(
     private val pinned: State<Boolean>,
     /** True while the spotlight hero owns the viewport above the rows. */
     private val spotlightHero: State<Boolean>,
+    /** True while the spotlight is fading out after focus entered a shelf. */
+    private val spotlightExitPending: State<Boolean>,
     /**
      * Answers "this request is for something inside the spotlight hero, and
      * here is the scroll it actually wants" — or null when it is not, and the
@@ -191,6 +196,26 @@ private class RowPivotScroll(
         heroScrollDistance(offset, size)?.let { return it }
 
         val pivot = when {
+            // Netflixy and Primefly replace the full-height spotlight with a
+            // fixed hero above a short shelf viewport. During the spotlight's
+            // exit fade the list still measures at full height; using the
+            // ordinary spotlight pivot here briefly parked every card at the
+            // top of the screen, only for it to jump down when the synopsis
+            // hero appeared. Park the card at its final *screen* coordinate
+            // from the first frame so only the heroes crossfade.
+            spotlightHero.value &&
+                spotlightExitPending.value &&
+                focusedShelfViewportHeightPx > 0f -> {
+                val shelfPivotFraction = when (variant) {
+                    HubThemeVariant.PRIMEFLY,
+                    HubThemeVariant.OPTIMUS_PRIME -> 0.11f
+                    HubThemeVariant.NETFLIXY,
+                    HubThemeVariant.CYBERFLIX -> 0.18f
+                    else -> 0f
+                }
+                (containerSize - focusedShelfViewportHeightPx).coerceAtLeast(0f) +
+                    shelfPivotFraction * focusedShelfViewportHeightPx
+            }
             // Under the spotlight hero every theme has the same geometry —
             // one full-height list, hero first, rows after — so they all park
             // a focused row in the same place. The per-variant landing points
@@ -313,28 +338,58 @@ fun HomeScreen(
         !isNormalTheme
     val hasResumeItem = resumePoints.isNotEmpty() && !isEditMode
     val homeListState = rememberLazyListState()
+    var lastFocusedListItemIndex by remember { mutableStateOf<Int?>(null) }
     val heroPrimaryFocusRequester = remember { FocusRequester() }
     var lastContentFocusWasSpotlight by remember { mutableStateOf(false) }
     var browsingRowsWithFocusedHero by remember(HubColors.variant) { mutableStateOf(false) }
+    val spotlightExitState = remember(HubColors.variant) { mutableStateOf(false) }
+    var spotlightExitPending by spotlightExitState
+    val usesFocusedShelfHero = HubColors.isNetflixLayout || HubColors.isPrimefly
     val showFocusedHeroForRows = hasSpotlightHero &&
-        HubColors.hasHeroTrailer &&
+        usesFocusedShelfHero &&
         browsingRowsWithFocusedHero
     val spotlightOwnsViewport = hasSpotlightHero && !showFocusedHeroForRows
+    val focusedShelfHeroAlpha by animateFloatAsState(
+        targetValue = if (showFocusedHeroForRows || !hasSpotlightHero) 1f else 0f,
+        animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+        label = "focused-shelf-hero-alpha",
+    )
+    val spotlightHeroAlpha by animateFloatAsState(
+        targetValue = if (spotlightExitPending) 0f else 1f,
+        animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+        label = "spotlight-exit-alpha",
+        finishedListener = { alpha ->
+            if (
+                alpha == 0f &&
+                spotlightExitPending &&
+                hasSpotlightHero &&
+                usesFocusedShelfHero
+            ) {
+                // Set the anchor before the layout changes from a full-height
+                // spotlight list to the short shelf strip. Doing this in a
+                // LaunchedEffect was one frame late, which made the cards
+                // briefly disappear and repaint as a visible blink.
+                lastFocusedListItemIndex?.let { homeListState.requestScrollToItem(it) }
+                browsingRowsWithFocusedHero = true
+            }
+        },
+    )
 
-    // Cyberflix and Optimus Prime have two deliberately different home
-    // states: the rotating spotlight opens the page, then their original
-    // clearlogo/synopsis/autotrailer hero follows the card focused below it.
-    // Other themes keep the spotlight's flat, full-height scrolling layout.
-    LaunchedEffect(hasSpotlightHero, HubColors.hasHeroTrailer) {
-        if (!hasSpotlightHero || !HubColors.hasHeroTrailer) {
+    // Netflixy/Primefly and their autoplay counterparts have two home states:
+    // the rotating spotlight opens the page, then the clearlogo/synopsis hero
+    // follows the card focused below it. Autotrailer changes only whether the
+    // static artwork gives way to video; it must not remove the hero itself.
+    LaunchedEffect(hasSpotlightHero, usesFocusedShelfHero) {
+        if (!hasSpotlightHero || !usesFocusedShelfHero) {
             browsingRowsWithFocusedHero = false
+            spotlightExitPending = false
         }
     }
 
     val onShelfItemFocused = {
         lastContentFocusWasSpotlight = false
-        if (hasSpotlightHero && HubColors.hasHeroTrailer) {
-            browsingRowsWithFocusedHero = true
+        if (hasSpotlightHero && usesFocusedShelfHero) {
+            if (!browsingRowsWithFocusedHero) spotlightExitPending = true
         }
     }
     val rowToReveal by viewModel.rowToReveal.collectAsStateWithLifecycle()
@@ -509,6 +564,11 @@ fun HomeScreen(
      * a focus callback there is no transaction still in flight to overwrite it.
      */
     var lastFocusedRow by remember { mutableStateOf<FocusRequester?>(null) }
+    val shelfLeadingItemCount =
+        (if (hasSpotlightHero) 1 else 0) + (if (hasHeroItem) 1 else 0)
+    val homeRowsStartIndex = shelfLeadingItemCount + (if (hasResumeItem) 1 else 0)
+    val becauseYouWatchedStartIndex = homeRowsStartIndex + homeRows.size
+
     LaunchedEffect(railFocused) {
         if (!railFocused && pinnedForRail.value) {
             // Long enough to cover the restore's bring-into-view, short enough
@@ -519,16 +579,52 @@ fun HomeScreen(
     }
     val normalFirstRowOffsetPx = with(LocalDensity.current) { 36.dp.toPx() }
     val spotlightHeroHeightPx = with(LocalDensity.current) { spotlightHeroHeight().toPx() }
+    val focusedShelfViewportHeightPx = with(LocalDensity.current) {
+        when {
+            HubColors.isPrimefly -> 297.dp.toPx()
+            HubColors.isNetflixLayout -> 257.dp.toPx()
+            else -> 0f
+        }
+    }
     // Read through a `State` rather than captured: the spec outlives the
     // composition that built it, and a captured boolean would keep answering
     // for whichever spotlight the screen had when the theme was last changed.
     val heroPresent = rememberUpdatedState(spotlightOwnsViewport)
-    val rowPivotScroll = remember(HubColors.variant, normalFirstRowOffsetPx, spotlightHeroHeightPx) {
+    // Deliberately a second, separate `State` from `heroPresent` above, even
+    // though both start from the spotlight: `heroPresent` picks the *pivot*
+    // once the hero-specific scroll distance below has declined to answer,
+    // and for that question "does the spotlight currently own the whole flat
+    // list" is right — past it, Cyberflix/Netflixy/etc. need their own
+    // per-theme pivot back. The scroll-distance override just below needs a
+    // different question answered: "is `SpotlightHeroBlock` still physically
+    // sitting at item 0", which stays true across the very recomposition
+    // where `browsingRowsWithFocusedHero` (and so `spotlightOwnsViewport`)
+    // flips to false — `onShelfItemFocused` sets it synchronously the instant
+    // a shelf card takes focus, before this bring-into-view request is
+    // answered. That is precisely the first "down" press out of the hero the
+    // comment above `heroScrollDistance` calls out as the moment that decides
+    // whether the rows scroll at all, so gating that override on
+    // `spotlightOwnsViewport` silently disabled it on the one press that
+    // needed it, leaving the just-focused row's bring-into-view to fall back
+    // to a per-theme pivot sized for a viewport without a hero — while the
+    // hero was still on screen, still its full height. Gating it on
+    // `hasSpotlightHero` instead keeps the override live for exactly as long
+    // as item 0 actually is the spotlight; `firstVisibleItemIndex != 0` below
+    // still turns it off the moment the list has genuinely scrolled past it.
+    val heroItemAtTop = rememberUpdatedState(hasSpotlightHero)
+    val rowPivotScroll = remember(
+        HubColors.variant,
+        normalFirstRowOffsetPx,
+        spotlightHeroHeightPx,
+        focusedShelfViewportHeightPx,
+    ) {
         RowPivotScroll(
             HubColors.variant,
             normalFirstRowOffsetPx,
+            focusedShelfViewportHeightPx,
             pinnedForRail,
             heroPresent,
+            spotlightExitState,
         ) { offset, size ->
             // How much of the hero has already gone off the top. The hero
             // spans `-scrolledOff .. heroHeight - scrolledOff` in the
@@ -537,7 +633,7 @@ fun HomeScreen(
             // than widening the test.
             val scrolledOff = homeListState.firstVisibleItemScrollOffset.toFloat()
             when {
-                !heroPresent.value -> null
+                !heroItemAtTop.value -> null
                 // Past the hero the list is back to ordinary rows, and so is
                 // the pivot.
                 homeListState.firstVisibleItemIndex != 0 -> null
@@ -706,34 +802,16 @@ fun HomeScreen(
     // that — rebuilding them per focus is pure allocation.
     val menuHome = stringResource(R.string.menu_home)
     val menuSearch = stringResource(R.string.menu_search)
-    val menuAddons = stringResource(R.string.menu_addons)
     val menuLists = stringResource(R.string.menu_lists)
     val menuListsDone = stringResource(R.string.menu_lists_done)
-    val menuThemeNormal = stringResource(R.string.menu_theme_normal)
-    val menuThemeCyberpunk = stringResource(R.string.menu_theme_cyberpunk)
-    val menuThemeNetflixy = stringResource(R.string.menu_theme_netflixy)
-    val menuThemePrimefly = stringResource(R.string.menu_theme_primefly)
-    val menuThemeCyberflix = stringResource(R.string.menu_theme_cyberflix)
-    val menuThemeOptimusPrime = stringResource(R.string.menu_theme_optimus_prime)
     val menuSettings = stringResource(R.string.menu_settings)
     val menuExit = stringResource(R.string.menu_exit)
 
-    val currentThemeName = when (HubColors.variant) {
-        HubThemeVariant.NORMAL -> menuThemeNormal
-        HubThemeVariant.CYBERPUNK -> menuThemeCyberpunk
-        HubThemeVariant.NETFLIXY -> menuThemeNetflixy
-        HubThemeVariant.PRIMEFLY -> menuThemePrimefly
-        HubThemeVariant.CYBERFLIX -> menuThemeCyberflix
-        HubThemeVariant.OPTIMUS_PRIME -> menuThemeOptimusPrime
-    }
-
-    val rail = remember(isEditMode, HubColors.variant, menuHome, menuSearch, menuAddons, menuLists, menuListsDone, currentThemeName, menuSettings, menuExit) {
+    val rail = remember(isEditMode, menuHome, menuSearch, menuLists, menuListsDone, menuSettings, menuExit) {
         listOf(
             RailItem("home", menuHome, Icons.Default.Home),
             RailItem("search", menuSearch, Icons.Default.Search),
-            RailItem("addons", menuAddons, Icons.Default.Extension),
             RailItem("lists", if (isEditMode) menuListsDone else menuLists, if (isEditMode) Icons.Default.Check else Icons.AutoMirrored.Filled.ViewList),
-            RailItem("theme", currentThemeName, Icons.Default.Palette),
             RailItem("settings", menuSettings, Icons.Default.Settings),
             RailItem("exit", menuExit, Icons.AutoMirrored.Filled.Logout),
         )
@@ -812,7 +890,7 @@ fun HomeScreen(
         // to the hero and the rows below sit on flat page background. Painting
         // a focus-following fanart under them as well would be the one thing
         // that gives the port away.
-        if (!HubColors.hasHeroTrailer && !hasSpotlightHero) {
+        if (!usesFocusedShelfHero && !hasSpotlightHero) {
             FocusedBackdrop(viewModel)
         }
 
@@ -865,11 +943,7 @@ fun HomeScreen(
                 onSelect = { item ->
                     when (item.key) {
                         "search" -> onOpenSearch()
-                        "addons" -> onOpenAddons()
                         "lists" -> viewModel.toggleEditMode()
-                        // Through the ViewModel, not HubColors directly: the
-                        // choice has to be persisted as well as painted.
-                        "theme" -> viewModel.cycleTheme()
                         "settings" -> onOpenSettings()
                         "exit" -> showExitDialog = true
                     }
@@ -973,10 +1047,10 @@ fun HomeScreen(
                     .focusRequester(contentFocusRequester)
                     .focusGroup(),
             ) {
-                // Cyberflix and Optimus Prime restore their focused-title hero
-                // after focus leaves the spotlight for a shelf. That is where
-                // their clearlogo, synopsis and autoplaying trailer live.
-                // The other themes keep the spotlight's flat scrolling page.
+                // Both members of each visual pair restore the same focused-
+                // title hero after focus leaves the spotlight. Netflixy and
+                // Primefly keep the backdrop still; CyberFlix and Optimus
+                // Prime may replace that same image with a trailer.
                 if (isNormalTheme && !hasSpotlightHero) {
                     Box(Modifier.fillMaxWidth().height(76.dp)) {
                         HeroPanel(viewModel)
@@ -985,21 +1059,23 @@ fun HomeScreen(
                     (!hasSpotlightHero || showFocusedHeroForRows) &&
                     (HubColors.isNetflixLayout || HubColors.isPrimefly)
                 ) {
-                    Box(Modifier.weight(1f)) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .alpha(focusedShelfHeroAlpha),
+                    ) {
                         // Under the panel, not over it: the title, metadata and
                         // synopsis have to stay legible across the whole
                         // transition, and the block's left ramp is cut wide
                         // enough (see `HeroArt`) that the artwork has already
                         // faded out by the time it reaches them.
-                        if (HubColors.hasHeroTrailer) {
-                            HeroArtBlock(
-                                viewModel = viewModel,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(HERO_ART_WIDTH_FRACTION),
-                            )
-                        }
+                        HeroArtBlock(
+                            viewModel = viewModel,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .fillMaxHeight()
+                                .fillMaxWidth(HERO_ART_WIDTH_FRACTION),
+                        )
                         HeroPanel(viewModel)
                     }
                 }
@@ -1021,40 +1097,15 @@ fun HomeScreen(
                                 .fillMaxWidth()
                                 .weight(1f)
                                 .clipToBounds()
-                            // OptimusPrime is Primefly's strip with the 15 dp
-                            // it used to give away taken as height instead.
-                            //
-                            // Primefly lays out 312 dp and then parks it 15 dp
-                            // lower, so the band between the hero's bottom
-                            // edge and the first shelf is background nothing
-                            // ever draws into. That costs Primefly nothing —
-                            // its hero is a text panel — but here the hero
-                            // holds artwork that stops dead at that edge, and
-                            // 15 dp of empty navy is 15 dp of backdrop not
-                            // being shown. Asking for 297 dp with no offset
-                            // leaves the shelves pixel-for-pixel where they
-                            // were (297 dp of visible strip either way, two
-                            // complete landscape shelves inside 295.4 of it)
-                            // and hands the difference to `HeroArt`: 228 → 243
-                            // dp of block, which on a 16:9 backdrop is four
-                            // points of crop recovered rather than four points
-                            // of empty background.
-                            HubColors.isOptimusPrime -> Modifier
+                            // Primefly and Optimus Prime share the exact same
+                            // geometry. The only distinction is whether the
+                            // image in HeroArtBlock may become a trailer.
+                            HubColors.isPrimefly -> Modifier
                                 .fillMaxWidth()
                                 .height(297.dp)
                                 .clipToBounds()
-                            HubColors.isPrimefly -> Modifier
-                                .fillMaxWidth()
-                                // Two complete landscape shelves remain visible;
-                                // the hero gives this space back from its bottom.
-                                .height(312.dp)
-                                .offset(y = 15.dp)
-                                .clipToBounds()
-                            // CyberFlix specifically, not Netflixy below: the
-                            // next shelf's heading is meant to show here — see
-                            // `hasHeroTrailer` — it is the one piece of the
-                            // shelf below that stays legible while the rest of
-                            // it is clipped, and it must come through whole.
+                            // Netflixy and CyberFlix likewise share the strip
+                            // height, clearlogo and synopsis layout.
                             //
                             // 257 dp is that heading's own lower edge, not a
                             // rounder number nearby: the heading starts 232.3
@@ -1068,13 +1119,9 @@ fun HomeScreen(
                             // going spare below that line; this claims it for
                             // the hero and stops exactly where the heading
                             // does.
-                            HubColors.isCyberflix -> Modifier
-                                .fillMaxWidth()
-                                .height(257.dp)
-                                .clipToBounds()
                             HubColors.isNetflixLayout -> Modifier
                                 .fillMaxWidth()
-                                .height(264.dp)
+                                .height(257.dp)
                                 .clipToBounds()
                             isNormalTheme -> Modifier
                                 .fillMaxWidth()
@@ -1117,15 +1164,18 @@ fun HomeScreen(
                                         spotlight.isNotEmpty(),
                                     onInitialFocusHandled = onInitialNormalFocusHandled,
                                     primaryFocusRequester = heroPrimaryFocusRequester,
-                                    modifier = Modifier.onFocusChanged { focus ->
-                                        if (focus.hasFocus) {
-                                            lastContentFocusWasSpotlight = true
-                                            if (browsingRowsWithFocusedHero) {
-                                                browsingRowsWithFocusedHero = false
-                                                scope.launch { homeListState.animateScrollToItem(0) }
+                                    modifier = Modifier
+                                        .alpha(spotlightHeroAlpha)
+                                        .onFocusChanged { focus ->
+                                            if (focus.hasFocus) {
+                                                lastContentFocusWasSpotlight = true
+                                                spotlightExitPending = false
+                                                if (browsingRowsWithFocusedHero) {
+                                                    browsingRowsWithFocusedHero = false
+                                                    scope.launch { homeListState.animateScrollToItem(0) }
+                                                }
                                             }
-                                        }
-                                    },
+                                        },
                                 )
                             }
                         }
@@ -1159,6 +1209,7 @@ fun HomeScreen(
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = resumeRowFocus
+                                lastFocusedListItemIndex = shelfLeadingItemCount
                                 onShelfItemFocused()
                             },
                             rowFocusRequester = resumeRowFocus,
@@ -1203,6 +1254,7 @@ fun HomeScreen(
                     val trackFocus: (MediaItem) -> Unit = {
                         viewModel.onFocused(it)
                         lastFocusedRow = rowFocus
+                        lastFocusedListItemIndex = homeRowsStartIndex + index
                         onShelfItemFocused()
                     }
                     // A requester whose row has left composition — edit mode
@@ -1354,6 +1406,7 @@ fun HomeScreen(
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = bywRowFocus
+                                lastFocusedListItemIndex = becauseYouWatchedStartIndex + index
                                 onShelfItemFocused()
                             },
                             rowFocusRequester = bywRowFocus,
@@ -1556,7 +1609,7 @@ private fun FocusedBackdrop(viewModel: HomeViewModel) {
 }
 
 /**
- * CyberFlix's hero artwork: the backdrop and the trailer that takes it over.
+ * The themed hero artwork: always a backdrop, optionally a trailer.
  *
  * Split out for the same recomposition reason as [FocusedBackdrop] — both URLs
  * change on every settled focus, and read from `HomeScreen` they invalidated
@@ -1569,10 +1622,20 @@ private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier
     val backdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
     val trailerUrl by viewModel.focusedTrailerUrl.collectAsStateWithLifecycle()
     val focused by viewModel.focused.collectAsStateWithLifecycle()
+    val miniPlayerActive by MiniPlayerCoordinator.session.collectAsStateWithLifecycle()
 
     HeroArt(
         backdropUrl = backdropUrl,
-        trailerUrl = trailerUrl,
+        // The mini-player already has a decoder running for its own video —
+        // most Android TV boxes only have hardware for one or two concurrent
+        // ones, and this preview's bare `ExoPlayer` (see `TrailerSurface`,
+        // unlike `PlaybackController`) has no decoder-fallback handling.
+        // Contending with it is what was crashing the app rather than merely
+        // failing to preview, so this stays null for as long as any title is
+        // floating, not just the one playing there.
+        trailerUrl = trailerUrl.takeIf {
+            HubColors.hasHeroTrailer && miniPlayerActive == null
+        },
         trailerItemKey = focused?.key,
         onTrailerPlaybackChanged = viewModel::onTrailerPlaybackChanged,
         modifier = modifier,

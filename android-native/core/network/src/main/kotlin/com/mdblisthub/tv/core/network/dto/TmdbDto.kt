@@ -23,6 +23,7 @@ data class TmdbDetailDto(
     val seasons: List<TmdbSeasonSummaryDto> = emptyList(),
     val status: String? = null,
     @SerialName("vote_average") val voteAverage: Double = 0.0,
+    @SerialName("vote_count") val voteCount: Long = 0,
     val budget: Long? = null,
     val revenue: Long? = null,
     val genres: List<TmdbNamedDto> = emptyList(),
@@ -35,6 +36,7 @@ data class TmdbDetailDto(
     val images: TmdbImagesDto? = null,
     @SerialName("content_ratings") val contentRatings: TmdbContentRatingsDto? = null,
     @SerialName("release_dates") val releaseDates: TmdbReleaseDatesDto? = null,
+    val reviews: TmdbReviewsDto? = null,
 ) {
     val displayTitle: String get() = title ?: name ?: ""
     val displayOriginalTitle: String? get() = originalTitle ?: originalName
@@ -99,6 +101,24 @@ data class TmdbVideoDto(
     val site: String = "",
     val type: String = "",
     val official: Boolean = false,
+)
+
+@Serializable
+data class TmdbReviewsDto(val results: List<TmdbReviewDto> = emptyList())
+
+@Serializable
+data class TmdbReviewDto(
+    val author: String = "",
+    @SerialName("author_details") val authorDetails: TmdbReviewAuthorDto? = null,
+    val content: String = "",
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class TmdbReviewAuthorDto(
+    val name: String? = null,
+    val username: String? = null,
+    val rating: Double? = null,
 )
 
 @Serializable

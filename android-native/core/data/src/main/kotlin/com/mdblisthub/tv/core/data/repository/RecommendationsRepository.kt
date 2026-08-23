@@ -81,15 +81,20 @@ class RecommendationsRepository(
      */
     suspend fun spotlight(): List<MediaItem> {
         val key = session.currentKey()
-        if (key.isBlank()) return emptyList()
-
-        val watched = runCatching { watched(key) }.getOrNull().orEmpty()
-
-        return buildSpotlight(watched) { type, tmdbId ->
-            runCatching {
-                tmdbApi.recommendations(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
-            }.getOrNull().orEmpty()
+        if (key.isNotBlank()) {
+            val watched = runCatching { watched(key) }.getOrNull().orEmpty()
+            val personalized = buildSpotlight(watched) { type, tmdbId ->
+                runCatching {
+                    tmdbApi.recommendations(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
+                }.getOrNull().orEmpty()
+            }
+            if (personalized.isNotEmpty()) return personalized
         }
+
+        val popular = runCatching {
+            tmdbApi.popularMovies(ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
+        }.getOrNull().orEmpty()
+        return buildTmdbFallbackSpotlight(popular)
     }
 
     /**
@@ -215,6 +220,17 @@ internal suspend fun buildSpotlight(
     val movieSeeds = watched.filter { (type, _) -> type == MediaType.MOVIE }.take(SEED_ROWS)
     return spotlightFrom(movieSeeds, alreadyWatched, recommendationsFor)
 }
+
+/** Quality-filtered global TMDB picks for guests or accounts without usable history. */
+internal fun buildTmdbFallbackSpotlight(results: List<TmdbSearchResultDto>): List<MediaItem> =
+    results
+        .filter { it.voteAverage > MIN_SPOTLIGHT_SCORE }
+        .filter { it.voteCount >= MIN_SPOTLIGHT_VOTES }
+        .filter { !it.backdropPath.isNullOrBlank() && !it.posterPath.isNullOrBlank() }
+        .map { it.toMediaItem(MediaType.MOVIE) }
+        .filter { it.type == MediaType.MOVIE }
+        .distinctBy { it.tmdbId }
+        .shuffled()
 
 private suspend fun spotlightFrom(
     seeds: List<Pair<MediaType, Int>>,

@@ -1,8 +1,24 @@
 package com.mdblisthub.tv.ui.settings
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,38 +30,67 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.LibraryProvider
+import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.model.TraktAccount
 import com.mdblisthub.tv.core.model.TraktLinkFailure
 import com.mdblisthub.tv.core.model.TraktLinkState
 import com.mdblisthub.tv.core.ui.theme.HubColors
-import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.ui.theme.HubEffects
 import com.mdblisthub.tv.core.ui.theme.HubShapes
 import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.addons.AddonsScreen
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -86,9 +131,13 @@ data class SettingsUiState(
     val subtitleAutoDownload: Boolean = true,
     val subtitleLanguage: String = "pt",
     val subtitleColor: String = "white",
+    val subtitleTextOpacity: Int = 100,
+    val subtitleBackgroundEnabled: Boolean = false,
+    val subtitleBackgroundOpacity: Int = 40,
     val audioLanguage: String = "en",
     val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
     val dimUnwatchedEpisodes: Boolean = false,
+    val theme: HubThemeVariant = HubThemeVariant.NORMAL,
     val traktAccount: TraktAccount? = null,
     /** False when the build ships no Trakt client id — see `ApiConfig`. */
     val traktConfigured: Boolean = false,
@@ -123,6 +172,15 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                     subtitleColor = subColor,
                 )
             }
+                .combine(graph.uiPreferences.subtitleTextOpacity) { partial, opacity ->
+                    partial.copy(subtitleTextOpacity = opacity)
+                }
+                .combine(graph.uiPreferences.subtitleBackgroundEnabled) { partial, enabled ->
+                    partial.copy(subtitleBackgroundEnabled = enabled)
+                }
+                .combine(graph.uiPreferences.subtitleBackgroundOpacity) { partial, opacity ->
+                    partial.copy(subtitleBackgroundOpacity = opacity)
+                }
                 .combine(graph.uiPreferences.audioLanguage) { partial, audioLang ->
                     partial.copy(audioLanguage = audioLang)
                 }
@@ -140,6 +198,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.posterLandscapeTransformation) { partial, enabled ->
                     partial.copy(posterLandscapeTransformation = enabled)
+                }
+                .combine(graph.uiPreferences.theme) { partial, theme ->
+                    partial.copy(theme = theme)
                 }
                 .combine(graph.traktAuth.account) { partial, account ->
                     partial.copy(
@@ -243,7 +304,23 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     fun toggleSubtitleAutoDownload() = viewModelScope.launch { graph.uiPreferences.saveSubtitleAutoDownload(!_state.value.subtitleAutoDownload) }
     fun setSubtitleLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleLanguage(lang) }
     fun setSubtitleColor(color: String) = viewModelScope.launch { graph.uiPreferences.saveSubtitleColor(color) }
+    fun setSubtitleTextOpacity(opacity: Int) {
+        val clamped = opacity.coerceIn(0, 100)
+        _state.value = _state.value.copy(subtitleTextOpacity = clamped)
+        viewModelScope.launch { graph.uiPreferences.saveSubtitleTextOpacity(clamped) }
+    }
+    fun toggleSubtitleBackground() {
+        val enabled = !_state.value.subtitleBackgroundEnabled
+        _state.value = _state.value.copy(subtitleBackgroundEnabled = enabled)
+        viewModelScope.launch { graph.uiPreferences.saveSubtitleBackgroundEnabled(enabled) }
+    }
+    fun setSubtitleBackgroundOpacity(opacity: Int) {
+        val clamped = opacity.coerceIn(0, 100)
+        _state.value = _state.value.copy(subtitleBackgroundOpacity = clamped)
+        viewModelScope.launch { graph.uiPreferences.saveSubtitleBackgroundOpacity(clamped) }
+    }
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
+    fun setTheme(theme: HubThemeVariant) = viewModelScope.launch { graph.uiPreferences.saveTheme(theme) }
     fun toggleDimUnwatchedEpisodes() = viewModelScope.launch { graph.uiPreferences.saveDimUnwatchedEpisodes(!_state.value.dimUnwatchedEpisodes) }
 
     private companion object {
@@ -252,15 +329,80 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     }
 }
 
+enum class SettingsSection {
+    INTERFACE,
+    THEMES,
+    LIBRARY,
+    SUBTITLES,
+    PLAYER,
+    ADDONS,
+}
+
+private const val SETTINGS_DETAIL_IN_MS = 200
+private const val SETTINGS_DETAIL_OUT_MS = 180
+
+private data class SettingsCategory(
+    val section: SettingsSection,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+)
+
 @Composable
-fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
+@OptIn(ExperimentalComposeUiApi::class)
+fun SettingsScreen(
+    graph: DataGraph,
+    onBack: () -> Unit,
+    initialSection: SettingsSection = SettingsSection.INTERFACE,
+) {
     val viewModel = hubViewModel { SettingsViewModel(graph) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val traktLink by viewModel.traktLink.collectAsStateWithLifecycle()
-
+    var selectedSection by rememberSaveable { mutableStateOf(initialSection) }
     var subtitlePickerOpen by remember { mutableStateOf(false) }
     var audioPickerOpen by remember { mutableStateOf(false) }
+    val railFocusRequesters = remember {
+        SettingsSection.entries.associateWith { FocusRequester() }
+    }
 
+    val categories = listOf(
+        SettingsCategory(
+            SettingsSection.INTERFACE,
+            stringResource(R.string.settings_section_interface),
+            stringResource(R.string.settings_category_interface_desc),
+            Icons.Default.Settings,
+        ),
+        SettingsCategory(
+            SettingsSection.THEMES,
+            stringResource(R.string.settings_section_themes),
+            stringResource(R.string.settings_category_themes_desc),
+            Icons.Default.Palette,
+        ),
+        SettingsCategory(
+            SettingsSection.LIBRARY,
+            stringResource(R.string.settings_section_library),
+            stringResource(R.string.settings_category_library_desc),
+            Icons.AutoMirrored.Filled.ViewList,
+        ),
+        SettingsCategory(
+            SettingsSection.SUBTITLES,
+            stringResource(R.string.settings_section_subtitles),
+            stringResource(R.string.settings_category_subtitles_desc),
+            Icons.Default.Subtitles,
+        ),
+        SettingsCategory(
+            SettingsSection.PLAYER,
+            stringResource(R.string.settings_section_player),
+            stringResource(R.string.settings_category_player_desc),
+            Icons.Default.PlayArrow,
+        ),
+        SettingsCategory(
+            SettingsSection.ADDONS,
+            stringResource(R.string.addons_title),
+            stringResource(R.string.settings_category_addons_desc),
+            Icons.Default.Extension,
+        ),
+    )
     BackHandler {
         when {
             traktLink != null -> viewModel.dismissTraktLink()
@@ -270,229 +412,533 @@ fun SettingsScreen(graph: DataGraph, onBack: () -> Unit) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-        // Pinned outside the LazyColumn on purpose: the list's initial focus
-        // lands on the first focusable card below, and Compose's focus-driven
-        // scroll-into-view then shifts the whole list up to seat that card
-        // near the top — taking this non-focusable title with it, off the
-        // top of the screen, before the user ever presses a key. A fixed
-        // header can't be scrolled away by a focus change it isn't part of.
-        Text(
-            stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.displayLarge,
-            color = HubColors.Text,
-            modifier = Modifier
-                .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
-                .padding(top = HubDimens.ScreenPaddingVertical * 2, bottom = 18.dp),
-        )
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        railFocusRequesters.getValue(initialSection).requestFocus()
+    }
 
-        LazyColumn(
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(HubColors.Background)
+            .padding(horizontal = 28.dp, vertical = 24.dp),
+    ) {
+        Row(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                start = HubDimens.ScreenPaddingHorizontal,
-                end = HubDimens.ScreenPaddingHorizontal,
-                bottom = HubDimens.ScreenPaddingVertical,
-            ),
-            verticalArrangement = Arrangement.spacedBy(22.dp),
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
         ) {
-        item(key = "interface") {
-            SettingsCard(title = stringResource(R.string.settings_section_interface)) {
-                SettingsRow(label = stringResource(R.string.settings_language)) {
-                    val langs = listOf(
-                        "pt" to stringResource(R.string.lang_pt),
-                        "en" to stringResource(R.string.lang_en),
-                        "es" to stringResource(R.string.lang_es),
-                    )
-                    langs.forEach { (code, name) ->
-                        HubButton(
-                            text = name,
-                            primary = state.language == code,
-                            onClick = { viewModel.setLanguage(code) }
-                        )
-                    }
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_autotrailer)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.autotrailer) R.string.settings_on else R.string.settings_off,
-                        ),
-                        primary = state.autotrailer,
-                        onClick = viewModel::toggleAutotrailer,
-                    )
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_poster_landscape_transformation)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.posterLandscapeTransformation) {
-                                R.string.settings_on
-                            } else {
-                                R.string.settings_off
-                            },
-                        ),
-                        primary = state.posterLandscapeTransformation,
-                        onClick = viewModel::togglePosterLandscapeTransformation,
-                    )
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_intro)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.introEnabled) R.string.settings_on else R.string.settings_off,
-                        ),
-                        primary = state.introEnabled,
-                        onClick = viewModel::toggleIntro,
-                    )
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_spotlight_hero)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.spotlightHero) R.string.settings_on else R.string.settings_off,
-                        ),
-                        primary = state.spotlightHero,
-                        onClick = viewModel::toggleSpotlightHero,
-                    )
-                }
-
-            }
-        }
-
-        item(key = "library") {
-            SettingsCard(title = stringResource(R.string.settings_section_library)) {
-                SettingsRow(label = stringResource(R.string.settings_library_provider)) {
-                    val providers = listOf(
-                        LibraryProvider.MDBLIST to stringResource(R.string.settings_library_mdblist),
-                        LibraryProvider.TRAKT to stringResource(R.string.settings_library_trakt),
-                    )
-                    providers.forEach { (provider, name) ->
-                        HubButton(
-                            text = name,
-                            primary = state.libraryProvider == provider,
-                            onClick = { viewModel.setLibraryProvider(provider) },
-                        )
-                    }
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_dim_unwatched_episodes)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.dimUnwatchedEpisodes) R.string.settings_on else R.string.settings_off,
-                        ),
-                        primary = state.dimUnwatchedEpisodes,
-                        onClick = viewModel::toggleDimUnwatchedEpisodes,
-                    )
-                }
-
-                SettingsRow(
-                    label = state.traktAccount?.handle
-                        ?: stringResource(R.string.settings_trakt_not_connected),
+            Column(
+                modifier = Modifier
+                    .width(286.dp)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(
+                    stringResource(R.string.settings_title),
+                    style = MaterialTheme.typography.displayMedium,
+                    color = HubColors.Text,
+                    modifier = Modifier.padding(horizontal = 14.dp),
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (state.traktAccount == null) {
-                        HubButton(
-                            text = stringResource(R.string.settings_trakt_connect),
-                            primary = true,
-                            onClick = viewModel::beginTraktLink,
+                    items(categories, key = { it.section.name }) { category ->
+                        SettingsRailButton(
+                            category = category,
+                            selected = category.section == selectedSection,
+                            onSelect = { selectedSection = category.section },
+                            modifier = Modifier.focusRequester(
+                                railFocusRequesters.getValue(category.section),
+                            ),
                         )
-                    } else {
-                        HubButton(
-                            text = stringResource(R.string.settings_trakt_disconnect),
-                            onClick = viewModel::unlinkTrakt,
-                        )
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .focusGroup()
+                    .focusProperties {
+                        exit = { direction ->
+                            if (direction == FocusDirection.Left) {
+                                railFocusRequesters.getValue(selectedSection)
+                            } else {
+                                FocusRequester.Default
+                            }
+                        }
+                    },
+            ) {
+                AnimatedContent(
+                    targetState = selectedSection,
+                    modifier = Modifier.fillMaxSize(),
+                    transitionSpec = {
+                        val order = categories.map { it.section }
+                        val forward = order.indexOf(targetState) >= order.indexOf(initialState)
+                        val direction = if (forward) 1 else -1
+                        (slideInHorizontally(
+                            animationSpec = tween(
+                                SETTINGS_DETAIL_IN_MS,
+                                easing = FastOutSlowInEasing,
+                            ),
+                        ) { fullWidth -> direction * fullWidth / 4 } +
+                            fadeIn(tween(SETTINGS_DETAIL_IN_MS)))
+                            .togetherWith(
+                                slideOutHorizontally(
+                                    animationSpec = tween(
+                                        SETTINGS_DETAIL_OUT_MS,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                ) { fullWidth -> -direction * fullWidth / 4 } +
+                                    fadeOut(tween(SETTINGS_DETAIL_OUT_MS)),
+                            )
+                    },
+                    label = "settings-detail-transition",
+                ) { animatedSection ->
+                    val animatedCategory = categories.first { it.section == animatedSection }
+                    Column(Modifier.fillMaxSize()) {
+                        SettingsDetailHeader(animatedCategory.title, animatedCategory.subtitle)
+                        Spacer(Modifier.height(20.dp))
+
+                        when (animatedSection) {
+                            SettingsSection.INTERFACE -> InterfaceSettingsContent(state, viewModel)
+                            SettingsSection.THEMES -> ThemeSettingsContent(
+                                theme = state.theme,
+                                autotrailer = state.autotrailer,
+                                onSelect = viewModel::setTheme,
+                                onToggleAutotrailer = viewModel::toggleAutotrailer,
+                            )
+                            SettingsSection.LIBRARY -> LibrarySettingsContent(state, viewModel)
+                            SettingsSection.SUBTITLES -> SubtitleSettingsContent(
+                                state = state,
+                                viewModel = viewModel,
+                                onOpenLanguage = { subtitlePickerOpen = true },
+                            )
+                            SettingsSection.PLAYER -> PlayerSettingsContent(
+                                state = state,
+                                onOpenLanguage = { audioPickerOpen = true },
+                            )
+                            SettingsSection.ADDONS -> AddonsScreen(
+                                graph = graph,
+                                onBack = {},
+                                embedded = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
                     }
                 }
             }
         }
 
-        item(key = "subtitles") {
-            SettingsCard(title = stringResource(R.string.settings_section_subtitles)) {
-                SettingsRow(label = stringResource(R.string.settings_subtitle_auto_download)) {
-                    HubButton(
-                        text = stringResource(
-                            if (state.subtitleAutoDownload) R.string.settings_on else R.string.settings_off,
-                        ),
-                        primary = state.subtitleAutoDownload,
-                        onClick = viewModel::toggleSubtitleAutoDownload
-                    )
-                }
-                
-                SettingsRow(label = stringResource(R.string.settings_subtitle_default_lang)) {
-                    val currentName = ALL_LANGUAGES.find { it.first == state.subtitleLanguage }?.second ?: state.subtitleLanguage
-                    HubButton(
-                        text = currentName,
-                        primary = true,
-                        onClick = { subtitlePickerOpen = true }
-                    )
-                }
-
-                SettingsRow(label = stringResource(R.string.settings_subtitle_color)) {
-                    val colors = listOf(
-                        "yellow" to stringResource(R.string.color_yellow),
-                        "white" to stringResource(R.string.color_white),
-                        "red" to stringResource(R.string.color_red),
-                        "blue" to stringResource(R.string.color_blue)
-                    )
-                    colors.forEach { (code, name) ->
-                        HubButton(
-                            text = name,
-                            primary = state.subtitleColor == code,
-                            onClick = { viewModel.setSubtitleColor(code) }
-                        )
-                    }
-                }
-            }
+        if (subtitlePickerOpen) {
+            LanguagePickerOverlay(
+                title = stringResource(R.string.settings_subtitle_default_lang),
+                languages = ALL_LANGUAGES,
+                selectedCode = state.subtitleLanguage,
+                onSelect = { viewModel.setSubtitleLanguage(it); subtitlePickerOpen = false },
+            )
         }
 
-        item(key = "player") {
-            SettingsCard(title = stringResource(R.string.settings_section_player)) {
-                SettingsRow(label = stringResource(R.string.settings_audio_preferred_lang)) {
-                    val currentName = ALL_LANGUAGES.find { it.first == state.audioLanguage }?.second ?: state.audioLanguage
-                    HubButton(
-                        text = currentName,
-                        primary = true,
-                        onClick = { audioPickerOpen = true }
-                    )
-                }
-            }
+        if (audioPickerOpen) {
+            LanguagePickerOverlay(
+                title = stringResource(R.string.settings_audio_preferred_lang),
+                languages = ALL_LANGUAGES,
+                selectedCode = state.audioLanguage,
+                onSelect = { viewModel.setAudioLanguage(it); audioPickerOpen = false },
+            )
         }
 
-        item(key = "bottom-space") { Spacer(Modifier.height(24.dp)) }
+        traktLink?.let { link ->
+            TraktLinkOverlay(
+                state = link,
+                onRetry = viewModel::beginTraktLink,
+                onDismiss = viewModel::dismissTraktLink,
+            )
         }
-    }
-
-    if (subtitlePickerOpen) {
-        LanguagePickerOverlay(
-            title = stringResource(R.string.settings_subtitle_default_lang),
-            languages = ALL_LANGUAGES,
-            selectedCode = state.subtitleLanguage,
-            onSelect = { viewModel.setSubtitleLanguage(it); subtitlePickerOpen = false },
-        )
-    }
-
-    if (audioPickerOpen) {
-        LanguagePickerOverlay(
-            title = stringResource(R.string.settings_audio_preferred_lang),
-            languages = ALL_LANGUAGES,
-            selectedCode = state.audioLanguage,
-            onSelect = { viewModel.setAudioLanguage(it); audioPickerOpen = false },
-        )
-    }
-
-    traktLink?.let { link ->
-        TraktLinkOverlay(
-            state = link,
-            onRetry = viewModel::beginTraktLink,
-            onDismiss = viewModel::dismissTraktLink,
-        )
-    }
     }
 }
 
+@Composable
+private fun SettingsRailButton(
+    category: SettingsCategory,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(28.dp)
+    val background by animateColorAsState(
+        if (selected || focused) HubColors.SurfaceStrong else HubColors.Surface.copy(alpha = 0.55f),
+        label = "settings-rail-background",
+    )
+    val border by animateColorAsState(
+        if (focused) HubColors.Text else if (selected) HubColors.Accent else Color.Transparent,
+        label = "settings-rail-border",
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(76.dp)
+            .clip(shape)
+            .background(background)
+            .border(if (focused || selected) 1.5.dp else 0.dp, border, shape)
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onSelect()
+            }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onSelect,
+            )
+            .padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Icon(
+            imageVector = category.icon,
+            contentDescription = null,
+            tint = if (selected || focused) HubColors.Text else HubColors.TextDim,
+        )
+        Text(
+            text = category.title,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (selected || focused) HubColors.Text else HubColors.TextDim,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = HubColors.TextFaint,
+        )
+    }
+}
 
 @Composable
-private fun SettingsCard(title: String, content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+private fun SettingsDetailHeader(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(title, style = MaterialTheme.typography.displayMedium, color = HubColors.Text)
+        Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = HubColors.TextDim)
+    }
+}
+
+@Composable
+private fun SettingsContentList(content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(end = 8.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun InterfaceSettingsContent(state: SettingsUiState, viewModel: SettingsViewModel) {
+    SettingsContentList {
+        item {
+            SettingsCard(
+                title = stringResource(R.string.settings_interface_group),
+                subtitle = stringResource(R.string.settings_category_interface_desc),
+            ) {
+                SettingsRow(label = stringResource(R.string.settings_language)) {
+                    listOf(
+                        "pt" to stringResource(R.string.lang_pt),
+                        "en" to stringResource(R.string.lang_en),
+                        "es" to stringResource(R.string.lang_es),
+                    ).forEach { (code, name) ->
+                        HubButton(text = name, primary = state.language == code, onClick = { viewModel.setLanguage(code) })
+                    }
+                }
+                ToggleSettingsRow(
+                    stringResource(R.string.settings_poster_landscape_transformation),
+                    state.posterLandscapeTransformation,
+                    viewModel::togglePosterLandscapeTransformation,
+                )
+                ToggleSettingsRow(stringResource(R.string.settings_intro), state.introEnabled, viewModel::toggleIntro)
+                ToggleSettingsRow(stringResource(R.string.settings_spotlight_hero), state.spotlightHero, viewModel::toggleSpotlightHero)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeSettingsContent(
+    theme: HubThemeVariant,
+    autotrailer: Boolean,
+    onSelect: (HubThemeVariant) -> Unit,
+    onToggleAutotrailer: () -> Unit,
+) {
+    // CyberFlix and Optimus Prime are playback modes, not additional visual
+    // themes: they are Netflixy and Primefly with the compatible autotrailer
+    // enabled. Normalize them here so the selector has one card per actual
+    // appearance instead of presenting two pairs of duplicates.
+    val visualTheme = when (theme) {
+        HubThemeVariant.CYBERFLIX -> HubThemeVariant.NETFLIXY
+        HubThemeVariant.OPTIMUS_PRIME -> HubThemeVariant.PRIMEFLY
+        else -> theme
+    }
+    val themes = listOf(
+        Triple(HubThemeVariant.NORMAL, stringResource(R.string.menu_theme_normal), R.drawable.theme_normal_preview),
+        Triple(HubThemeVariant.CYBERPUNK, stringResource(R.string.menu_theme_cyberpunk), R.drawable.theme_cyberpunk_preview),
+        Triple(HubThemeVariant.NETFLIXY, stringResource(R.string.menu_theme_netflixy), R.drawable.theme_netflixy_preview),
+        Triple(HubThemeVariant.PRIMEFLY, stringResource(R.string.menu_theme_primefly), R.drawable.theme_primefly_preview),
+    )
+    SettingsContentList {
+        item {
+            SettingsCard(
+                title = stringResource(R.string.settings_theme_group),
+                subtitle = stringResource(R.string.settings_theme_group_desc),
+            ) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp),
+                ) {
+                    items(themes, key = { it.first.name }) { (variant, name, preview) ->
+                        ThemeOptionCard(
+                            name = name,
+                            preview = preview,
+                            selected = visualTheme == variant,
+                            onClick = { onSelect(variant) },
+                        )
+                    }
+                }
+                ToggleSettingsRow(
+                    label = stringResource(R.string.settings_theme_autotrailer),
+                    enabled = autotrailer,
+                    onToggle = onToggleAutotrailer,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeOptionCard(name: String, preview: Int, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(22.dp)
+    Column(
+        modifier = Modifier
+            .width(204.dp)
+            .height(164.dp)
+            .clip(shape)
+            .background(HubColors.SurfaceStrong)
+            .border(
+                if (selected || focused) 2.dp else 1.dp,
+                if (focused) HubColors.Text else if (selected) HubColors.Accent else HubColors.Border.copy(alpha = 0.5f),
+                shape,
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(110.dp)
+                .clip(RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(preview),
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (selected) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.38f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
+                }
+            }
+        }
+        Text(name, style = MaterialTheme.typography.bodyLarge, color = HubColors.Text)
+    }
+}
+
+@Composable
+private fun LibrarySettingsContent(state: SettingsUiState, viewModel: SettingsViewModel) {
+    SettingsContentList {
+        item {
+            SettingsCard(
+                title = stringResource(R.string.settings_section_library),
+                subtitle = stringResource(R.string.settings_category_library_desc),
+            ) {
+                SettingsRow(label = stringResource(R.string.settings_library_provider)) {
+                    listOf(
+                        LibraryProvider.MDBLIST to stringResource(R.string.settings_library_mdblist),
+                        LibraryProvider.TRAKT to stringResource(R.string.settings_library_trakt),
+                    ).forEach { (provider, name) ->
+                        HubButton(text = name, primary = state.libraryProvider == provider, onClick = { viewModel.setLibraryProvider(provider) })
+                    }
+                }
+                ToggleSettingsRow(
+                    stringResource(R.string.settings_dim_unwatched_episodes),
+                    state.dimUnwatchedEpisodes,
+                    viewModel::toggleDimUnwatchedEpisodes,
+                )
+                SettingsRow(label = state.traktAccount?.handle ?: stringResource(R.string.settings_trakt_not_connected)) {
+                    if (state.traktAccount == null) {
+                        HubButton(text = stringResource(R.string.settings_trakt_connect), primary = true, onClick = viewModel::beginTraktLink)
+                    } else {
+                        HubButton(text = stringResource(R.string.settings_trakt_disconnect), onClick = viewModel::unlinkTrakt)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleSettingsContent(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    onOpenLanguage: () -> Unit,
+) {
+    SettingsContentList {
+        item {
+            SettingsCard(
+                title = stringResource(R.string.settings_section_subtitles),
+                subtitle = stringResource(R.string.settings_category_subtitles_desc),
+            ) {
+                ToggleSettingsRow(
+                    stringResource(R.string.settings_subtitle_auto_download),
+                    state.subtitleAutoDownload,
+                    viewModel::toggleSubtitleAutoDownload,
+                )
+                SettingsRow(label = stringResource(R.string.settings_subtitle_default_lang)) {
+                    val currentName = ALL_LANGUAGES.find { it.first == state.subtitleLanguage }?.second ?: state.subtitleLanguage
+                    HubButton(text = currentName, primary = true, onClick = onOpenLanguage)
+                }
+                SettingsRow(label = stringResource(R.string.settings_subtitle_color)) {
+                    listOf(
+                        Triple("yellow", stringResource(R.string.color_yellow), Color(0xFFFFD600)),
+                        Triple("white", stringResource(R.string.color_white), Color.White),
+                        Triple("red", stringResource(R.string.color_red), Color(0xFFE53935)),
+                        Triple("blue", stringResource(R.string.color_blue), Color(0xFF2196F3)),
+                        Triple("black", stringResource(R.string.color_black), Color.Black),
+                    ).forEach { (code, name, color) ->
+                        SubtitleColorOption(
+                            color = color,
+                            contentDescription = name,
+                            selected = state.subtitleColor == code,
+                            onClick = { viewModel.setSubtitleColor(code) },
+                        )
+                    }
+                }
+                SettingsRow(label = stringResource(R.string.settings_subtitle_text_opacity)) {
+                    OpacitySlider(value = state.subtitleTextOpacity, onValueChange = viewModel::setSubtitleTextOpacity)
+                }
+                ToggleSettingsRow(
+                    stringResource(R.string.settings_subtitle_black_background),
+                    state.subtitleBackgroundEnabled,
+                    viewModel::toggleSubtitleBackground,
+                )
+                if (state.subtitleBackgroundEnabled) {
+                    SettingsRow(label = stringResource(R.string.settings_subtitle_background_opacity)) {
+                        OpacitySlider(value = state.subtitleBackgroundOpacity, onValueChange = viewModel::setSubtitleBackgroundOpacity)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleColorOption(
+    color: Color,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val borderColor = when {
+        focused -> HubColors.Text
+        selected -> HubColors.Accent
+        else -> HubColors.Border
+    }
+
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .background(HubColors.SurfaceStrong)
+            .border(if (focused || selected) 3.dp else 1.dp, borderColor, CircleShape)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClickLabel = contentDescription,
+                onClick = onClick,
+            )
+            .padding(7.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = contentDescription,
+                    tint = if (color == Color.White || color == Color(0xFFFFD600)) Color.Black else Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerSettingsContent(state: SettingsUiState, onOpenLanguage: () -> Unit) {
+    SettingsContentList {
+        item {
+            SettingsCard(
+                title = stringResource(R.string.settings_section_player),
+                subtitle = stringResource(R.string.settings_category_player_desc),
+            ) {
+                SettingsRow(label = stringResource(R.string.settings_audio_preferred_lang)) {
+                    val currentName = ALL_LANGUAGES.find { it.first == state.audioLanguage }?.second ?: state.audioLanguage
+                    HubButton(text = currentName, primary = true, onClick = onOpenLanguage)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToggleSettingsRow(label: String, enabled: Boolean, onToggle: () -> Unit) {
+    SettingsRow(label = label) {
+        HubButton(
+            text = stringResource(if (enabled) R.string.settings_on else R.string.settings_off),
+            primary = enabled,
+            onClick = onToggle,
+        )
+    }
+}
+
+@Composable
+private fun SettingsCard(
+    title: String,
+    subtitle: String? = null,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
     val shape = RoundedCornerShape(HubShapes.Panel)
     Column(
         modifier = Modifier
@@ -507,7 +953,12 @@ private fun SettingsCard(title: String, content: @Composable androidx.compose.fo
             .padding(22.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, color = HubColors.Text)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineSmall, color = HubColors.Text)
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
+            }
+        }
         content()
     }
 }
@@ -528,6 +979,75 @@ private fun SettingsRow(label: String, content: @Composable () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             content()
         }
+    }
+}
+
+/** TV-friendly 0–100 slider: Left/Right moves one percentage point. */
+@Composable
+private fun OpacitySlider(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
+    val clamped = value.coerceIn(0, 100)
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Canvas(
+            modifier = modifier
+                .width(360.dp)
+                .height(32.dp)
+                .focusable(interactionSource = interaction)
+                .onKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                    when (event.key) {
+                        Key.DirectionLeft -> {
+                            onValueChange((clamped - 1).coerceAtLeast(0)); true
+                        }
+                        Key.DirectionRight -> {
+                            onValueChange((clamped + 1).coerceAtMost(100)); true
+                        }
+                        else -> false
+                    }
+                },
+        ) {
+            val trackHeight = 8.dp.toPx()
+            val thumbRadius = if (focused) 10.dp.toPx() else 8.dp.toPx()
+            val trackStart = thumbRadius
+            val trackWidth = size.width - thumbRadius * 2
+            val trackTop = (size.height - trackHeight) / 2f
+            val progressWidth = trackWidth * clamped / 100f
+
+            drawRoundRect(
+                color = HubColors.Border,
+                topLeft = androidx.compose.ui.geometry.Offset(trackStart, trackTop),
+                size = androidx.compose.ui.geometry.Size(trackWidth, trackHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
+            )
+            drawRoundRect(
+                color = HubColors.Accent,
+                topLeft = androidx.compose.ui.geometry.Offset(trackStart, trackTop),
+                size = androidx.compose.ui.geometry.Size(progressWidth, trackHeight),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f),
+            )
+            drawCircle(
+                color = if (focused) Color.White else HubColors.Accent,
+                radius = thumbRadius,
+                center = androidx.compose.ui.geometry.Offset(
+                    trackStart + progressWidth,
+                    size.height / 2f,
+                ),
+            )
+        }
+        Text(
+            text = "$clamped%",
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (focused) HubColors.Text else HubColors.TextDim,
+        )
     }
 }
 

@@ -17,8 +17,12 @@ import com.mdblisthub.tv.core.model.WikipediaLookup
 import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,17 +76,73 @@ class PlayerViewModel(
     private val manualSelect: Boolean = false,
 ) : ViewModel() {
 
-    val controller = PlaybackController(
+    /**
+     * Non-null when this exact title is already playing in the floating
+     * mini-player — see [MiniPlayerCoordinator]. Read once, at construction:
+     * this ViewModel is a fresh instance either way, and there is no later
+     * point at which the answer to "was I opened from the mini-player" could
+     * change under it.
+     */
+    private val reclaimed = MiniPlayerCoordinator.reclaim(type, tmdbId, season, episode)
+
+    /** Shared with a minimized session so one completion can only alert once. */
+    private val completionNotifier = reclaimed?.completionNotifier ?: PlaybackCompletionNotifier(
+        context = context.applicationContext,
+        type = type,
+        tmdbId = tmdbId,
+        season = season,
+        episode = episode,
+    )
+
+    init {
+        // A viewer who opens *different* content while the floating window is
+        // still running some other title would otherwise end up with two
+        // decoders — and two audio tracks — playing at once. `reclaimed`
+        // being null already means either nothing is floating, or it is
+        // floating something else; either way, whatever is there has to go.
+        if (reclaimed == null) MiniPlayerCoordinator.close(graph)
+    }
+
+    /**
+     * [controller]'s own scope, deliberately not `viewModelScope`.
+     *
+     * A viewer who steps out of the player with time left on the clock hands
+     * [controller] to [MiniPlayerCoordinator] still running — see [minimize].
+     * `viewModelScope` is cancelled the moment this ViewModel clears, before
+     * `onCleared()` itself even runs, so a controller meant to outlive that
+     * has to be built on a scope only [onCleared] and [MiniPlayerCoordinator]
+     * ever close.
+     */
+    private val controllerScope = reclaimed?.controllerScope
+        ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    val controller = reclaimed?.controller ?: PlaybackController(
         context = context,
-        scope = viewModelScope,
+        scope = controllerScope,
         // Same connection pool the mirror probe used, so the handshake it paid
         // for is reused rather than repeated — see `HttpClients.playback`.
         callFactory = graph.network.playbackClient,
     )
 
     init {
+        // This scope deliberately survives the ViewModel when playback moves
+        // into the mini-player. A reclaimed session already owns this exact
+        // observer, so installing another would retain duplicate collectors.
+        if (reclaimed == null) {
+            controllerScope.launch {
+                controller.state.first { it.phase == PlaybackPhase.ENDED }
+                completionNotifier.show(graph.uiPreferences.language.first())
+            }
+        }
+    }
+
+    /** Set by [minimize]; read once, in [onCleared], to decide how to let go of [controller]. */
+    private var minimizing = false
+
+    init {
         // The home screen's posters are worth ~25% of the heap and are not on
         // screen for the next two hours; the buffer is. See `ImageMemoryTrimmer`.
+        // Idempotent, so re-applying it on a reclaim costs nothing.
         graph.imageMemoryTrimmer.trimForPlayback()
     }
 
@@ -97,14 +157,77 @@ class PlayerViewModel(
     val subtitleColor: StateFlow<String> = graph.uiPreferences.subtitleColor
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "white")
 
+    val subtitleTextOpacity: StateFlow<Int> = graph.uiPreferences.subtitleTextOpacity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 100)
+
+    val subtitleBackgroundEnabled: StateFlow<Boolean> = graph.uiPreferences.subtitleBackgroundEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val subtitleBackgroundOpacity: StateFlow<Int> = graph.uiPreferences.subtitleBackgroundOpacity
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 40)
+
     private var target: ScrobbleTarget? = null
     private var lastReportedProgress = 0f
 
     init {
-        viewModelScope.launch { start() }
+        val session = reclaimed
+        if (session != null) {
+            viewModelScope.launch { resumeFromReclaim(session) }
+        } else {
+            viewModelScope.launch { start() }
+            // Only for a fresh play: a reclaimed controller already has
+            // whatever tracks it ended up with, possibly a manual pick this
+            // fresh `subtitleChosenByUser`/audio state has no record of, and
+            // re-running the preferred-language match could silently
+            // overturn it the moment the viewer returns to full screen.
+            viewModelScope.launch { autoSelectAudio() }
+            viewModelScope.launch { autoSelectSubtitle() }
+        }
         viewModelScope.launch { reportPlaybackToMdblist() }
-        viewModelScope.launch { autoSelectAudio() }
-        viewModelScope.launch { autoSelectSubtitle() }
+    }
+
+    /**
+     * Reopens a title already playing in the mini-player, without the cascade
+     * [start] runs for a fresh one: the addon search already happened, a
+     * source already won it, and asking again would trade a still-playing
+     * film for a loading screen over the same picture.
+     *
+     * Only the cheap, cache-only half of [start] runs again — the artwork a
+     * warm Room row already has — so the screen has a title and backdrop to
+     * show immediately rather than sitting on whatever blank state a fresh
+     * [PlayerUiState] starts from.
+     */
+    private suspend fun resumeFromReclaim(session: MiniPlayerSession) {
+        target = session.target
+        _ui.update {
+            it.copy(
+                title = session.title,
+                episodeLabel = session.subtitle,
+                backdropUrl = session.backdropUrl,
+                searching = false,
+            )
+        }
+        completionNotifier.update(session.title, session.subtitle)
+
+        val card = graph.media.cachedCard(type, tmdbId)
+        val cachedDetail = graph.media.cachedDetail(type, tmdbId)
+        publishArtwork(cachedDetail, card)
+
+        val stremioId = session.target?.stremioId() ?: return
+        val options = graph.streams.subtitles(type, stremioId)
+        _ui.update { it.copy(subtitles = options) }
+    }
+
+    /**
+     * Hands [controller] to [MiniPlayerCoordinator] instead of releasing it.
+     *
+     * Called by the screen, before it pops itself off the back stack — see
+     * `PlayerScreen`'s `BackHandler`. [onCleared] reads [minimizing] once
+     * that pop reaches this ViewModel, and lets [controller] keep running
+     * instead of tearing it down.
+     */
+    fun minimize() {
+        minimizing = true
     }
 
     /**
@@ -198,6 +321,7 @@ class PlayerViewModel(
                 cast = detail?.cast?.takeIf { members -> members.isNotEmpty() } ?: it.cast,
             )
         }
+        completionNotifier.update(_ui.value.title, _ui.value.episodeLabel)
     }
 
     /** Loads the biography selected by D-pad focus or touch, with session cache. */
@@ -433,6 +557,30 @@ class PlayerViewModel(
     }
 
     override fun onCleared() {
+        if (minimizing) {
+            // `controller` and `controllerScope` are deliberately not touched
+            // here — see `minimize()`. `MiniPlayerCoordinator` now owns them,
+            // and will release them itself once the floating window is
+            // reclaimed or closed for good.
+            MiniPlayerCoordinator.minimize(
+                MiniPlayerSession(
+                    controller = controller,
+                    controllerScope = controllerScope,
+                    type = type,
+                    tmdbId = tmdbId,
+                    season = season,
+                    episode = episode,
+                    target = target,
+                    title = _ui.value.title,
+                    subtitle = _ui.value.episodeLabel,
+                    backdropUrl = _ui.value.backdropUrl,
+                    completionNotifier = completionNotifier,
+                ),
+            )
+            super.onCleared()
+            return
+        }
+
         val current = target
         val progress = controller.progressPercent().takeIf { it > 0f } ?: lastReportedProgress
 
@@ -443,6 +591,7 @@ class PlayerViewModel(
             graph.scope.launch { graph.playback.stop(current, progress) }
         }
         controller.release()
+        controllerScope.cancel()
         graph.imageMemoryTrimmer.restore()
         super.onCleared()
     }

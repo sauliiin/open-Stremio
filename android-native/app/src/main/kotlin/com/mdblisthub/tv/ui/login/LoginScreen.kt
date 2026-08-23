@@ -204,6 +204,10 @@ fun LoginScreen(
                             }
                         },
                     )
+                    HubButton(
+                        text = stringResource(R.string.login_guest_button),
+                        onClick = viewModel::continueAsGuest,
+                    )
                     // The Fire-TV door: no Credential Manager call happens on
                     // this path at all, because there is usually no Google
                     // account on the box to offer it one.

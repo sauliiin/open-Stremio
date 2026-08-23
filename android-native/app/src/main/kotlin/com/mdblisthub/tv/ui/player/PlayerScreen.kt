@@ -131,6 +131,13 @@ import kotlinx.coroutines.flow.StateFlow
 private const val OSD_TIMEOUT_MS = 4_000L
 
 /**
+ * Below this much time left, Back tears the player down instead of shrinking
+ * it to the floating window — a couple of minutes of credits is not worth
+ * carrying a decoder around Home for.
+ */
+private const val MINI_PLAYER_MIN_REMAINING_MS = 5 * 60 * 1000L
+
+/**
  * Caption metrics. The line height is ~1.35x the glyph size — roughly what
  * broadcast subtitles use, and enough air that a two-line cue reads as two
  * lines from a sofa rather than as one block of text.
@@ -207,14 +214,24 @@ fun PlayerScreen(
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val castPreview by viewModel.castPreview.collectAsStateWithLifecycle()
     val playback by viewModel.controller.state.collectAsStateWithLifecycle()
+    val position by viewModel.controller.position.collectAsStateWithLifecycle()
     
     val subtitleColorString by viewModel.subtitleColor.collectAsStateWithLifecycle()
+    val subtitleTextOpacity by viewModel.subtitleTextOpacity.collectAsStateWithLifecycle()
+    val subtitleBackgroundEnabled by viewModel.subtitleBackgroundEnabled.collectAsStateWithLifecycle()
+    val subtitleBackgroundOpacity by viewModel.subtitleBackgroundOpacity.collectAsStateWithLifecycle()
 
     val parsedSubtitleColor = when (subtitleColorString) {
         "white" -> Color.White
         "red" -> Color.Red
         "blue" -> Color.Blue
+        "black" -> Color.Black
         else -> Color.Yellow
+    }.copy(alpha = subtitleTextOpacity.coerceIn(0, 100) / 100f)
+    val parsedSubtitleBackgroundOpacity = if (subtitleBackgroundEnabled) {
+        subtitleBackgroundOpacity.coerceIn(0, 100) / 100f
+    } else {
+        0f
     }
 
     var osdVisibleUntil by remember { mutableLongStateOf(System.currentTimeMillis() + OSD_TIMEOUT_MS) }
@@ -333,7 +350,23 @@ fun PlayerScreen(
             // rather than "stopped and looking at a screen with a back
             // button on it".
             osdVisible && playback.isPlaying -> hideNow()
-            else -> onBack()
+            else -> {
+                // Shrink to the floating window instead of tearing playback
+                // down, but only for a title genuinely still running —
+                // `canShowVideo` excludes the resolving/failed/selecting
+                // phases, where there is nothing worth keeping alive, and the
+                // remaining-time floor keeps a couple of minutes of credits
+                // from being carried around Home as a decoder no one is
+                // watching. See `PlayerViewModel.minimize`.
+                val remainingMs = position.durationMs - position.positionMs
+                if (playback.canShowVideo &&
+                    position.durationMs > 0 &&
+                    remainingMs > MINI_PLAYER_MIN_REMAINING_MS
+                ) {
+                    viewModel.minimize()
+                }
+                onBack()
+            }
         }
     }
 
@@ -437,6 +470,7 @@ fun PlayerScreen(
             controller = viewModel.controller,
             scaleType = playback.scaleType,
             subtitleColor = parsedSubtitleColor,
+            subtitleBackgroundOpacity = parsedSubtitleBackgroundOpacity,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -531,6 +565,7 @@ fun PlayerScreen(
                 liftForOsd = osdOnScreen,
                 liftForCast = castRailOpen,
                 color = parsedSubtitleColor,
+                subtitleBackgroundOpacity = parsedSubtitleBackgroundOpacity,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
@@ -989,6 +1024,7 @@ private fun ExternalSubtitleLayer(
     liftForCast: Boolean,
     modifier: Modifier = Modifier,
     color: Color = Color.Yellow,
+    subtitleBackgroundOpacity: Float = 0f,
 ) {
     val text by cue.collectAsStateWithLifecycle()
     val line = text
@@ -998,6 +1034,7 @@ private fun ExternalSubtitleLayer(
         liftForOsd = liftForOsd,
         liftForCast = liftForCast,
         color = color,
+        subtitleBackgroundOpacity = subtitleBackgroundOpacity,
         modifier = modifier,
     )
 }
@@ -1009,10 +1046,9 @@ private fun ExternalSubtitleLayer(
  * offset changes which cue this reads on the next tick, nothing about the
  * film underneath it.
  *
- * Styled to match the embedded-subtitle look this app already forces on
- * container subtitles (`ExoVideoSurface`) — yellow, drop shadow, no
- * background — so a title with an addon subtitle and one with an embedded
- * one read as the same feature.
+ * Styled to match the embedded-subtitle look this app forces on container
+ * subtitles (`ExoVideoSurface`): selected text colour and opacity, with an
+ * optional black background controlled independently.
  */
 @Composable
 private fun ExternalSubtitleOverlay(
@@ -1021,6 +1057,7 @@ private fun ExternalSubtitleOverlay(
     liftForCast: Boolean,
     modifier: Modifier = Modifier,
     color: Color = Color.Yellow,
+    subtitleBackgroundOpacity: Float = 0f,
 ) {
     val bottomPadding by animateDpAsState(
         when {
@@ -1031,24 +1068,36 @@ private fun ExternalSubtitleOverlay(
         focusTween(),
         label = "subtitle-lift",
     )
+    val textStyle = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = SUBTITLE_FONT_SIZE,
+        // Set explicitly, and that is the whole fix for two-line cues
+        // crowding each other. `fontSize` was being overridden to 26sp
+        // while `lineHeight` kept coming from `bodyLarge`, which is sized
+        // for a ~16sp body — so the gap between lines was *smaller* than
+        // the glyphs themselves and a two-liner read as one dense block.
+        lineHeight = SUBTITLE_LINE_HEIGHT,
+        shadow = Shadow(color = Color.Black, offset = Offset(2f, 2f), blurRadius = 5f),
+    )
     Text(
         text = text,
         modifier = modifier
             .padding(horizontal = 32.dp)
             .padding(bottom = bottomPadding)
+            .then(
+                if (subtitleBackgroundOpacity > 0f) {
+                    Modifier
+                        .background(
+                            Color.Black.copy(alpha = subtitleBackgroundOpacity.coerceIn(0f, 1f)),
+                        )
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                } else {
+                    Modifier
+                },
+            )
             .semantics { liveRegion = LiveRegionMode.Polite },
         color = color,
         textAlign = TextAlign.Center,
-        style = MaterialTheme.typography.bodyLarge.copy(
-            fontSize = SUBTITLE_FONT_SIZE,
-            // Set explicitly, and that is the whole fix for two-line cues
-            // crowding each other. `fontSize` was being overridden to 26sp
-            // while `lineHeight` kept coming from `bodyLarge`, which is sized
-            // for a ~16sp body — so the gap between lines was *smaller* than
-            // the glyphs themselves and a two-liner read as one dense block.
-            lineHeight = SUBTITLE_LINE_HEIGHT,
-            shadow = Shadow(color = Color.Black, offset = Offset(2f, 2f), blurRadius = 6f),
-        ),
+        style = textStyle,
     )
 }
 

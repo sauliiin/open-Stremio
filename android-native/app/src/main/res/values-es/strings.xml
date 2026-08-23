@@ -19,7 +19,21 @@
     <string name="home_empty_button">Abrir Addons</string>
     <string name="home_syncing">Sincronizando tus listas…</string>
     <string name="settings_title">Configuración</string>
+    <string name="welcome_title">Bienvenido a OmniStream</string>
+    <string name="welcome_subtitle">Elige el tema de tu pantalla de inicio</string>
+    <string name="welcome_continue">Continuar</string>
     <string name="settings_section_interface">Interfaz</string>
+    <string name="settings_section_themes">Temas</string>
+    <string name="settings_category_interface_desc">Idioma y comportamiento visual de la aplicación</string>
+    <string name="settings_category_themes_desc">Apariencia y colores de OmniStream</string>
+    <string name="settings_category_library_desc">Fuente de la biblioteca y seguimiento</string>
+    <string name="settings_category_subtitles_desc">Idioma, color, fondo y opacidad</string>
+    <string name="settings_category_player_desc">Preferencias de audio y reproducción</string>
+    <string name="settings_category_addons_desc">Cuentas, catálogos y fuentes de Stremio</string>
+    <string name="settings_interface_group">Idioma y experiencia</string>
+    <string name="settings_theme_group">Tema visual</string>
+    <string name="settings_theme_group_desc">Elige el conjunto de colores usado en toda la aplicación</string>
+    <string name="settings_theme_autotrailer">Autotráiler en Netflixy y Primefly</string>
     <string name="settings_language">Idioma de la app</string>
     <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_poster_landscape_transformation">Expandir pósteres a formato horizontal</string>
@@ -29,10 +43,14 @@
     <string name="settings_subtitle_auto_download">Descargar subtítulos automáticamente</string>
     <string name="settings_subtitle_default_lang">Idioma predeterminado de los subtítulos</string>
     <string name="settings_subtitle_color">Color de los subtítulos</string>
+    <string name="settings_subtitle_text_opacity">Opacidad del color</string>
+    <string name="settings_subtitle_black_background">Fondo negro</string>
+    <string name="settings_subtitle_background_opacity">Opacidad del fondo negro</string>
     <string name="color_yellow">Amarillo</string>
     <string name="color_white">Blanco</string>
     <string name="color_red">Rojo</string>
     <string name="color_blue">Azul</string>
+    <string name="color_black">Negro</string>
     <string name="settings_section_player">Reproductor</string>
     <string name="settings_audio_preferred_lang">Pista de audio preferida</string>
     <string name="lang_pt">Portugués</string>
@@ -116,6 +134,7 @@
     <string name="login_error_google">No se pudo iniciar sesión con Google.</string>
     <string name="login_error_mdblist_link">No se pudo vincular MDBList. Revisa la clave e inténtalo de nuevo.</string>
     <string name="login_error_mdblist_required">No se pudo continuar sin MDBList.</string>
+    <string name="login_error_guest">No se pudo iniciar el modo invitado.</string>
     <string name="addons_mdblist_linked">MDBList vinculada. Activa los addons de listas solo si quieres usarlos en Stremio.</string>
     <string name="addons_mdblist_link_error">No se pudo vincular MDBList. %1$s</string>
     <string name="addons_mdblist_disabled">Uso de las listas de MDBList como addons desactivado.</string>
@@ -177,6 +196,13 @@
     <string name="player_back">Atrás</string>
     <string name="player_play">Reproducir</string>
     <string name="player_pause">Pausar</string>
+    <string name="mini_player_fullscreen">Pantalla completa</string>
+    <string name="mini_player_stop">Detener</string>
+    <string name="playback_notification_channel">Reproducción finalizada</string>
+    <string name="playback_notification_channel_description">Avisa cuando termina una película o un episodio.</string>
+    <string name="playback_notification_movie_title">Película finalizada</string>
+    <string name="playback_notification_episode_title">Episodio finalizado</string>
+    <string name="playback_notification_episode_content">%1$s • %2$s</string>
     <string name="player_subtitles">Subtítulos</string>
     <string name="player_audio">Pista de audio</string>
     <string name="player_audio_short">Audio</string>
@@ -221,6 +247,7 @@
     <!-- Login -->
     <string name="login_google_intro">Inicia sesión con tu cuenta de Google. Protege tus datos en Firebase e identifica la misma cuenta en todos tus dispositivos.</string>
     <string name="login_google_button">Iniciar sesión con Google</string>
+    <string name="login_guest_button">Entrar como invitado</string>
     <string name="login_google_connected">Google conectado: %1$s</string>
     <string name="login_checking_key">Buscando una clave de MDBList guardada…</string>
     <string name="login_mdblist_intro">Ingresa una clave de API de MDBList para calificaciones, tráilers, listas y sincronización.</string>

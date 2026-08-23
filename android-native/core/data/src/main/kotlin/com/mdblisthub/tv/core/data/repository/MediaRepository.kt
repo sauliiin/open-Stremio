@@ -200,6 +200,7 @@ class MediaRepository(
         }
         if (!force && cached != null &&
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
+            cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, maxAge)
         ) {
             return@runCatching
@@ -221,6 +222,7 @@ class MediaRepository(
         if (cached != null &&
             cached.metadataComplete &&
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
+            cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)
         ) {
             return@runCatching
@@ -312,6 +314,8 @@ class MediaRepository(
 
 /** Forces pre-fix cached details to choose card artwork again exactly once. */
 private const val LANDSCAPE_ART_SELECTION_V2_MS = 1_786_478_867_150L
+/** Refreshes cached details once to source TMDB reviews and score directly. */
+private const val TMDB_EDITORIAL_METADATA_V1_MS = 1_787_356_800_000L
 private const val ARTWORK_APPEND = "external_ids,images"
 
 private fun bestTmdbLandscape(

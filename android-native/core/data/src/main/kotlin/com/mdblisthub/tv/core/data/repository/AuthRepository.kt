@@ -66,8 +66,9 @@ class AuthRepository(
      * account-switch action.
      */
     val isMdblistOnly: Flow<Boolean> = session.mdblistOnly
+    val isGuest: Flow<Boolean> = session.guest
 
-    val signedIn: Flow<Boolean> = combine(
+    private val authenticatedSession: Flow<Boolean> = combine(
         googleAccount,
         session.apiKey,
         session.firebaseUid,
@@ -81,6 +82,10 @@ class AuthRepository(
             google != null -> ownerUid == google.uid && (key.isNotBlank() || skipped)
             else -> false
         }
+    }
+
+    val signedIn: Flow<Boolean> = combine(authenticatedSession, session.guest) { authenticated, guest ->
+        guest || authenticated
     }
 
     init {
@@ -159,6 +164,14 @@ class AuthRepository(
         session.markMdblistSkipped(firebaseUser.uid)
     }
 
+    /** Starts a strictly local session; no Google or MDBList account is used. */
+    suspend fun continueAsGuest(): Result<Unit> = runCatching {
+        firebase.signOut()
+        googleState.value = null
+        clearMdblistData()
+        session.saveGuest()
+    }
+
     suspend fun signOut() {
         // Stop the reactive addon writer before changing or clearing any
         // account-owned local state.
@@ -175,6 +188,10 @@ class AuthRepository(
      * key usable, while a definitive MDBList rejection unlinks it.
      */
     suspend fun restore(): Boolean {
+        // Guest mode is deliberately offline-first: it has no credential to
+        // validate and must not ask Firebase or MDBList during app startup.
+        if (session.isGuest()) return true
+
         // Checked before touching Firebase at all: this session was never
         // signed into it, so `firebase.currentUser` is always null here and
         // would otherwise read as "nothing to restore".

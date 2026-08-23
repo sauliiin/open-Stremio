@@ -69,6 +69,39 @@ object RatingsMapper {
             .map { it.second }
     }
 
+    /** TMDB's own score is authoritative; MDBList merely mirrors it. */
+    fun fromTmdb(voteAverage: Double, voteCount: Long): List<RatingBadge> =
+        voteAverage.takeIf { it > 0 }?.let { value ->
+            listOf(
+                RatingBadge(
+                    key = "tmdb",
+                    label = "TMDB",
+                    display = oneDecimal(value),
+                    score = clamp(value * 10),
+                    votes = voteCount.takeIf { it > 0 },
+                    tone = RatingTone.TMDB,
+                ),
+            )
+        }.orEmpty()
+
+    /**
+     * Keeps one badge per source while retaining the preferred source passed
+     * first. This lets TMDB replace MDBList's mirrored TMDB score without
+     * discarding the latter's genuinely external ratings.
+     */
+    fun merge(vararg groups: List<RatingBadge>): List<RatingBadge> {
+        val byKey = linkedMapOf<String, RatingBadge>()
+        groups.forEach { group ->
+            group.forEach { badge -> byKey.putIfAbsent(badge.key, badge) }
+        }
+        return byKey.values.sortedWith(
+            compareBy<RatingBadge>(
+                { badge -> SOURCES[badge.key]?.order ?: Int.MAX_VALUE },
+                { badge -> badge.label },
+            ),
+        )
+    }
+
     /** The fallback when mdblist has nothing on a title but OMDb answered. */
     fun fromOmdb(omdb: OmdbDto?): List<RatingBadge> {
         if (omdb == null || !omdb.ok) return emptyList()

@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
@@ -42,11 +43,23 @@
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
+            android:exported="false"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|keyboard|navigation|uiMode|density"
-            android:theme="@style/Theme.MdblistHub">
+            android:theme="@style/Theme.MdblistHub" />
 
+        <!--
+            A versioned launcher component gives TV launchers a new cache key
+            when the APK is updated. Some vendor launchers keep the old
+            activity's icon/banner indefinitely after an in-place update; the
+            new alias is re-indexed while still opening the same activity.
+        -->
+        <activity-alias
+            android:name=".LauncherActivityV2"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -54,7 +67,7 @@
                      launcher, which most cheap Android TV sticks ship. -->
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <!--
             WorkManager's automatic initializer runs before Application.onCreate

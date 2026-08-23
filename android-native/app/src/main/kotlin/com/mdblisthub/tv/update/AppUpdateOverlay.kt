@@ -15,9 +15,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -72,6 +76,9 @@ fun AppUpdateOverlay(manager: AppUpdateManager) {
 
 @Composable
 private fun AvailableContent(state: UpdateUiState.Available, manager: AppUpdateManager) {
+    val updateButtonFocus = remember { FocusRequester() }
+    LaunchedEffect(state.release.tag) { updateButtonFocus.requestFocus() }
+
     Text(
         text = stringResource(R.string.update_available, state.release.tag),
         style = MaterialTheme.typography.bodyLarge,
@@ -83,6 +90,7 @@ private fun AvailableContent(state: UpdateUiState.Available, manager: AppUpdateM
             text = stringResource(R.string.update_now),
             primary = true,
             onClick = { manager.downloadAndInstall(state.release) },
+            modifier = Modifier.focusRequester(updateButtonFocus),
         )
         HubButton(text = stringResource(R.string.update_later), onClick = manager::dismiss)
     }

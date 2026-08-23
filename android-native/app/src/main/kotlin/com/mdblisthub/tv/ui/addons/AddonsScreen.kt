@@ -463,7 +463,12 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
 // -------------------------------------------------------------------- UI
 
 @Composable
-fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
+fun AddonsScreen(
+    graph: DataGraph,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    embedded: Boolean = false,
+) {
     val viewModel = hubViewModel { AddonsViewModel(graph) }
     val addons by viewModel.addons.collectAsStateWithLifecycle()
     val install by viewModel.install.collectAsStateWithLifecycle()
@@ -472,16 +477,16 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
     val mdblistCatalog by viewModel.mdblistCatalog.collectAsStateWithLifecycle()
     val hasGoogleAccount by viewModel.hasGoogleAccount.collectAsStateWithLifecycle()
 
-    BackHandler { onBack() }
+    BackHandler(enabled = !embedded) { onBack() }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         // Pinned outside the LazyColumn on purpose: the list's initial focus
         // lands on the first focusable card below, and Compose's focus-driven
         // scroll-into-view then shifts the whole list up to seat that card
         // near the top — taking this non-focusable title with it, off the
         // top of the screen, before the user ever presses a key. A fixed
         // header can't be scrolled away by a focus change it isn't part of.
-        Column(
+        if (!embedded) Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = HubDimens.ScreenPaddingHorizontal)
@@ -500,8 +505,8 @@ fun AddonsScreen(graph: DataGraph, onBack: () -> Unit) {
         LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
-            start = HubDimens.ScreenPaddingHorizontal,
-            end = HubDimens.ScreenPaddingHorizontal,
+            start = if (embedded) 0.dp else HubDimens.ScreenPaddingHorizontal,
+            end = if (embedded) 8.dp else HubDimens.ScreenPaddingHorizontal,
             bottom = HubDimens.ScreenPaddingVertical,
         ),
         verticalArrangement = Arrangement.spacedBy(22.dp),

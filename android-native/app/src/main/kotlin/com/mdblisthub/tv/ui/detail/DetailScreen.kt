@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -107,6 +108,7 @@ import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -150,6 +152,7 @@ fun DetailScreen(
     var buttonRowHasFocus by remember { mutableStateOf(false) }
     var trailerOpen by remember { mutableStateOf(false) }
     var episodeDetails by remember { mutableStateOf<Episode?>(null) }
+    var openedReview by remember { mutableStateOf<Review?>(null) }
     // Episode cards update this on focus. The main actions then follow the
     // episode the viewer was actually browsing instead of always targeting E1.
     var focusedEpisodeNumber by remember(tmdbId, season) { mutableIntStateOf(1) }
@@ -208,6 +211,7 @@ fun DetailScreen(
     BackHandler {
         when {
             trailerOpen -> trailerOpen = false
+            openedReview != null -> openedReview = null
             castBio.member != null -> viewModel.closeCast()
             else -> onBack()
         }
@@ -450,7 +454,7 @@ fun DetailScreen(
 
             if (current.reviews.isNotEmpty()) {
                 item(key = "reviews") {
-                    ReviewsRow(current.reviews)
+                    ReviewsRow(current.reviews, onReviewClick = { openedReview = it })
                 }
             }
 
@@ -473,6 +477,10 @@ fun DetailScreen(
                 state = castBio,
                 onDismiss = viewModel::closeCast,
             )
+        }
+
+        openedReview?.let { review ->
+            ReviewOverlay(review = review, onDismiss = { openedReview = null })
         }
 
         if (trailerOpen) {
@@ -1002,7 +1010,7 @@ private fun openUrl(context: Context, url: String) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ReviewsRow(reviews: List<Review>) {
+private fun ReviewsRow(reviews: List<Review>, onReviewClick: (Review) -> Unit) {
     if (reviews.isEmpty()) return
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1032,7 +1040,7 @@ private fun ReviewsRow(reviews: List<Review>) {
                             color = if (focused) HubColors.Accent else HubColors.Border,
                             shape = reviewShape,
                         )
-                        .focusable(interactionSource = interaction)
+                        .clickable(interactionSource = interaction, indication = null) { onReviewClick(review) }
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -1078,6 +1086,102 @@ private fun ReviewsRow(reviews: List<Review>) {
         }
     }
 }
+
+/** A full review is readable without leaving the detail screen. */
+@Composable
+private fun ReviewOverlay(review: Review, onDismiss: () -> Unit) {
+    val closeButtonFocus = remember { FocusRequester() }
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(review) {
+        closeButtonFocus.requestFocus()
+        scrollState.scrollTo(0)
+        delay(REVIEW_READ_HOLD_MS)
+        while (isActive) {
+            val overflow = scrollState.maxValue
+            if (overflow > 0) {
+                // Match the synopsis reader: 190 ms per pixel, then a short
+                // pause at the end before returning to the beginning.
+                scrollState.animateScrollTo(
+                    overflow,
+                    animationSpec = tween(overflow * REVIEW_MS_PER_PX, easing = LinearEasing),
+                )
+                delay(REVIEW_BOTTOM_HOLD_MS)
+                scrollState.animateScrollTo(0, animationSpec = tween(REVIEW_RETURN_MS))
+                delay(REVIEW_RESTART_HOLD_MS)
+            } else {
+                delay(REVIEW_LAYOUT_RECHECK_MS)
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(HubColors.Background.copy(alpha = 0.76f))
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() },
+                onClick = onDismiss,
+            ),
+    ) {
+        val dialogShape = RoundedCornerShape(HubShapes.Dialog)
+        Column(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.72f)
+                .widthIn(max = 900.dp)
+                .height(540.dp)
+                .clip(dialogShape)
+                .background(HubColors.Surface.copy(alpha = 0.98f))
+                .border(HubStrokes.Hairline, HubColors.Border, dialogShape)
+                // The card owns its clicks; only the surrounding scrim closes it.
+                .pointerInput(Unit) { detectTapGestures {} }
+                .padding(28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(review.author, style = MaterialTheme.typography.headlineMedium, color = HubColors.Text)
+                    Text(review.provider.label(), style = MaterialTheme.typography.labelLarge, color = review.provider.color())
+                }
+                review.rating?.let {
+                    Text(
+                        text = "★ ${String.format(Locale.forLanguageTag("pt-BR"), "%.1f", it)}",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = HubColors.Imdb,
+                    )
+                }
+            }
+
+            Text(
+                text = review.content,
+                style = MaterialTheme.typography.bodyLarge,
+                color = HubColors.TextDim,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(scrollState),
+            )
+
+            HubButton(
+                text = stringResource(R.string.detail_close),
+                onClick = onDismiss,
+                modifier = Modifier.focusRequester(closeButtonFocus),
+            )
+        }
+    }
+}
+
+private const val REVIEW_READ_HOLD_MS = 7_000L
+private const val REVIEW_MS_PER_PX = 190
+private const val REVIEW_BOTTOM_HOLD_MS = 4_000L
+private const val REVIEW_RETURN_MS = 800
+private const val REVIEW_RESTART_HOLD_MS = 3_000L
+private const val REVIEW_LAYOUT_RECHECK_MS = 1_000L
 
 private fun ReviewProvider.label(): String = when (this) {
     ReviewProvider.TRAKT -> "Trakt"

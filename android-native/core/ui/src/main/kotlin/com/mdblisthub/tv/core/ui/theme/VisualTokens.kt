@@ -1,7 +1,7 @@
 package com.mdblisthub.tv.core.ui.theme
 
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.unit.dp
 
 /**
@@ -13,17 +13,17 @@ import androidx.compose.ui.unit.dp
  * still allowing each screen to keep its current structure and behaviour.
  */
 object HubMotion {
-    const val Quick = 120
-    const val Focus = 220
-    const val Content = 320
-    const val Scene = 420
+    const val Quick = 125
+    const val Focus = 180
+    const val Content = 350
+    const val Scene = 450
     /** Dwell used when no autoplay trailer is driving the card expansion. */
     const val FocusedCardDelayMillis = 3_000L
 
-    const val FocusScale = 1.025f
-    const val PressedScale = 0.985f
+    const val FocusScale = 1.02f
+    const val PressedScale = 0.98f
 
-    val StandardEasing: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val StandardEasing: Easing = FastOutSlowInEasing
 }
 
 object HubShapes {
