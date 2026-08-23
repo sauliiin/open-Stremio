@@ -115,6 +115,7 @@ fun MiniPlayerOverlay(graph: DataGraph, navController: NavController, currentRou
             ExoVideoSurface(
                 controller = active.controller,
                 scaleType = VideoScaleType.ZOOM,
+                cropToFill = true,
                 modifier = Modifier.size(MINI_PLAYER_SIZE),
                 subtitleColor = subtitleColor,
                 subtitleBackgroundOpacity = if (subtitleBackgroundEnabled) {

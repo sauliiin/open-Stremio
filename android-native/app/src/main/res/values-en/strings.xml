@@ -81,7 +81,11 @@
     <string name="detail_episodes">Episodes</string>
     <string name="detail_cast">Cast</string>
     <string name="detail_watched">Watched</string>
-    <string name="detail_mark_watched">Mark watched</string>
+    <string name="detail_mark_watched">Mark as watched</string>
+    <string name="media_options_mark_unwatched">Mark as unwatched</string>
+    <string name="home_item_options_title">Options</string>
+    <string name="media_options_play">Play</string>
+    <string name="media_options_info">Info</string>
     <string name="detail_clear_progress">Clear Progress</string>
     <string name="detail_reviews">Reviews</string>
     <string name="search_title">Search TMDB</string>
@@ -217,8 +221,8 @@
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Drag or use ◀ ▶  •  OK to finish</string>
     <string name="player_scale">Scaling: %1$s</string>
-    <string name="player_scale_fit">Fit to screen</string>
-    <string name="player_scale_zoom">Fill</string>
+    <string name="player_scale_fit">Normal</string>
+    <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Stretch</string>
     <string name="player_track_language">%1$s track</string>
     <string name="player_track_index">Track %1$d</string>

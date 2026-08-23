@@ -212,6 +212,24 @@ fun HubNavHost(graph: DataGraph) {
                 onResume = { point ->
                     navController.navigate(Routes.resume(point))
                 },
+                onPlay = { item, season, episode ->
+                    if (item.type == MediaType.SHOW && season == null) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId, season, episode))
+                    }
+                },
+                onChooseSource = { item, season, episode ->
+                    if (item.type == MediaType.SHOW && season != null && episode != null) {
+                        navController.navigate(
+                            Routes.player(item.type, item.tmdbId, season, episode, select = true),
+                        )
+                    } else if (item.type == MediaType.SHOW) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId, select = true))
+                    }
+                },
                 onSignOut = {
                     navController.navigate(Routes.LOGIN) {
                         popUpTo(Routes.HOME) { inclusive = true }
@@ -231,7 +249,21 @@ fun HubNavHost(graph: DataGraph) {
         composable(Routes.SEARCH) {
             SearchScreen(
                 graph = graph,
-                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) }
+                onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) },
+                onPlay = { item ->
+                    if (item.type == MediaType.SHOW) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId))
+                    }
+                },
+                onChooseSource = { item ->
+                    if (item.type == MediaType.SHOW) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId, select = true))
+                    }
+                },
             )
         }
 
@@ -264,6 +296,20 @@ fun HubNavHost(graph: DataGraph) {
                     navController.navigate(Routes.player(type, tmdbId, season, episode, select = true))
                 },
                 onOpenTitle = { item -> navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl)) },
+                onPlayItem = { item ->
+                    if (item.type == MediaType.SHOW) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId))
+                    }
+                },
+                onChooseSourceForItem = { item ->
+                    if (item.type == MediaType.SHOW) {
+                        navController.navigate(Routes.detail(item.type, item.tmdbId, item.backdropUrl))
+                    } else {
+                        navController.navigate(Routes.player(item.type, item.tmdbId, select = true))
+                    }
+                },
             )
         }
 

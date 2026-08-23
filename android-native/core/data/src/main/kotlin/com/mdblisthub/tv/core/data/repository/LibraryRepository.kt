@@ -5,10 +5,12 @@ import com.mdblisthub.tv.core.data.UiPreferencesStore
 import com.mdblisthub.tv.core.data.repository.source.LibrarySource
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.database.entity.LibraryEntity
+import com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.MediaType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 /**
@@ -78,6 +80,29 @@ class LibraryRepository(
             dao.removeFromBucket(bucket.name, tmdbId)
         }
         add
+    }
+
+    /** Writes and mirrors one episode without changing whole-series membership. */
+    suspend fun setEpisodeWatched(
+        showTmdbId: Int,
+        showImdbId: String?,
+        season: Int,
+        episode: Int,
+        watched: Boolean,
+    ): Result<Boolean> = runCatching {
+        source().writeEpisodeWatched(showTmdbId, showImdbId, season, episode, watched)
+
+        if (watched) {
+            dao.upsertWatchedEpisodes(listOf(WatchedEpisodeEntity(showTmdbId, season, episode)))
+        } else {
+            val remaining = dao.observeWatchedEpisodes().first().filterNot {
+                it.showTmdbId == showTmdbId &&
+                    it.seasonNumber == season &&
+                    it.episodeNumber == episode
+            }
+            dao.replaceWatchedEpisodes(remaining)
+        }
+        watched
     }
 
     /**

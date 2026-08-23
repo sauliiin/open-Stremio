@@ -244,7 +244,19 @@ data class TraktSyncWriteDto(
 )
 
 @Serializable
-data class TraktWriteItemDto(val ids: TraktIdsDto)
+data class TraktWriteItemDto(
+    val ids: TraktIdsDto,
+    val seasons: List<TraktWriteSeasonDto>? = null,
+)
+
+@Serializable
+data class TraktWriteSeasonDto(
+    val number: Int,
+    val episodes: List<TraktWriteEpisodeDto>? = null,
+)
+
+@Serializable
+data class TraktWriteEpisodeDto(val number: Int)
 
 /**
  * What a write answers with.

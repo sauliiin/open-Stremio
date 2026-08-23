@@ -105,6 +105,7 @@ import com.mdblisthub.tv.core.ui.theme.HubEffects
 import com.mdblisthub.tv.core.ui.theme.HubShapes
 import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.MediaOptionsDialog
 import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
@@ -123,6 +124,8 @@ fun DetailScreen(
     onPlay: (season: Int?, episode: Int?) -> Unit,
     onSelectSource: (season: Int?, episode: Int?) -> Unit,
     onOpenTitle: (MediaItem) -> Unit,
+    onPlayItem: (MediaItem) -> Unit,
+    onChooseSourceForItem: (MediaItem) -> Unit,
     /** The backdrop already on screen for this title, carried over from
      * wherever it was opened — see `Routes.detail`. Painted immediately so
      * the page never sits on a bare [LoadingScreen] before its own fetch
@@ -137,6 +140,7 @@ fun DetailScreen(
     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
     val appLanguage by viewModel.language.collectAsStateWithLifecycle()
     val watchedEpisodes by viewModel.watchedEpisodes.collectAsStateWithLifecycle()
+    val watchedIds by viewModel.watchedIds.collectAsStateWithLifecycle()
     val dimUnwatchedEpisodes by viewModel.dimUnwatchedEpisodes.collectAsStateWithLifecycle()
     val posterLandscapeTransformation by graph.uiPreferences.posterLandscapeTransformation
         .collectAsStateWithLifecycle(initialValue = true)
@@ -153,6 +157,7 @@ fun DetailScreen(
     var trailerOpen by remember { mutableStateOf(false) }
     var episodeDetails by remember { mutableStateOf<Episode?>(null) }
     var openedReview by remember { mutableStateOf<Review?>(null) }
+    var recommendationOptionTarget by remember { mutableStateOf<MediaItem?>(null) }
     // Episode cards update this on focus. The main actions then follow the
     // episode the viewer was actually browsing instead of always targeting E1.
     var focusedEpisodeNumber by remember(tmdbId, season) { mutableIntStateOf(1) }
@@ -218,6 +223,30 @@ fun DetailScreen(
     }
 
     val current = detail
+
+    recommendationOptionTarget?.let { item ->
+        val isWatched = watchedIds.contains(item.tmdbId)
+        MediaOptionsDialog(
+            isWatched = isWatched,
+            onPlay = {
+                onPlayItem(item)
+                recommendationOptionTarget = null
+            },
+            onInfo = {
+                onOpenTitle(item)
+                recommendationOptionTarget = null
+            },
+            onToggleWatched = {
+                viewModel.setWatched(item, !isWatched)
+                recommendationOptionTarget = null
+            },
+            onChooseSource = {
+                onChooseSourceForItem(item)
+                recommendationOptionTarget = null
+            },
+            onDismiss = { recommendationOptionTarget = null },
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
         // Keep the artwork present as part of the page instead of reducing it
@@ -464,6 +493,9 @@ fun DetailScreen(
                         title = stringResource(R.string.detail_recommendations),
                         items = current.recommendations,
                         onItemClick = onOpenTitle,
+                        onItemLongClickIndexed = { _, item ->
+                            recommendationOptionTarget = item
+                        },
                         expandCardsOnFocus = posterLandscapeTransformation,
                     )
                 }

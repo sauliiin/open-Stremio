@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.AddonCatalog
+import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaList
+import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.MdblistHomeFeed
 import com.mdblisthub.tv.core.model.RecommendationRow
 import com.mdblisthub.tv.core.model.ResumePoint
+import com.mdblisthub.tv.core.model.ScrobbleTarget
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -681,6 +684,46 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
      */
     fun removeResumePoint(point: ResumePoint) {
         viewModelScope.launch { graph.playback.clear(point.toTarget()) }
+    }
+
+    /** Sets the watched state of either a title or one concrete episode. */
+    fun setWatched(
+        item: MediaItem,
+        season: Int? = null,
+        episode: Int? = null,
+        watched: Boolean,
+    ) {
+        viewModelScope.launch {
+            val target = ScrobbleTarget(
+                item.type,
+                item.tmdbId.takeIf { it > 0 },
+                item.imdbId,
+                season,
+                episode,
+            )
+            val result = if (item.type == MediaType.SHOW && season != null && episode != null) {
+                graph.library.setEpisodeWatched(
+                    item.tmdbId,
+                    item.imdbId,
+                    season,
+                    episode,
+                    watched,
+                )
+            } else if (item.tmdbId > 0 || item.imdbId != null) {
+                graph.library.toggle(
+                    LibraryBucket.WATCHED,
+                    item.type,
+                    item.tmdbId,
+                    item.imdbId,
+                    add = watched,
+                )
+            } else {
+                return@launch
+            }
+            if (result.isSuccess && watched) {
+                graph.playback.clear(target)
+            }
+        }
     }
 
     fun signOut(onDone: () -> Unit) {
