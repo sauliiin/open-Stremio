@@ -790,7 +790,7 @@ private const val ARTWORK_SATURATION = 1.16f
 private const val TITLE_WIDTH_FRACTION = 0.62f
 
 /** `.overview { max-width: 52ch }` in the television block. */
-private const val OVERVIEW_WIDTH_FRACTION = 0.55f
+private const val OVERVIEW_WIDTH_FRACTION = 0.5f
 
 /**
  * Five lines of `bodyLarge` (24 sp each), held whether the synopsis fills

@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,6 +65,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -72,6 +75,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -370,6 +374,12 @@ enum class SettingsSection {
 
 private const val SETTINGS_DETAIL_IN_MS = 200
 private const val SETTINGS_DETAIL_OUT_MS = 180
+private val SETTINGS_FRAME_WIDTH = 32.dp
+private const val SETTINGS_CONTENT_SCALE = 0.95f
+private val SETTINGS_TITLE_SIZE = 38.sp
+private val SETTINGS_TITLE_LINE_HEIGHT = 42.sp
+private val SETTINGS_ACCENT_FRAME_WIDTH = 1.dp
+private val SETTINGS_ACCENT_FRAME_SHAPE = RoundedCornerShape(28.dp)
 
 private data class SettingsCategory(
     val section: SettingsSection,
@@ -448,12 +458,33 @@ fun SettingsScreen(
         railFocusRequesters.getValue(initialSection).requestFocus()
     }
 
+    val screenDensity = LocalDensity.current
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(HubColors.Background)
+            // A real inset frame keeps every settings control inside the TV's
+            // comfortable viewing area and makes the layout read slightly
+            // smaller without shrinking text or focus targets.
+            .border(SETTINGS_FRAME_WIDTH, HubColors.Background)
+            .padding(SETTINGS_FRAME_WIDTH)
+            .border(
+                SETTINGS_ACCENT_FRAME_WIDTH,
+                HubColors.Accent.copy(alpha = 0.78f),
+                SETTINGS_ACCENT_FRAME_SHAPE,
+            )
             .padding(horizontal = 28.dp, vertical = 24.dp),
     ) {
+        // The frame and its usable viewport stay untouched. Only the density
+        // seen by the settings controls is reduced, which scales type, cards,
+        // icons and internal spacing together without introducing a second
+        // inset or leaving an unused strip around the content.
+        CompositionLocalProvider(
+            LocalDensity provides Density(
+                density = screenDensity.density * SETTINGS_CONTENT_SCALE,
+                fontScale = screenDensity.fontScale,
+            ),
+        ) {
         Row(
             modifier = Modifier.fillMaxSize(),
             horizontalArrangement = Arrangement.spacedBy(26.dp),
@@ -466,7 +497,10 @@ fun SettingsScreen(
             ) {
                 Text(
                     stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.displayMedium,
+                    style = MaterialTheme.typography.displayMedium.copy(
+                        fontSize = SETTINGS_TITLE_SIZE,
+                        lineHeight = SETTINGS_TITLE_LINE_HEIGHT,
+                    ),
                     color = HubColors.Text,
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
@@ -590,6 +624,7 @@ fun SettingsScreen(
             )
         }
         simklLink?.let { link -> SimklLinkOverlay(link, viewModel::beginSimklLink, viewModel::dismissSimklLink) }
+        }
     }
 }
 
@@ -653,7 +688,14 @@ private fun SettingsRailButton(
 @Composable
 private fun SettingsDetailHeader(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Text(title, style = MaterialTheme.typography.displayMedium, color = HubColors.Text)
+        Text(
+            title,
+            style = MaterialTheme.typography.displayMedium.copy(
+                fontSize = SETTINGS_TITLE_SIZE,
+                lineHeight = SETTINGS_TITLE_LINE_HEIGHT,
+            ),
+            color = HubColors.Text,
+        )
         Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = HubColors.TextDim)
     }
 }
@@ -1121,7 +1163,14 @@ private fun LanguagePickerOverlay(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(title, style = MaterialTheme.typography.displayMedium, color = HubColors.Text)
+            Text(
+                title,
+                style = MaterialTheme.typography.displayMedium.copy(
+                    fontSize = SETTINGS_TITLE_SIZE,
+                    lineHeight = SETTINGS_TITLE_LINE_HEIGHT,
+                ),
+                color = HubColors.Text,
+            )
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

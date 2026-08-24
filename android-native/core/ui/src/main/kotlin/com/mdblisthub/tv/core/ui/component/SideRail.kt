@@ -27,7 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -39,7 +39,6 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.mdblisthub.tv.core.ui.theme.HubColors
-import com.mdblisthub.tv.core.ui.theme.HubEffects
 import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.core.ui.theme.HubShapes
 
@@ -117,13 +116,10 @@ fun SideRail(
             // exactly the kind of mismatch that reads as inconsistent.
             .animateContentSize(animationSpec = railFocusTween())
             .width(if (expanded) 248.dp else 0.dp)
-            .background(
-                Brush.horizontalGradient(
-                    0f to HubColors.Surface.copy(alpha = if (expanded) 0.96f else 0f),
-                    0.72f to HubColors.Background.copy(alpha = if (expanded) 0.92f else 0f),
-                    1f to HubColors.Background.copy(alpha = 0f),
-                )
-            )
+            // The menu is an actual panel, not a veil over the Home. Keeping
+            // this fully opaque prevents artwork and synopsis text from
+            // bleeding through its labels and icons.
+            .background(HubColors.Background)
             .padding(vertical = 30.dp, horizontal = if (expanded) 18.dp else 0.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -153,8 +149,8 @@ private fun RailRow(
     val background by animateColorAsState(
         targetValue = when {
             focused -> HubColors.Accent
-            selected -> HubColors.Accent.copy(alpha = HubEffects.SelectedWashAlpha)
-            else -> HubColors.Background.copy(alpha = 0f)
+            selected -> HubColors.SurfaceStrong
+            else -> Color.Transparent
         },
         animationSpec = railFocusTween(),
         label = "rail-background",

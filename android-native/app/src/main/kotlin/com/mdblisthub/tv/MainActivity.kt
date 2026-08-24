@@ -59,6 +59,10 @@ class MainActivity : ComponentActivity() {
                 appUpdateManager.checkForUpdate()
             }
 
+            LaunchedEffect(introVisible) {
+                if (introVisible) graph.warmHomeArtworkDuringIntro()
+            }
+
             val activity = this
             val localeContext = remember(language) {
                 val locale = Locale.forLanguageTag(language)

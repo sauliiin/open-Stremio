@@ -1848,14 +1848,14 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
                         color = HubColors.Text,
                         // Four visible lines, then the exact same timed
                         // vertical scroll used by the Netflixy synopsis.
-                        modifier = Modifier.fillMaxWidth(0.55f).height(96.dp),
+                        modifier = Modifier.fillMaxWidth(0.5f).height(96.dp),
                     )
                 } else {
                     AutoScrollText(
                         text = overview,
                         style = MaterialTheme.typography.bodyLarge,
                         color = HubColors.Text,
-                        modifier = Modifier.fillMaxWidth(0.55f).weight(1f, fill = false)
+                        modifier = Modifier.fillMaxWidth(0.5f).weight(1f, fill = false)
                     )
                 }
             }

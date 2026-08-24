@@ -2,6 +2,7 @@ package com.mdblisthub.tv.ui.home
 
 import androidx.annotation.OptIn
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
@@ -21,6 +22,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -82,65 +85,96 @@ fun HeroArt(
         animationSpec = tween(durationMillis = CROSSFADE_MS),
         label = "hero-trailer-alpha",
     )
+    val backdropVeilAlpha = remember { Animatable(1f) }
+    LaunchedEffect(trailerPlaying) {
+        if (trailerPlaying) {
+            // The backdrop shadow leaves only when the first trailer frame is
+            // actually visible. This is intentionally one-way: when playback
+            // ends, restoring it with another two-second animation makes the
+            // fade appear to belong to the end of the trailer.
+            backdropVeilAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = BACKDROP_VEIL_FADE_MS),
+            )
+        } else {
+            backdropVeilAlpha.snapTo(1f)
+        }
+    }
 
     Box(modifier = modifier.clipToBounds()) {
-        Crossfade(
-            targetState = backdropUrl,
-            animationSpec = tween(
-                durationMillis = HubMotion.Scene,
-                easing = HubMotion.StandardEasing,
-            ),
-            label = "hero-backdrop-crossfade",
-            modifier = Modifier.matchParentSize(),
-        ) { currentBackdrop ->
-            if (currentBackdrop != null) {
-                AsyncImage(
-                    model = currentBackdrop,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    // `Crop`'s own default is `Center`, which crops the same
-                    // number of pixels off the top as off the bottom. TMDB
-                    // backdrops are near-16:9 already and this block is
-                    // considerably narrower than that, so the vertical crop is
-                    // the heavy one — and backdrop compositions routinely put a
-                    // face in the upper half of the frame, which a centered crop
-                    // then cuts straight through. `TopStart` spends that same
-                    // crop budget on the bottom margin instead, where these
-                    // images are overwhelmingly closer to empty.
-                    alignment = androidx.compose.ui.Alignment.TopStart,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        // Held at full opacity until the trailer is genuinely
-                        // on screen, then taken out underneath it.
-                        .alpha(1f - trailerAlpha),
-                )
+        // The still backdrop is intentionally more compact than the trailer.
+        // Keeping this transform inside HeroArt changes only its visual
+        // footprint; the hero's measured layout and the trailer size remain
+        // untouched. Anchoring at the top-right preserves the composition
+        // nearest the title copy while leaving the page-side edge to dissolve.
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    scaleX = BACKDROP_SCALE
+                    scaleY = BACKDROP_SCALE
+                    transformOrigin = TransformOrigin(1f, 0f)
+                },
+        ) {
+            Crossfade(
+                targetState = backdropUrl,
+                animationSpec = tween(
+                    durationMillis = HubMotion.Scene,
+                    easing = HubMotion.StandardEasing,
+                ),
+                label = "hero-backdrop-crossfade",
+                modifier = Modifier.matchParentSize(),
+            ) { currentBackdrop ->
+                if (currentBackdrop != null) {
+                    AsyncImage(
+                        model = currentBackdrop,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        alignment = androidx.compose.ui.Alignment.TopStart,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(1f - trailerAlpha),
+                    )
+                }
             }
-        }
 
-        if (trailerUrl != null) {
-            TrailerSurface(
-                url = trailerUrl,
-                muted = muted,
-                onFirstFrame = {
-                    trailerPlaying = true
-                    onTrailerPlaybackChanged(trailerItemKey, true)
-                },
-                onFailed = {
-                    trailerPlaying = false
-                    onTrailerPlaybackChanged(trailerItemKey, false)
-                },
-                modifier = Modifier
+            // The backdrop owns its own veil because its footprint is smaller
+            // than the trailer's. This keeps the reduced still from retaining
+            // a full-size rectangular edge against the page background.
+            HeroEdgeVeil(
+                Modifier
                     .matchParentSize()
-                    .alpha(trailerAlpha),
+                    .alpha(backdropVeilAlpha.value),
             )
         }
 
-        // Nuvio-style edge treatment: several deliberately spaced stops
-        // create a feather that reads like optical softness, without paying
-        // for a live blur over a video surface. Drawing it once above both
-        // media layers also keeps the silhouette perfectly still during the
-        // trailer transition.
-        HeroEdgeVeil(Modifier.matchParentSize())
+        if (trailerUrl != null) {
+            Box(Modifier.matchParentSize()) {
+                TrailerSurface(
+                    url = trailerUrl,
+                    muted = muted,
+                    onFirstFrame = {
+                        trailerPlaying = true
+                        onTrailerPlaybackChanged(trailerItemKey, true)
+                    },
+                    onFailed = {
+                        trailerPlaying = false
+                        onTrailerPlaybackChanged(trailerItemKey, false)
+                    },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .alpha(trailerAlpha),
+                )
+
+                // The trailer keeps the current full-size footprint and has
+                // its own Netflix-style feather during the crossfade.
+                HeroEdgeVeil(
+                    Modifier
+                        .matchParentSize()
+                        .alpha(trailerAlpha),
+                )
+            }
+        }
     }
 }
 
@@ -231,6 +265,12 @@ private const val TRAILER_VOLUME = 0.65f
 
 private const val CROSSFADE_MS = 900
 
+/** Backdrop-only reduction; the autoplay trailer remains full-size. */
+private const val BACKDROP_SCALE = 0.9f
+
+/** The backdrop shadow lingers softly as the trailer takes over. */
+private const val BACKDROP_VEIL_FADE_MS = 2_000
+
 private const val READY_TIMEOUT_MS = 12_000L
 
 @Composable
@@ -240,7 +280,10 @@ private fun HeroEdgeVeil(modifier: Modifier = Modifier) {
     Box(
         modifier.drawWithCache {
             val leftFadeEndX = size.width * 0.58f
-            val bottomFadeStartY = size.height * 0.50f
+            // Keep the image clear farther down its right-hand side. Starting
+            // this veil halfway up made the feather read as a dark right edge
+            // before it had room to dissolve into the rows.
+            val bottomFadeStartY = size.height * 0.64f
             val left = Brush.horizontalGradient(
                 colorStops = arrayOf(
                     0.00f to background,
