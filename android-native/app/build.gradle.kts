@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,19 @@ plugins {
     alias(libs.plugins.baselineprofile)
     alias(libs.plugins.google.services)
 }
+
+val localSecrets = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use(::load)
+}
+
+fun secret(name: String): String =
+    providers.gradleProperty(name).orNull
+        ?: providers.environmentVariable(name).orNull
+        ?: localSecrets.getProperty(name).orEmpty()
+
+fun quoted(value: String): String =
+    "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 android {
     namespace = "com.mdblisthub.tv"
@@ -18,6 +33,19 @@ android {
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 40
         versionName = "1.1.10"
+
+        // Credentials live outside version control. They are still public to
+        // anyone reverse-engineering a client APK, so quota-bearing services
+        // should ultimately sit behind a backend; this at least prevents keys
+        // from being copied forever through the repository history.
+        buildConfigField("String", "TMDB_API_KEY", quoted(secret("TMDB_API_KEY")))
+        buildConfigField("String", "OMDB_API_KEY", quoted(secret("OMDB_API_KEY")))
+        buildConfigField("String", "FANART_TV_API_KEY", quoted(secret("FANART_TV_API_KEY")))
+        buildConfigField("String", "TRAKT_CLIENT_ID", quoted(secret("TRAKT_CLIENT_ID")))
+        buildConfigField("String", "TRAKT_CLIENT_SECRET", quoted(secret("TRAKT_CLIENT_SECRET")))
+        buildConfigField("String", "SIMKL_CLIENT_ID", quoted(secret("SIMKL_CLIENT_ID")))
+        buildConfigField("String", "OPENSUBTITLES_API_KEY", quoted(secret("OPENSUBTITLES_API_KEY")))
+        buildConfigField("String", "WYZIE_API_KEY", quoted(secret("WYZIE_API_KEY")))
 
         // x86 (32-bit) is back on the list deliberately: the emulator this
         // app is tested on reports exactly that ABI, and without a native
@@ -63,7 +91,10 @@ android {
     }
     kotlin { compilerOptions.jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     packaging {
         resources.excludes += setOf(

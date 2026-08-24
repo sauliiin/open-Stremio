@@ -33,6 +33,7 @@ import com.mdblisthub.tv.core.data.work.MetadataScheduler
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.network.NetworkModule
+import com.mdblisthub.tv.core.network.TraktTokens
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,8 +58,19 @@ class DataGraph(context: Context) {
     /** Survives every screen; the prefetcher and one-off writes live on it. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val network = NetworkModule(appContext)
-    val database = HubDatabase.create(appContext)
+    val network: NetworkModule by lazy {
+        NetworkModule(appContext).also { module ->
+            // Bridges the circular auth dependency without constructing the
+            // Trakt repositories at process start. The bridge resolves them
+            // only if an actual Trakt request needs a token or refresh.
+            module.traktTokens = object : TraktTokens {
+                override fun accessToken(): String = traktAuth.accessToken()
+                override fun refreshed(expired: String): String? = traktAuth.refreshed(expired)
+            }
+            module.simklToken = { kotlinx.coroutines.runBlocking { simklTokenStore.accessToken() } }
+        }
+    }
+    val database by lazy { HubDatabase.create(appContext) }
     val session = SessionStore(appContext)
     val syncStore = SyncStore(appContext)
     val uiPreferences = UiPreferencesStore(appContext)
@@ -66,37 +78,33 @@ class DataGraph(context: Context) {
     val traktTokenStore = TraktTokenStore(appContext)
     val simklTokenStore = SimklTokenStore(appContext)
 
-    val traktAuth = TraktAuthRepository(network.traktAuth, network.trakt, traktTokenStore)
-    val simklAuth = SimklAuthRepository(network.simkl, simklTokenStore)
+    val traktAuth by lazy { TraktAuthRepository(network.traktAuth, network.trakt, traktTokenStore) }
+    val simklAuth by lazy { SimklAuthRepository(network.simkl, simklTokenStore) }
 
-    init {
-        // The HTTP layer reads the Trakt credential through this — see
-        // `NetworkModule.traktTokens`. Installed here rather than passed to the
-        // constructor because the store that holds the token is built on top
-        // of the network module, not underneath it. Same late binding as
-        // [imageWarmer] below.
-        network.traktTokens = traktAuth
-        network.simklToken = { kotlinx.coroutines.runBlocking { simklTokenStore.accessToken() } }
+    val auth by lazy { AuthRepository(
+        apiProvider = { network.mdblist },
+        syncApiProvider = { network.sync },
+        session = session,
+        syncStore = syncStore,
+        stremioAccountStore = stremioAccountStore,
+        databaseProvider = { database },
+    ) }
+    val lists by lazy { ListsRepository(network.mdblist, session, database) }
+    val addons: AddonsRepository by lazy {
+        AddonsRepository(network.stremio, network.stremioInstall, database, session, lists).also {
+            it.onLocalChange = { firebaseSync.pushIfEnabled() }
+        }
     }
-
-    val auth = AuthRepository(
-        network.mdblist,
-        network.sync,
-        session,
-        syncStore,
-        stremioAccountStore,
-        database,
-    )
-    val lists = ListsRepository(network.mdblist, session, database)
-    val addons = AddonsRepository(network.stremio, network.stremioInstall, database, session, lists)
-    val listPreferencesSync = ListPreferencesSyncRepository(
+    val listPreferencesSync by lazy { ListPreferencesSyncRepository(
         network.sync,
         auth,
         session,
         lists,
         scope,
-    )
-    val media = MediaRepository(network.tmdb, network.mdblist, network.omdb, network.fanartTv, session, database)
+    ) }
+    val media by lazy {
+        MediaRepository(network.tmdb, network.mdblist, network.omdb, network.fanartTv, session, database)
+    }
 
     /**
      * The two answers to "where does this account's library live". Both are
@@ -104,54 +112,51 @@ class DataGraph(context: Context) {
      * a switch has to take effect on the next call rather than on the next
      * launch.
      */
-    val homeFeeds = HomeFeedsRepository(
+    val homeFeeds by lazy { HomeFeedsRepository(
         mdblist = MdblistHomeFeedSource(network.mdblist, session),
         trakt = TraktHomeFeedSource(network.trakt, traktTokenStore),
         simkl = SimklHomeFeedSource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         session = session,
         media = media,
-    )
-    val stremioAccount = StremioAccountRepository(
+    ) }
+    val stremioAccount by lazy { StremioAccountRepository(
         network.stremioAccount,
         stremioAccountStore,
         addons,
         network.stremioInstall,
         lists,
         session,
-    )
-    val streams = StreamsRepository(
+    ) }
+    val streams by lazy { StreamsRepository(
         network.stremio, addons, network.addonClient, network.openSubtitles, network.wyzie,
-    )
-    val library = LibraryRepository(
+    ) }
+    val library by lazy { LibraryRepository(
         mdblist = MdblistLibrarySource(network.mdblist, session),
         trakt = TraktLibrarySource(network.trakt, traktTokenStore),
         simkl = SimklLibrarySource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         database = database,
-    )
-    val playback = PlaybackRepository(
+    ) }
+    val playback by lazy { PlaybackRepository(
         mdblist = MdblistPlaybackSource(network.mdblist, session),
         trakt = TraktPlaybackSource(network.trakt, traktTokenStore),
         simkl = SimklPlaybackSource(network.simkl, simklTokenStore),
         preferences = uiPreferences,
         database = database,
         media = media,
-    )
-    val firebaseSync = FirebaseSyncRepository(network.sync, syncStore, auth, addons, scope)
-
-    init {
-        // Wired here rather than passed to `addons`'s constructor: the
-        // pusher is built on top of `addons`, not underneath it, so nothing
-        // can hand it over any earlier than this. See `AddonsRepository.onLocalChange`.
-        addons.onLocalChange = { firebaseSync.pushIfEnabled() }
+    ) }
+    val firebaseSync: FirebaseSyncRepository by lazy {
+        FirebaseSyncRepository(network.sync, syncStore, auth, addons, scope)
     }
-    val wikipedia = WikipediaRepository(network.wikipedia, network.tmdb, uiPreferences.language)
-    val trailers = TrailerRepository(network.imdb)
-    val recommendations = RecommendationsRepository(network.mdblist, network.tmdb, media, session)
+    val wikipedia by lazy { WikipediaRepository(network.wikipedia, network.tmdb, uiPreferences.language) }
+    val trailers by lazy { TrailerRepository(network.imdb) }
+    val recommendations by lazy {
+        RecommendationsRepository(network.mdblist, network.tmdb, media, session)
+    }
 
-    val scheduler = MetadataScheduler(appContext)
-    val prefetcher = MetadataPrefetcher(media, scope)
+    val scheduler by lazy { MetadataScheduler(appContext) }
+    val prefetcher by lazy { MetadataPrefetcher(media, scope) }
 
     /**
      * Assigned by the app once the Coil loader exists, which cannot happen
@@ -283,10 +288,10 @@ class DataGraph(context: Context) {
     private companion object {
         const val STARTUP_ARTWORK_PASSES = 2
         const val STARTUP_ARTWORK_RETRY_MS = 1_500L
-        const val STARTUP_LIST_LIMIT = 3
-        const val STARTUP_FEED_LIMIT = 2
+        const val STARTUP_LIST_LIMIT = 2
+        const val STARTUP_FEED_LIMIT = 1
         const val STARTUP_CARDS_PER_ROW = 8
-        const val STARTUP_CARD_LIMIT = 24
-        const val STARTUP_URL_LIMIT = 40
+        const val STARTUP_CARD_LIMIT = 16
+        const val STARTUP_URL_LIMIT = 24
     }
 }

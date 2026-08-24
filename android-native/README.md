@@ -159,4 +159,7 @@ GPL-3.0 — ver [LICENSE](../LICENSE).
 O APK distribui `player/libs/media3-decoder-ffmpeg-1.11.0.aar`, uma build local
 do módulo `decoder_ffmpeg` do Media3. O FFmpeg que ele embute é LGPL/GPL e o
 Google não o publica no Maven por causa disso; as obrigações dessa licença
-acompanham qualquer redistribuição do APK.
+acompanham qualquer redistribuição do APK. O binário atual usa FFmpeg 6.0,
+NDK 28.2 e alinhamento de página de 16 KB nas arquiteturas de 64 bits. Foram
+habilitados somente os decodificadores de áudio usados pelo app: AAC/Latm,
+AC-3/E-AC-3, ALAC, DTS, FLAC, MLP/TrueHD, MP3, Opus, PCM A-law/µ-law e Vorbis.

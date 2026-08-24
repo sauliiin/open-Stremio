@@ -21,6 +21,7 @@ dependencies {
     api(projects.core.database)
     api(libs.work.runtime)
     api(libs.datastore.preferences)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.serialization.json)
     implementation(libs.coroutines.android)
     implementation(platform(libs.firebase.bom))

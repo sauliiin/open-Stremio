@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -91,10 +90,10 @@ private class LeadingColumnScroll(private val insetPx: Float) : BringIntoViewSpe
 /**
  * A list, rendered as a row of posters.
  *
- * `focusRestorer` is what makes vertical navigation feel right: leaving a row
- * and coming back should land on the card you left, not snap to the first one.
- * Without it, browsing down three rows and back up loses your place every
- * time — the classic tell of a TV app built from phone components.
+ * Every vertical entry starts at the first card. Rows deliberately do not
+ * restore their previous horizontal position: otherwise entering a shelf
+ * from its fourth card once makes every later Up/Down jump return to that
+ * stale fourth position, even when the viewer is arriving from another row.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -159,9 +158,9 @@ fun MediaRow(
 ) {
     if (items.isEmpty() && !isEditMode) return
 
-    val initialFocusRequester = remember { FocusRequester() }
+    val firstItemFocusRequester = remember { FocusRequester() }
     LaunchedEffect(requestInitialFocus) {
-        if (requestInitialFocus && initialFocusRequester.requestFocus()) {
+        if (requestInitialFocus && firstItemFocusRequester.requestFocus()) {
             onInitialFocusHandled()
         }
     }
@@ -277,21 +276,17 @@ fun MediaRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .let { if (rowFocusRequester != null) it.focusRequester(rowFocusRequester) else it }
-                    // Netflixy's LeadingColumnScroll re-pins the focused card to
-                    // the leading edge on every focus event; combined with
-                    // focusRestorer's own re-focus-and-scroll on re-entry, the
-                    // two fight and the row jumps. Every other theme's
-                    // SafeHorizontalScroll only moves when the restored card
-                    // is actually outside the safe area, so it has no such
-                    // fight to avoid.
-                    .let { if (HubColors.isNetflixLayout) it else it.focusRestorer() },
+                    .focusProperties {
+                        onEnter = { firstItemFocusRequester.requestFocus() }
+                    },
             ) {
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(
                         item = item,
-                        initialFocusRequester = initialFocusRequester.takeIf {
-                            requestInitialFocus && index == 0
-                        },
+                        // This requester is always attached, not only during
+                        // the initial app focus, because every later vertical
+                        // entry into the row is explicitly reset to item zero.
+                        initialFocusRequester = firstItemFocusRequester.takeIf { index == 0 },
                         onClick = {
                             onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
                         },

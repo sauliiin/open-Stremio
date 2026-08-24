@@ -10,25 +10,29 @@ import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ImageRequest
-import coil3.request.transitionFactory
+import coil3.request.crossfade
 import coil3.PlatformContext as CoilPlatformContext
 import com.mdblisthub.tv.core.data.DataGraph
-import com.mdblisthub.tv.core.ui.coil.AlwaysCrossfadeTransitionFactory
 import com.mdblisthub.tv.core.data.work.HubWorkerFactory
 import com.mdblisthub.tv.core.data.work.ImageMemoryTrimmer
 import com.mdblisthub.tv.core.data.work.ImageWarmer
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.network.ApiConfig
+import com.mdblisthub.tv.core.network.ApiCredentials
 import com.mdblisthub.tv.core.ui.theme.HubColors
-import com.mdblisthub.tv.player.MediaCache
 import com.mdblisthub.tv.ui.player.PlaybackCompletionNotifier
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okio.Path.Companion.toOkioPath
 
 class HubApplication : Application(), Configuration.Provider, SingletonImageLoader.Factory {
+
+    /** Bounds bitmap decoding separately from OkHttp's socket limit. */
+    private val imageWarmPermits = Semaphore(IMAGE_WARM_CONCURRENCY)
 
     lateinit var graph: DataGraph
         private set
@@ -36,6 +40,19 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
     override fun onCreate() {
         super.onCreate()
         graph = DataGraph(this)
+        ApiConfig.configure(
+            ApiCredentials(
+                tmdb = BuildConfig.TMDB_API_KEY,
+                omdb = BuildConfig.OMDB_API_KEY,
+                fanartTv = BuildConfig.FANART_TV_API_KEY,
+                traktClientId = BuildConfig.TRAKT_CLIENT_ID,
+                traktClientSecret = BuildConfig.TRAKT_CLIENT_SECRET,
+                simklClientId = BuildConfig.SIMKL_CLIENT_ID,
+                openSubtitles = BuildConfig.OPENSUBTITLES_API_KEY,
+                wyzie = BuildConfig.WYZIE_API_KEY,
+                appVersion = BuildConfig.VERSION_NAME,
+            ),
+        )
         PlaybackCompletionNotifier.createChannel(this)
 
         // Read before the first frame rather than collected into composition.
@@ -52,6 +69,7 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
             runCatching { graph.uiPreferences.startupTheme() }
                 .getOrDefault(HubThemeVariant.NORMAL),
         )
+        ApiConfig.LANGUAGE = ApiConfig.metadataLanguageFor(graph.uiPreferences.startupLanguage())
 
         // Assigned after the graph exists, because the loader shares its
         // OkHttp client — one connection pool for artwork and metadata alike.
@@ -68,24 +86,24 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
             val loader = SingletonImageLoader.get(this)
             coroutineScope {
                 urls.map { url ->
-                    async { loader.execute(ImageRequest.Builder(this@HubApplication).data(url).build()) }
+                    async {
+                        imageWarmPermits.withPermit {
+                            loader.execute(
+                                ImageRequest.Builder(this@HubApplication)
+                                    .data(url)
+                                    // Large enough for a crisp first TV frame,
+                                    // small enough not to decode source-sized
+                                    // backdrops while the intro is playing.
+                                    .size(IMAGE_WARM_WIDTH_PX, IMAGE_WARM_HEIGHT_PX)
+                                    .build(),
+                            )
+                        }
+                    }
                 }.awaitAll()
             }
         }
 
         graph.imageMemoryTrimmer = CoilMemoryTrimmer(this)
-
-        // Opened here so the player does not have to open it.
-        //
-        // `MediaCache.get` reads a live storage quota over binder, stats the
-        // volume and opens the SQLite span index — and it was being called
-        // from `PlaybackController`'s constructor, which runs on the main
-        // thread inside `PlayerViewModel`'s creation. That is disk I/O and a
-        // binder round trip sitting between the OK keypress and the first
-        // addon request, on the one screen where latency is the whole
-        // experience. It is memoized and synchronized, so warming it on the
-        // graph's IO scope costs the player nothing but the lookup.
-        graph.scope.launch { MediaCache.warm(this@HubApplication) }
 
         // Keeps TMDB in step with the interface language. Without it the
         // English option produced an English interface wrapped around
@@ -135,13 +153,17 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
                     .maxSizeBytes(512L * 1024 * 1024)
                     .build()
             }
-            // Plain `.crossfade(true)` skips the animation whenever Coil
-            // serves the image from memory cache — which, revisiting rows
-            // browsed moments ago, is most posters most of the time. This
-            // factory crossfades any genuinely new image regardless of
-            // where it was served from. See `AlwaysCrossfadeTransitionFactory`.
-            .transitionFactory(AlwaysCrossfadeTransitionFactory())
+            // Memory-cache hits draw immediately. Disk/network results still
+            // fade, preserving the polished entrance without animating every
+            // cached poster again during a fast D-pad sweep.
+            .crossfade(true)
             .build()
+
+    private companion object {
+        const val IMAGE_WARM_CONCURRENCY = 4
+        const val IMAGE_WARM_WIDTH_PX = 960
+        const val IMAGE_WARM_HEIGHT_PX = 540
+    }
 }
 
 /**

@@ -176,7 +176,15 @@ object MediaCache {
         // space check is skipped rather than trusted when it reads zero, since
         // that is what an unreadable volume returns and it would otherwise
         // collapse every cache to MIN_BYTES.
-        val free = runCatching { context.cacheDir.usableSpace }.getOrDefault(0L)
+        val free = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val storage = context.getSystemService(StorageManager::class.java)
+                val uuid = storage.getUuidForPath(context.cacheDir)
+                storage.getAllocatableBytes(uuid)
+            } else {
+                context.cacheDir.usableSpace
+            }
+        }.getOrDefault(0L)
         val affordable = if (free > 0) (free * FREE_SPACE_SHARE).toLong() else Long.MAX_VALUE
 
         return minOf(budget, affordable).coerceIn(MIN_BYTES, MAX_BYTES)

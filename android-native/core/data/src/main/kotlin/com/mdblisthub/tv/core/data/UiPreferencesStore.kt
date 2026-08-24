@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.core.content.edit
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.model.LibraryProvider
 import kotlinx.coroutines.flow.Flow
@@ -92,7 +93,7 @@ class UiPreferencesStore(context: Context) {
     suspend fun saveTheme(variant: HubThemeVariant) {
         // `apply`, not `commit`: nothing this launch depends on it having
         // landed, and the next cold start is far away.
-        startupMirror.edit().putString(KEY_THEME.name, variant.name).apply()
+        startupMirror.edit { putString(KEY_THEME.name, variant.name) }
         store.edit { it[KEY_THEME] = variant.name }
     }
 
@@ -131,7 +132,7 @@ class UiPreferencesStore(context: Context) {
         startupMirror.getBoolean(KEY_INTRO_ENABLED.name, true)
 
     suspend fun saveIntroEnabled(enabled: Boolean) {
-        startupMirror.edit().putBoolean(KEY_INTRO_ENABLED.name, enabled).apply()
+        startupMirror.edit { putBoolean(KEY_INTRO_ENABLED.name, enabled) }
         store.edit { it[KEY_INTRO_ENABLED] = enabled }
     }
 
@@ -159,12 +160,12 @@ class UiPreferencesStore(context: Context) {
         startupMirror.getBoolean(KEY_SPOTLIGHT_HERO.name, true)
 
     suspend fun saveSpotlightHero(enabled: Boolean) {
-        startupMirror.edit().putBoolean(KEY_SPOTLIGHT_HERO.name, enabled).apply()
+        startupMirror.edit { putBoolean(KEY_SPOTLIGHT_HERO.name, enabled) }
         store.edit { it[KEY_SPOTLIGHT_HERO] = enabled }
     }
 
     suspend fun saveAutotrailer(enabled: Boolean) {
-        startupMirror.edit().putBoolean(KEY_AUTOTRAILER.name, enabled).apply()
+        startupMirror.edit { putBoolean(KEY_AUTOTRAILER.name, enabled) }
         store.edit { it[KEY_AUTOTRAILER] = enabled }
         val current = currentTheme()
         if (enabled) {
@@ -183,9 +184,18 @@ class UiPreferencesStore(context: Context) {
     }
 
     val language: Flow<String> = store.data.map { prefs ->
-        prefs[KEY_LANGUAGE] ?: "en" // Default language
+        prefs[KEY_LANGUAGE] ?: DEFAULT_LANGUAGE
     }
+
+    /** Locale available before DataStore emits, avoiding a wrong-language frame. */
+    fun startupLanguage(): String =
+        startupMirror.getString(KEY_LANGUAGE.name, null)
+            ?.takeIf { it in SUPPORTED_LANGUAGES }
+            ?: DEFAULT_LANGUAGE
+
     suspend fun saveLanguage(lang: String) {
+        require(lang in SUPPORTED_LANGUAGES) { "Unsupported interface language: $lang" }
+        startupMirror.edit { putString(KEY_LANGUAGE.name, lang) }
         store.edit { it[KEY_LANGUAGE] = lang }
     }
 
@@ -275,6 +285,8 @@ class UiPreferencesStore(context: Context) {
 
     private companion object {
         const val STARTUP_MIRROR = "ui-preferences-startup"
+        const val DEFAULT_LANGUAGE = "en"
+        val SUPPORTED_LANGUAGES = setOf("pt", "en", "es")
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_SETUP_COMPLETED = booleanPreferencesKey("setup_completed")
         val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")

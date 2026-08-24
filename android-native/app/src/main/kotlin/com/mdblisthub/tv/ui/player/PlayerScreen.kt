@@ -2333,7 +2333,7 @@ private fun TrackInfo.channelName(): String? {
         6 -> "5.1"
         7 -> "6.1"
         8 -> "7.1"
-        else -> stringResource(R.string.player_track_channels, count)
+        else -> pluralStringResource(R.plurals.player_track_channels, count, count)
     }
 }
 

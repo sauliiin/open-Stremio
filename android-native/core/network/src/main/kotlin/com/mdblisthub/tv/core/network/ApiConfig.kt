@@ -21,9 +21,12 @@ object ApiConfig {
     /** IMDb's own (undocumented) GraphQL API — see [ImdbApi] for why it's worth using. */
     const val IMDB_GRAPHQL_BASE = "https://graphql.prod.api.imdb.a2z.com/"
 
-    const val TMDB_KEY = "703cf5598b9fd74adac824baf7923126"
-    const val OMDB_KEY = "b2f2fcca"
-    const val FANART_TV_API_KEY = "a7ad21743fd710fccb738232f2fbdcfc"
+    @Volatile var TMDB_KEY = ""
+        private set
+    @Volatile var OMDB_KEY = ""
+        private set
+    @Volatile var FANART_TV_API_KEY = ""
+        private set
 
     /**
      * Trakt, the alternative source for the five account-owned home rows —
@@ -59,17 +62,20 @@ object ApiConfig {
      * control over. If Trakt calls start failing across the board, this is
      * the first thing to check.
      */
-    const val TRAKT_CLIENT_ID = "6bc29124c3d9466e06a3ed19a7b5976fcb28311008401e1ce04cf08196f8b16a"
-    const val TRAKT_CLIENT_SECRET = "99478842b17d44d7accafef45c6c1bbba235792753c195069ae149595cd3a919"
+    @Volatile var TRAKT_CLIENT_ID = ""
+        private set
+    @Volatile var TRAKT_CLIENT_SECRET = ""
+        private set
 
     val traktConfigured: Boolean
         get() = TRAKT_CLIENT_ID.isNotBlank() && TRAKT_CLIENT_SECRET.isNotBlank()
 
     /** Simkl's PIN flow for TVs uses only this public application identifier. */
     const val SIMKL_API_BASE = "https://api.simkl.com/"
-    const val SIMKL_CLIENT_ID = "61c8667bd61f4ec4a16f09f0c061328f491cd7c8138adf4b59a253d854074576"
     const val SIMKL_APP_NAME = "omnistream"
-    const val SIMKL_APP_VERSION = "1.1.9.2"
+    @Volatile var SIMKL_CLIENT_ID = ""
+        private set
+    val SIMKL_APP_VERSION: String get() = APP_VERSION
 
     /**
      * OpenSubtitles.com's own API — a different service from the "OpenSubtitles
@@ -83,7 +89,8 @@ object ApiConfig {
      * on the same 100-download/day quota their own tools already share.
      */
     const val OPENSUBTITLES_BASE = "https://api.opensubtitles.com/api/v1/"
-    const val OPENSUBTITLES_API_KEY = "9eBRI85k0K0D7teGENPWBhCrCH4jnsLF"
+    @Volatile var OPENSUBTITLES_API_KEY = ""
+        private set
     const val OPENSUBTITLES_USER_AGENT = "mestreyoddarossi api for kodi"
 
     /**
@@ -99,7 +106,8 @@ object ApiConfig {
      * with the account owner's permission.
      */
     const val WYZIE_BASE = "https://sub.wyzie.io/"
-    const val WYZIE_API_KEY = "wyzie-s9qb8pabb1bllkptwqe0z19ufdnpa5sa"
+    @Volatile var WYZIE_API_KEY = ""
+        private set
 
     /**
      * Metadata language, with an English fallback wherever TMDB supports one.
@@ -133,5 +141,32 @@ object ApiConfig {
         else -> tag
     }
 
-    const val USER_AGENT = "mdblist-hub-tv/0.1 (Android TV)"
+    @Volatile private var APP_VERSION: String = "unknown"
+
+    val USER_AGENT: String get() = "omnistream/$APP_VERSION (Android TV)"
+
+    /** Injects build-local credentials before the network graph is first used. */
+    fun configure(credentials: ApiCredentials) {
+        TMDB_KEY = credentials.tmdb
+        OMDB_KEY = credentials.omdb
+        FANART_TV_API_KEY = credentials.fanartTv
+        TRAKT_CLIENT_ID = credentials.traktClientId
+        TRAKT_CLIENT_SECRET = credentials.traktClientSecret
+        SIMKL_CLIENT_ID = credentials.simklClientId
+        OPENSUBTITLES_API_KEY = credentials.openSubtitles
+        WYZIE_API_KEY = credentials.wyzie
+        APP_VERSION = credentials.appVersion.ifBlank { "unknown" }
+    }
 }
+
+data class ApiCredentials(
+    val tmdb: String,
+    val omdb: String,
+    val fanartTv: String,
+    val traktClientId: String,
+    val traktClientSecret: String,
+    val simklClientId: String,
+    val openSubtitles: String,
+    val wyzie: String,
+    val appVersion: String,
+)

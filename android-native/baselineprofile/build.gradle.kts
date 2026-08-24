@@ -26,6 +26,12 @@ android {
         minSdk = 28
         targetSdk = libs.versions.targetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Profile generation should collect the two BaselineProfileRule
+        // journeys only. Macrobenchmarks remain runnable explicitly with:
+        // -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark
+        testInstrumentationRunnerArguments[
+            "androidx.benchmark.enabledRules"
+        ] = "BaselineProfile"
     }
 
     compileOptions {

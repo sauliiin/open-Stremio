@@ -20,58 +20,64 @@ class NetworkModule(context: Context) {
     val json: Json = HttpClients.json
 
     /** Shared by every metadata API, so they share one connection pool. */
-    val metadataClient: OkHttpClient = HttpClients.metadata(context.applicationContext)
+    val metadataClient: OkHttpClient by lazy { HttpClients.metadata(context.applicationContext) }
 
     /** Short timeouts and no cache: addon hosts are third-party and flaky. */
-    val addonClient: OkHttpClient = HttpClients.addons(metadataClient)
+    val addonClient: OkHttpClient by lazy { HttpClients.addons(metadataClient) }
 
     /** The same hosts, but for the one-off install, which may cold-start slowly. */
-    val addonInstallClient: OkHttpClient = HttpClients.addonInstall(metadataClient)
+    val addonInstallClient: OkHttpClient by lazy { HttpClients.addonInstall(metadataClient) }
 
     /** What the player reads the film over — see [HttpClients.playback]. */
-    val playbackClient: OkHttpClient = HttpClients.playback(metadataClient)
+    val playbackClient: OkHttpClient by lazy { HttpClients.playback(metadataClient) }
 
     /** What Coil reads artwork over — see [HttpClients.images]. */
-    val imageClient: OkHttpClient = HttpClients.images(metadataClient)
+    val imageClient: OkHttpClient by lazy { HttpClients.images(metadataClient) }
 
-    private val converter = json.asConverterFactory("application/json".toMediaType())
+    private val converter by lazy { json.asConverterFactory("application/json".toMediaType()) }
 
-    val mdblist: MdblistApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()
-    val tmdb: TmdbApi = retrofit(ApiConfig.TMDB_BASE, metadataClient).create()
-    val omdb: OmdbApi = retrofit(ApiConfig.OMDB_BASE, metadataClient).create()
+    val mdblist: MdblistApi by lazy { retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create() }
+    val tmdb: TmdbApi by lazy { retrofit(ApiConfig.TMDB_BASE, metadataClient).create() }
+    val omdb: OmdbApi by lazy { retrofit(ApiConfig.OMDB_BASE, metadataClient).create() }
 
     /**
      * Every call takes a full `@Url`, so the base is only there to satisfy
      * Retrofit's constructor.
      */
-    val stremio: StremioApi = retrofit(ApiConfig.MDBLIST_BASE, addonClient).create()
+    val stremio: StremioApi by lazy { retrofit(ApiConfig.MDBLIST_BASE, addonClient).create() }
 
     /** Same endpoints, patient client — see [addonInstallClient]. */
-    val stremioInstall: StremioApi = retrofit(ApiConfig.MDBLIST_BASE, addonInstallClient).create()
+    val stremioInstall: StremioApi by lazy {
+        retrofit(ApiConfig.MDBLIST_BASE, addonInstallClient).create()
+    }
 
-    val stremioAccount: StremioAccountApi =
+    val stremioAccount: StremioAccountApi by lazy {
         retrofit(ApiConfig.STREMIO_ACCOUNT_BASE, metadataClient).create()
+    }
 
     /** Also `@Url`-driven; the base only has to be a valid URL. */
-    val sync: SyncApi = retrofit(ApiConfig.FIREBASE_BASE, metadataClient).create()
+    val sync: SyncApi by lazy { retrofit(ApiConfig.FIREBASE_BASE, metadataClient).create() }
 
     /** `@Url`-driven too — a cast member's bio can come from either language edition. */
-    val wikipedia: WikipediaApi = retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create()
+    val wikipedia: WikipediaApi by lazy { retrofit(ApiConfig.MDBLIST_BASE, metadataClient).create() }
 
-    val imdb: ImdbApi = retrofit(ApiConfig.IMDB_GRAPHQL_BASE, metadataClient).create()
+    val imdb: ImdbApi by lazy { retrofit(ApiConfig.IMDB_GRAPHQL_BASE, metadataClient).create() }
 
     /** OpenSubtitles.com's own API — see [ApiConfig.OPENSUBTITLES_BASE]. */
-    val openSubtitles: OpenSubtitlesApi =
+    val openSubtitles: OpenSubtitlesApi by lazy {
         retrofit(ApiConfig.OPENSUBTITLES_BASE, HttpClients.openSubtitles(metadataClient)).create()
+    }
 
     /**
      * Wyzie's own API — see [ApiConfig.WYZIE_BASE]. No dedicated client: its
      * key travels as a query param, not a header, so there is nothing for a
      * client-level interceptor to attach.
      */
-    val wyzie: WyzieApi = retrofit(ApiConfig.WYZIE_BASE, metadataClient).create()
+    val wyzie: WyzieApi by lazy { retrofit(ApiConfig.WYZIE_BASE, metadataClient).create() }
 
-    val fanartTv: FanartTvApi = retrofit(ApiConfig.FANART_TV_BASE, metadataClient).create()
+    val fanartTv: FanartTvApi by lazy {
+        retrofit(ApiConfig.FANART_TV_BASE, metadataClient).create()
+    }
 
     /**
      * The Trakt credential, installed by the graph once the data layer that
@@ -88,18 +94,24 @@ class NetworkModule(context: Context) {
     var traktTokens: TraktTokens = TraktTokens.Unlinked
 
     /** No cache and a token-refreshing authenticator — see [HttpClients.trakt]. */
-    val traktClient: OkHttpClient = HttpClients.trakt(metadataClient) { traktTokens }
+    val traktClient: OkHttpClient by lazy { HttpClients.trakt(metadataClient) { traktTokens } }
 
-    private val traktAuthClient: OkHttpClient = HttpClients.traktAuth(metadataClient) { traktTokens }
+    private val traktAuthClient: OkHttpClient by lazy {
+        HttpClients.traktAuth(metadataClient) { traktTokens }
+    }
 
-    val trakt: TraktApi = retrofit(ApiConfig.TRAKT_API_BASE, traktClient).create()
+    val trakt: TraktApi by lazy { retrofit(ApiConfig.TRAKT_API_BASE, traktClient).create() }
 
     /** A different host from [trakt] — see [ApiConfig.TRAKT_AUTH_BASE]. */
-    val traktAuth: TraktAuthApi = retrofit(ApiConfig.TRAKT_AUTH_BASE, traktAuthClient).create()
+    val traktAuth: TraktAuthApi by lazy {
+        retrofit(ApiConfig.TRAKT_AUTH_BASE, traktAuthClient).create()
+    }
 
     @Volatile var simklToken: () -> String = { "" }
-    private val simklClient: OkHttpClient = HttpClients.simkl(metadataClient) { simklToken() }
-    val simkl: SimklApi = retrofit(ApiConfig.SIMKL_API_BASE, simklClient).create()
+    private val simklClient: OkHttpClient by lazy {
+        HttpClients.simkl(metadataClient) { simklToken() }
+    }
+    val simkl: SimklApi by lazy { retrofit(ApiConfig.SIMKL_API_BASE, simklClient).create() }
 
     private fun retrofit(base: String, client: OkHttpClient): Retrofit =
         Retrofit.Builder()

@@ -19,13 +19,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdblisthub.tv.core.ui.theme.HubTheme
 import com.mdblisthub.tv.navigation.HubNavHost
+import com.mdblisthub.tv.player.MediaCache
 import com.mdblisthub.tv.ui.intro.IntroScreen
 import com.mdblisthub.tv.update.AppUpdateManager
 import com.mdblisthub.tv.update.AppUpdateOverlay
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 /**
  * The single activity.
@@ -50,17 +55,22 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val language by graph.uiPreferences.language
-                .collectAsStateWithLifecycle(initialValue = DEFAULT_LANGUAGE)
+                .collectAsStateWithLifecycle(initialValue = graph.uiPreferences.startupLanguage())
             var introVisible by rememberSaveable {
                 mutableStateOf(graph.uiPreferences.startupIntroEnabled())
             }
 
-            LaunchedEffect(Unit) {
-                appUpdateManager.checkForUpdate()
-            }
-
             LaunchedEffect(introVisible) {
-                if (introVisible) graph.warmHomeArtworkDuringIntro()
+                if (introVisible) {
+                    graph.warmHomeArtworkDuringIntro()
+                } else {
+                    // Neither operation belongs on the critical path. The
+                    // cache touches storage quota and SQLite, while the update
+                    // check reads GitHub and may hash the installed APK.
+                    delay(STARTUP_SETTLE_MS)
+                    withContext(Dispatchers.IO) { MediaCache.warm(this@MainActivity) }
+                    appUpdateManager.checkForUpdate()
+                }
             }
 
             val activity = this
@@ -127,14 +137,14 @@ class MainActivity : ComponentActivity() {
         val preferences = getSharedPreferences(NOTIFICATION_PREFERENCES, MODE_PRIVATE)
         if (preferences.getBoolean(NOTIFICATION_PERMISSION_REQUESTED, false)) return
 
-        preferences.edit().putBoolean(NOTIFICATION_PERMISSION_REQUESTED, true).apply()
+        preferences.edit { putBoolean(NOTIFICATION_PERMISSION_REQUESTED, true) }
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private companion object {
-        const val DEFAULT_LANGUAGE = "en"
         const val GITHUB_REPOSITORY = "sauliiin/open-Stremio"
         const val NOTIFICATION_PREFERENCES = "playback_notifications"
         const val NOTIFICATION_PERMISSION_REQUESTED = "permission_requested"
+        const val STARTUP_SETTLE_MS = 1_500L
     }
 }

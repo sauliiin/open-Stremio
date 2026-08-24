@@ -45,13 +45,17 @@ data class GoogleAccountInfo(
  * stored below the authenticated Firebase UID for use on the user's devices.
  */
 class AuthRepository(
-    private val api: MdblistApi,
-    private val syncApi: SyncApi,
+    private val apiProvider: () -> MdblistApi,
+    private val syncApiProvider: () -> SyncApi,
     private val session: SessionStore,
     private val syncStore: SyncStore,
     private val stremioAccountStore: StremioAccountStore,
-    private val database: HubDatabase,
+    private val databaseProvider: () -> HubDatabase,
 ) {
+    private val api: MdblistApi get() = apiProvider()
+    private val syncApi: SyncApi get() = syncApiProvider()
+    private val database: HubDatabase get() = databaseProvider()
+
     private val firebase = FirebaseAuth.getInstance()
     private val googleState = MutableStateFlow(firebase.currentUser?.toAccount())
 

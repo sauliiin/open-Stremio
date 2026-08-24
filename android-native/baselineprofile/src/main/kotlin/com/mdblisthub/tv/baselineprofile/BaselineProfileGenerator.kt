@@ -38,6 +38,18 @@ class BaselineProfileGenerator {
         // Own the screen before recording anything beyond the launch itself.
         device.wait(Until.hasObject(By.pkg(PACKAGE).depth(0)), LAUNCH_TIMEOUT_MS)
         device.waitForIdle()
+    }
+
+    /** Performance-sensitive browsing belongs in the Baseline, not Startup, profile. */
+    @Test
+    fun homeBrowsing() = rule.collect(
+        packageName = PACKAGE,
+        includeInStartupProfile = false,
+    ) {
+        pressHome()
+        startActivityAndWait()
+        device.wait(Until.hasObject(By.pkg(PACKAGE).depth(0)), LAUNCH_TIMEOUT_MS)
+        device.waitForIdle()
 
         // A remote only ever moves focus, so walking the D-pad *is* this app's
         // scroll path: every press runs the column's bring-into-view spec, the

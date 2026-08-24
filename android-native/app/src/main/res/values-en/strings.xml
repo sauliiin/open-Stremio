@@ -3,15 +3,12 @@
     <string name="app_name">OmniStream</string>
     <string name="menu_home">Home</string>
     <string name="menu_search">Search</string>
-    <string name="menu_addons">Addons</string>
     <string name="menu_lists">Lists</string>
     <string name="menu_lists_done">Done</string>
     <string name="menu_theme_normal">Normal</string>
     <string name="menu_theme_cyberpunk">Cyberpunk</string>
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
-    <string name="menu_theme_cyberflix">CyberFlix</string>
-    <string name="menu_theme_optimus_prime">OptimusPrime</string>
     <string name="menu_settings">Settings</string>
     <string name="menu_exit">Exit</string>
     <string name="home_empty_title">You are connected to Google</string>
@@ -35,7 +32,6 @@
     <string name="settings_theme_group_desc">Choose the color set used throughout the app</string>
     <string name="settings_theme_autotrailer">Autotrailer on Netflixy and Primefly</string>
     <string name="settings_language">App Language</string>
-    <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_poster_landscape_transformation">Expand posters to landscape</string>
     <string name="settings_intro">Play intro when opening the app</string>
     <string name="settings_spotlight_hero">Spotlight hero</string>
@@ -164,10 +160,7 @@
 
     <!-- Home: continue watching -->
     <string name="home_resume_row">Continue watching</string>
-    <string name="home_resume_remove_title">Remove from continue watching?</string>
-    <string name="home_resume_remove_body">"%1$s" leaves the row and its saved position is cleared on your MDBList account.</string>
     <string name="home_because_you_watched">Because you watched %1$s</string>
-    <string name="home_spotlight_eyebrow">Featured for you</string>
     <string name="home_spotlight_details">View details</string>
     <string name="home_spotlight_surprise">Surprise me</string>
     <string name="home_type_show">Series</string>
@@ -210,7 +203,6 @@
     <string name="player_subtitles">Subtitles</string>
     <string name="player_audio">Audio track</string>
     <string name="player_audio_short">Audio</string>
-    <string name="player_scale_short">Stretch</string>
     <string name="player_cast">Cast</string>
     <string name="player_no_subtitle">No subtitles</string>
     <string name="player_subtitle_sync">Sync subtitles</string>
@@ -220,7 +212,6 @@
     <string name="player_subtitle_embedded">In the file</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Drag or use ◀ ▶  •  OK to finish</string>
-    <string name="player_scale">Scaling: %1$s</string>
     <string name="player_scale_fit">Normal</string>
     <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Stretch</string>
@@ -230,7 +221,10 @@
     <string name="player_track_silenced">No decoder — playing without sound</string>
     <string name="player_track_channels_mono">Mono</string>
     <string name="player_track_channels_stereo">Stereo</string>
-    <string name="player_track_channels">%1$d channels</string>
+    <plurals name="player_track_channels">
+        <item quantity="one">%1$d channel</item>
+        <item quantity="other">%1$d channels</item>
+    </plurals>
 
     <!-- Player: failure reasons -->
     <string name="player_error_no_candidates">No addon returned a playable link for this title.</string>
@@ -337,7 +331,10 @@
     <string name="addons_mdblist_catalog_explainer">The lists will be downloaded from MDBList and installed as local addons in OmniStream.</string>
     <string name="addons_sync_explainer">List names, order, visibility and deletions follow your Google account automatically. This button controls addon syncing: turn it on for both devices so they follow along too, without needing a Stremio account.</string>
     <string name="addons_preferences_error">Names, order, hidden and deleted items are still only on this device. %1$s</string>
-    <string name="addons_delta_changed">List updated — %1$d addon(s) of difference.</string>
+    <plurals name="addons_delta_changed">
+        <item quantity="one">List updated — %1$d addon changed.</item>
+        <item quantity="other">List updated — %1$d addons changed.</item>
+    </plurals>
     <string name="addons_delta_unchanged">Nothing changed — this device was already up to date.</string>
 
     <!-- Typed repository failures — see AppError.kt / AppErrorText.kt. -->
@@ -383,12 +380,13 @@
     <string name="addon_import_skip_no_manifest_id">the manifest came without an id</string>
     <string name="addon_import_skip_unparsable_url">URL that could not be parsed</string>
     <string name="addon_import_skip_invalid_manifest">invalid manifest</string>
-    <string name="addons_import_report_count">%1$d of %2$d addon(s) from the account imported.</string>
+    <plurals name="addons_import_report_count">
+        <item quantity="one">%1$d of %2$d account addon imported.</item>
+        <item quantity="other">%1$d of %2$d account addons imported.</item>
+    </plurals>
     <string name="addons_import_arrived">Imported: %1$s.</string>
     <string name="addons_mdblist_key_hint">Enter your MDBList API key to load your lists.</string>
     <string name="addons_mdblist_key_edit_hint">Enter the new MDBList API key. The old one stops working as soon as this one links.</string>
     <string name="addons_change_mdblist_key">Change key</string>
     <string name="addons_cancel">Cancel</string>
-    <string name="home_rows_unavailable">Nothing to show right now</string>
-    <string name="home_rows_unavailable_desc">Your lists did not answer. The usual cause is the MDBList account running out of daily API calls, or the key no longer working. Use the menu on the left to open Addons and check the key.</string>
 </resources>

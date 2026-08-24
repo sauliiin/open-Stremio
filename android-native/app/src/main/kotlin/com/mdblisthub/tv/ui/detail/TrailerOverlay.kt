@@ -2,11 +2,14 @@ package com.mdblisthub.tv.ui.detail
 
 import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.os.Build
 import android.view.ViewGroup
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebSettings
 import androidx.annotation.OptIn as UnstableOptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -300,6 +303,12 @@ private fun YoutubeEmbed(
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    settings.safeBrowsingEnabled = true
+                }
 
                 // A desktop user agent, deliberately. Left alone, the WebView
                 // announces itself as an Android TV, and YouTube answers
@@ -365,7 +374,9 @@ private fun YoutubeEmbed(
  * a fullscreen surface the overlay does not manage, and `rel=0` stops the
  * grid of unrelated videos from taking over when the trailer ends.
  */
-private fun embedHtml(youtubeKey: String): String = """
+private fun embedHtml(youtubeKey: String): String {
+    val encodedKey = Uri.encode(youtubeKey)
+    return """
     <!DOCTYPE html>
     <html>
       <head>
@@ -377,9 +388,10 @@ private fun embedHtml(youtubeKey: String): String = """
       </head>
       <body>
         <iframe
-          src="https://www.youtube.com/embed/$youtubeKey?autoplay=1&playsinline=1&rel=0&modestbranding=1"
+          src="https://www.youtube.com/embed/$encodedKey?autoplay=1&playsinline=1&rel=0&modestbranding=1"
           allow="autoplay; encrypted-media"
           allowfullscreen></iframe>
       </body>
     </html>
 """.trimIndent()
+}

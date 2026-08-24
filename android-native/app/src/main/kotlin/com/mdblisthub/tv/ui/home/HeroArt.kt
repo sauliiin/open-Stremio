@@ -240,9 +240,9 @@ private fun TrailerSurface(
             // Inflated, not constructed: the layout sets `surface_type` to a
             // texture view, which has no runtime setter and is the whole
             // reason the edge veil can sit above the video at all. See the XML.
-            val view = android.view.LayoutInflater
-                .from(ctx)
-                .inflate(R.layout.view_hero_trailer, null) as PlayerView
+            val parent = android.widget.FrameLayout(ctx)
+            val view = android.view.LayoutInflater.from(ctx)
+                .inflate(R.layout.view_hero_trailer, parent, false) as PlayerView
 
             view.apply {
                 this.player = player

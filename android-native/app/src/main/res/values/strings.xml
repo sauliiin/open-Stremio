@@ -3,15 +3,12 @@
     <string name="app_name">OmniStream</string>
     <string name="menu_home">Início</string>
     <string name="menu_search">Busca</string>
-    <string name="menu_addons">Addons</string>
     <string name="menu_lists">Listas</string>
     <string name="menu_lists_done">Concluir</string>
     <string name="menu_theme_normal">Normal</string>
     <string name="menu_theme_cyberpunk">Cyberpunk</string>
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
-    <string name="menu_theme_cyberflix">CyberFlix</string>
-    <string name="menu_theme_optimus_prime">OptimusPrime</string>
     <string name="menu_settings">Configurações</string>
     <string name="menu_exit">Sair</string>
     <string name="home_empty_title">Você está conectado ao Google</string>
@@ -35,7 +32,6 @@
     <string name="settings_theme_group_desc">Escolha o conjunto de cores usado em todo o app</string>
     <string name="settings_theme_autotrailer">Autotrailer no Netflixy e Primefly</string>
     <string name="settings_language">Idioma do App</string>
-    <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_poster_landscape_transformation">Expandir poster para formato paisagem</string>
     <string name="settings_intro">Reproduzir introdução ao abrir o app</string>
     <string name="settings_spotlight_hero">Hero de destaques</string>
@@ -164,10 +160,7 @@
 
     <!-- Home: continuar assistindo -->
     <string name="home_resume_row">Continuar assistindo</string>
-    <string name="home_resume_remove_title">Remover de continuar assistindo?</string>
-    <string name="home_resume_remove_body">"%1$s" sai da fileira e a posição salva é apagada na sua conta MDBList.</string>
     <string name="home_because_you_watched">Porque você assistiu %1$s</string>
-    <string name="home_spotlight_eyebrow">Destaques para você</string>
     <string name="home_spotlight_details">Ver detalhes</string>
     <string name="home_spotlight_surprise">Surpreenda-me</string>
     <string name="home_type_show">Série</string>
@@ -210,7 +203,6 @@
     <string name="player_subtitles">Legenda</string>
     <string name="player_audio">Faixa de áudio</string>
     <string name="player_audio_short">Áudio</string>
-    <string name="player_scale_short">Esticar</string>
     <string name="player_cast">Elenco</string>
     <string name="player_no_subtitle">Sem legenda</string>
     <string name="player_subtitle_sync">Sincronizar legenda</string>
@@ -220,7 +212,6 @@
     <string name="player_subtitle_embedded">Do arquivo</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Arraste ou use ◀ ▶  •  OK conclui</string>
-    <string name="player_scale">Esticar: %1$s</string>
     <string name="player_scale_fit">Normal</string>
     <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Esticar</string>
@@ -230,7 +221,10 @@
     <string name="player_track_silenced">Sem decodificador — tocando sem som</string>
     <string name="player_track_channels_mono">Mono</string>
     <string name="player_track_channels_stereo">Estéreo</string>
-    <string name="player_track_channels">%1$d canais</string>
+    <plurals name="player_track_channels">
+        <item quantity="one">%1$d canal</item>
+        <item quantity="other">%1$d canais</item>
+    </plurals>
 
     <!-- Player: motivos de falha -->
     <string name="player_error_no_candidates">Nenhum addon devolveu um link reproduzível para este título.</string>
@@ -335,9 +329,12 @@
     <string name="addons_quick_aiostreams_unconfigured">só funciona pela URL gerada</string>
     <string name="addons_stremio_import_explainer">A coleção inteira vem com as URLs configuradas e chaves de debrid. A senha vai direto para api.strem.io e não é salva; somente a chave de sessão devolvida pelo Stremio fica neste aparelho.</string>
     <string name="addons_mdblist_catalog_explainer">As listas serão baixadas da MDBList e instaladas como addons locais no OmniStream.</string>
-    <string name="addons_sync_explainer">Nomes, ordem, visibilidade e exclusões das listas acompanham automaticamente sua conta Google. Este botão controla a sincronização dos addons: ligue nos dois aparelhos para que eles também acompanhem, sem depender de conta do Stremio.</string>
+    <string name="addons_sync_explainer">Nomes, ordem, visibilidade e exclusões das listas acompanham automaticamente sua conta Google. Este botão controla a sincronização dos addons: ligue nos dois aparelhos para que os addons também acompanhem, sem depender de conta do Stremio.</string>
     <string name="addons_preferences_error">Nomes, ordem, itens ocultos e excluídos ainda estão somente neste aparelho. %1$s</string>
-    <string name="addons_delta_changed">Lista atualizada — %1$d addon(s) de diferença.</string>
+    <plurals name="addons_delta_changed">
+        <item quantity="one">Lista atualizada — %1$d addon de diferença.</item>
+        <item quantity="other">Lista atualizada — %1$d addons de diferença.</item>
+    </plurals>
     <string name="addons_delta_unchanged">Nada mudou — este aparelho já estava em dia.</string>
 
     <!-- Typed repository failures — see AppError.kt / AppErrorText.kt. -->
@@ -383,12 +380,13 @@
     <string name="addon_import_skip_no_manifest_id">o manifest veio sem id</string>
     <string name="addon_import_skip_unparsable_url">URL que não dá para interpretar</string>
     <string name="addon_import_skip_invalid_manifest">manifest inválido</string>
-    <string name="addons_import_report_count">%1$d de %2$d addon(s) da conta importado(s).</string>
+    <plurals name="addons_import_report_count">
+        <item quantity="one">%1$d de %2$d addon da conta importado.</item>
+        <item quantity="other">%1$d de %2$d addons da conta importados.</item>
+    </plurals>
     <string name="addons_import_arrived">Vieram: %1$s.</string>
     <string name="addons_mdblist_key_hint">Informe a chave da API da MDBList para carregar suas listas.</string>
     <string name="addons_mdblist_key_edit_hint">Informe a nova chave da API da MDBList. A antiga deixa de valer assim que esta for vinculada.</string>
     <string name="addons_change_mdblist_key">Trocar chave</string>
     <string name="addons_cancel">Cancelar</string>
-    <string name="home_rows_unavailable">Nada para mostrar agora</string>
-    <string name="home_rows_unavailable_desc">Suas listas não responderam. O motivo mais comum é a cota diária da API do MDBList ter acabado, ou a chave ter parado de funcionar. Use o menu à esquerda para abrir Addons e conferir a chave.</string>
 </resources>

@@ -1,8 +1,8 @@
 package com.mdblisthub.tv.player
 
 import android.content.Context
-import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -977,7 +977,7 @@ class PlaybackController(
         val stream = committedStream ?: return
         val url = stream.url ?: return
         prefetcher.start(
-            uri = Uri.parse(url),
+            uri = url.toUri(),
             // Must match what `open` puts on the MediaItem, or the two write
             // to different keys and every prefetched byte is downloaded twice.
             cacheKey = stream.filename?.takeIf { it.isNotBlank() },

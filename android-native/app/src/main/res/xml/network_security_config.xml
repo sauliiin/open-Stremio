@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config xmlns:tools="http://schemas.android.com/tools">
+    <!--
+        Third-party Stremio addons may legitimately return HTTP endpoints, so
+        cleartext cannot be disabled process-wide without breaking configured
+        sources. OmniStream's own services are still forced onto TLS below.
+    -->
+    <base-config
+        cleartextTrafficPermitted="true"
+        tools:ignore="InsecureBaseConfiguration">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">api.mdblist.com</domain>
+        <domain includeSubdomains="true">api.themoviedb.org</domain>
+        <domain includeSubdomains="true">omdbapi.com</domain>
+        <domain includeSubdomains="true">api.strem.io</domain>
+        <domain includeSubdomains="true">webservice.fanart.tv</domain>
+        <domain includeSubdomains="true">safevault-fcbdc-default-rtdb.firebaseio.com</domain>
+        <domain includeSubdomains="true">graphql.prod.api.imdb.a2z.com</domain>
+        <domain includeSubdomains="true">api.trakt.tv</domain>
+        <domain includeSubdomains="true">auth.trakt.tv</domain>
+        <domain includeSubdomains="true">api.simkl.com</domain>
+        <domain includeSubdomains="true">api.opensubtitles.com</domain>
+        <domain includeSubdomains="true">sub.wyzie.io</domain>
+        <domain includeSubdomains="true">api.github.com</domain>
+        <domain includeSubdomains="true">github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <domain includeSubdomains="true">youtube.com</domain>
+    </domain-config>
+</network-security-config>

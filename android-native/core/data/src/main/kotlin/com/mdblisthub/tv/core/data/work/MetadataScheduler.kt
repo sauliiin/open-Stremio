@@ -48,6 +48,7 @@ class MetadataScheduler(context: Context) {
     private val background = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .setRequiresBatteryNotLow(true)
+        .setRequiresDeviceIdle(true)
         .build()
 
     /** A fresh sign-in has nothing cached, so it starts everything at once. */

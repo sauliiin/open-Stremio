@@ -1179,7 +1179,7 @@ fun HomeScreen(
                                 .clipToBounds()
                             else -> Modifier.fillMaxSize()
                         }.focusProperties {
-                            enter = { lastFocusedRow ?: FocusRequester.Default }
+                            onEnter = { lastFocusedRow?.requestFocus() }
                         },
                         // Tighter than HubDimens.RowSpacing on purpose — with the
                         // smaller posters, this is what keeps two rows of a list on

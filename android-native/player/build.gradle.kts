@@ -50,4 +50,5 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.androidx.core.ktx)
     implementation(libs.coroutines.android)
+    testImplementation(libs.junit)
 }

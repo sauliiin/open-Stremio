@@ -3,15 +3,12 @@
     <string name="app_name">OmniStream</string>
     <string name="menu_home">Inicio</string>
     <string name="menu_search">Buscar</string>
-    <string name="menu_addons">Addons</string>
     <string name="menu_lists">Listas</string>
     <string name="menu_lists_done">Listo</string>
     <string name="menu_theme_normal">Normal</string>
     <string name="menu_theme_cyberpunk">Cyberpunk</string>
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
-    <string name="menu_theme_cyberflix">CyberFlix</string>
-    <string name="menu_theme_optimus_prime">OptimusPrime</string>
     <string name="menu_settings">Configuración</string>
     <string name="menu_exit">Salir</string>
     <string name="home_empty_title">Estás conectado a Google</string>
@@ -35,7 +32,6 @@
     <string name="settings_theme_group_desc">Elige el conjunto de colores usado en toda la aplicación</string>
     <string name="settings_theme_autotrailer">Autotráiler en Netflixy y Primefly</string>
     <string name="settings_language">Idioma de la app</string>
-    <string name="settings_autotrailer">Autotrailer</string>
     <string name="settings_poster_landscape_transformation">Expandir pósteres a formato horizontal</string>
     <string name="settings_intro">Reproducir introducción al abrir la app</string>
     <string name="settings_spotlight_hero">Hero de destacados</string>
@@ -145,29 +141,30 @@
 
     <plurals name="addons_mdblist_removed">
         <item quantity="one">%1$d addon de MDBList eliminado de OmniStream.</item>
+        <item quantity="many">%1$d addons de MDBList eliminados de OmniStream.</item>
         <item quantity="other">%1$d addons de MDBList eliminados de OmniStream.</item>
     </plurals>
     <plurals name="addons_mdblist_enabled">
         <item quantity="one">Listas de MDBList activadas: %1$d addon agregado.</item>
+        <item quantity="many">Listas de MDBList activadas: %1$d addons agregados.</item>
         <item quantity="other">Listas de MDBList activadas: %1$d addons agregados.</item>
     </plurals>
     <plurals name="addons_mdblist_updated">
         <item quantity="one">%1$d lista de MDBList actualizada en OmniStream.</item>
+        <item quantity="many">%1$d listas de MDBList actualizadas en OmniStream.</item>
         <item quantity="other">%1$d listas de MDBList actualizadas en OmniStream.</item>
     </plurals>
 
     <string name="addons_not_imported">No importados: </string>
     <plurals name="addons_mdblist_failed_suffix">
         <item quantity="one"> %1$d con error: %2$s.</item>
+        <item quantity="many"> %1$d con error: %2$s.</item>
         <item quantity="other"> %1$d con error: %2$s.</item>
     </plurals>
 
     <!-- Home: continuar viendo -->
     <string name="home_resume_row">Continuar viendo</string>
-    <string name="home_resume_remove_title">¿Quitar de continuar viendo?</string>
-    <string name="home_resume_remove_body">"%1$s" sale de la fila y su posición guardada se borra en tu cuenta de MDBList.</string>
     <string name="home_because_you_watched">Porque viste %1$s</string>
-    <string name="home_spotlight_eyebrow">Destacados para ti</string>
     <string name="home_spotlight_details">Ver detalles</string>
     <string name="home_spotlight_surprise">Sorpréndeme</string>
     <string name="home_type_show">Serie</string>
@@ -210,7 +207,6 @@
     <string name="player_subtitles">Subtítulos</string>
     <string name="player_audio">Pista de audio</string>
     <string name="player_audio_short">Audio</string>
-    <string name="player_scale_short">Estirar</string>
     <string name="player_cast">Reparto</string>
     <string name="player_no_subtitle">Sin subtítulos</string>
     <string name="player_subtitle_sync">Sincronizar subtítulos</string>
@@ -220,7 +216,6 @@
     <string name="player_subtitle_embedded">En el archivo</string>
     <string name="player_subtitle_option">%1$s — %2$s</string>
     <string name="player_subtitle_sync_controls">Arrastra o usa ◀ ▶  •  OK para terminar</string>
-    <string name="player_scale">Ajuste: %1$s</string>
     <string name="player_scale_fit">Normal</string>
     <string name="player_scale_zoom">Zoom</string>
     <string name="player_scale_stretch">Estirar</string>
@@ -230,12 +225,17 @@
     <string name="player_track_silenced">Sin decodificador — reproduciendo sin sonido</string>
     <string name="player_track_channels_mono">Mono</string>
     <string name="player_track_channels_stereo">Estéreo</string>
-    <string name="player_track_channels">%1$d canales</string>
+    <plurals name="player_track_channels">
+        <item quantity="one">%1$d canal</item>
+        <item quantity="many">%1$d canales</item>
+        <item quantity="other">%1$d canales</item>
+    </plurals>
 
     <!-- Player: motivos de falla -->
     <string name="player_error_no_candidates">Ningún addon devolvió un enlace reproducible para este título.</string>
     <plurals name="player_error_all_failed">
         <item quantity="one">Se intentó la única fuente disponible, dos veces, y no abrió.</item>
+        <item quantity="many">Se intentaron las %1$d fuentes disponibles, dos veces, y ninguna abrió.</item>
         <item quantity="other">Se intentaron las %1$d fuentes disponibles, dos veces, y ninguna abrió.</item>
     </plurals>
     <string name="player_error_decoy_streak">Las fuentes están devolviendo un aviso en lugar de la película, lo que casi siempre significa que el proveedor debrid está limitando las solicitudes. Espera unos minutos e inténtalo de nuevo.</string>
@@ -337,7 +337,11 @@
     <string name="addons_mdblist_catalog_explainer">Las listas se descargarán de MDBList y se instalarán como addons locales en OmniStream.</string>
     <string name="addons_sync_explainer">Los nombres, el orden, la visibilidad y las eliminaciones de las listas siguen automáticamente tu cuenta de Google. Este botón controla la sincronización de addons: actívalo en ambos dispositivos para que también se mantengan al día, sin necesitar una cuenta de Stremio.</string>
     <string name="addons_preferences_error">Los nombres, el orden y los elementos ocultos y eliminados siguen estando solo en este dispositivo. %1$s</string>
-    <string name="addons_delta_changed">Lista actualizada — %1$d addon(s) de diferencia.</string>
+    <plurals name="addons_delta_changed">
+        <item quantity="one">Lista actualizada — %1$d addon diferente.</item>
+        <item quantity="many">Lista actualizada — %1$d addons diferentes.</item>
+        <item quantity="other">Lista actualizada — %1$d addons diferentes.</item>
+    </plurals>
     <string name="addons_delta_unchanged">Nada cambió — este dispositivo ya estaba al día.</string>
 
     <!-- Typed repository failures — see AppError.kt / AppErrorText.kt. -->
@@ -383,12 +387,14 @@
     <string name="addon_import_skip_no_manifest_id">el manifest llegó sin id</string>
     <string name="addon_import_skip_unparsable_url">URL que no se pudo interpretar</string>
     <string name="addon_import_skip_invalid_manifest">manifest inválido</string>
-    <string name="addons_import_report_count">%1$d de %2$d addon(s) de la cuenta importado(s).</string>
+    <plurals name="addons_import_report_count">
+        <item quantity="one">%1$d de %2$d addon de la cuenta importado.</item>
+        <item quantity="many">%1$d de %2$d addons de la cuenta importados.</item>
+        <item quantity="other">%1$d de %2$d addons de la cuenta importados.</item>
+    </plurals>
     <string name="addons_import_arrived">Importados: %1$s.</string>
     <string name="addons_mdblist_key_hint">Ingresa tu clave de API de MDBList para cargar tus listas.</string>
     <string name="addons_mdblist_key_edit_hint">Ingresa la nueva clave de API de MDBList. La anterior deja de funcionar en cuanto esta se vincule.</string>
     <string name="addons_change_mdblist_key">Cambiar clave</string>
     <string name="addons_cancel">Cancelar</string>
-    <string name="home_rows_unavailable">No hay nada para mostrar ahora</string>
-    <string name="home_rows_unavailable_desc">Tus listas no respondieron. La causa más común es que la cuenta de MDBList se quedó sin llamadas diarias a la API, o que la clave dejó de funcionar. Usa el menú de la izquierda para abrir Addons y revisar la clave.</string>
 </resources>

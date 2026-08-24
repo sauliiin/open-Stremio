@@ -2,10 +2,11 @@ package com.mdblisthub.tv.update
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.core.content.edit
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -68,6 +69,7 @@ class AppUpdateManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val json = Json { ignoreUnknownKeys = true }
     private val updateDirectory = File(activity.cacheDir, "updates")
+    private val preferences = activity.getSharedPreferences(UPDATE_PREFERENCES, Activity.MODE_PRIVATE)
 
     private val _state = MutableStateFlow<UpdateUiState>(UpdateUiState.Hidden)
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
@@ -77,11 +79,34 @@ class AppUpdateManager(
     private var pendingRelease: ReleaseInfo? = null
     private var waitingForInstallPermission = false
 
-    fun checkForUpdate() {
+    fun checkForUpdate(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - preferences.getLong(LAST_CHECK_AT, 0L) < CHECK_INTERVAL_MS) return
+
         scope.launch {
             val release = runCatching { withContext(Dispatchers.IO) { fetchLatestRelease() } }
                 .getOrNull()
                 ?: return@launch // Startup checks stay quiet when the device is offline.
+            preferences.edit { putLong(LAST_CHECK_AT, System.currentTimeMillis()) }
+
+            val installedVersion = runCatching {
+                activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
+            }.getOrDefault("")
+            val versionOrder = compareVersions(release.tag, installedVersion)
+
+            // A newer semantic version needs no APK-sized hash to prove it.
+            if (versionOrder != null && versionOrder > 0) {
+                _state.value = UpdateUiState.Available(release)
+                return@launch
+            }
+            // Never offer the latest published release as a downgrade.
+            if (versionOrder != null && versionOrder < 0) return@launch
+
+            val publishedDigests = release.assets.mapNotNull { it.sha256 }
+            // An equal or unparseable version without a published digest gives
+            // us no evidence that the installed APK differs. Staying quiet is
+            // safer than offering the same release on every cold start.
+            if (publishedDigests.isEmpty()) return@launch
 
             val installedDigest = runCatching {
                 withContext(Dispatchers.IO) {
@@ -89,19 +114,15 @@ class AppUpdateManager(
                 }
             }.getOrNull()
 
-            val isPublishedAsset = installedDigest != null && release.assets.any { asset ->
-                asset.sha256?.equals(installedDigest, ignoreCase = true) == true
+            val isPublishedAsset = installedDigest != null && publishedDigests.any {
+                it.equals(installedDigest, ignoreCase = true)
             }
-            val installedVersion = runCatching {
-                activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
-            }.getOrDefault("")
 
             // A higher local version is a development build ahead of the last
             // release and must never be downgraded. Equal versions with a
             // different digest are offered because GitHub permits replacing a
             // release asset without changing its tag.
-            val versionOrder = compareVersions(release.tag, installedVersion)
-            if (!isPublishedAsset && (versionOrder == null || versionOrder >= 0)) {
+            if (!isPublishedAsset) {
                 _state.value = UpdateUiState.Available(release)
             }
         }
@@ -141,18 +162,23 @@ class AppUpdateManager(
     fun retry() {
         val failure = _state.value as? UpdateUiState.Failed
         val release = failure?.release
-        if (release == null) checkForUpdate() else downloadAndInstall(release)
+        if (release == null) checkForUpdate(force = true) else downloadAndInstall(release)
     }
 
     fun openInstallPermissionSettings() {
         val release = pendingRelease ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            waitingForInstallPermission = false
+            pendingFile?.let { launchPackageInstaller(it, release) }
+            return
+        }
         waitingForInstallPermission = true
         _state.value = UpdateUiState.AwaitingInstallPermission(release)
         runCatching {
             activity.startActivity(
                 Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                    Uri.parse("package:${activity.packageName}"),
+                    "package:${activity.packageName}".toUri(),
                 ),
             )
         }.onFailure { error ->
@@ -277,10 +303,11 @@ class AppUpdateManager(
                 }
             }
             require(downloaded > 0L) { "Downloaded APK is empty" }
-            asset.sha256?.let { expected ->
-                require(sha256(partial).equals(expected, ignoreCase = true)) {
-                    "Downloaded APK failed SHA-256 verification"
-                }
+            val expected = requireNotNull(asset.sha256) {
+                "Release asset has no published SHA-256 digest"
+            }
+            require(sha256(partial).equals(expected, ignoreCase = true)) {
+                "Downloaded APK failed SHA-256 verification"
             }
             if (destination.exists()) destination.delete()
             require(partial.renameTo(destination)) { "Could not finalize downloaded APK" }
@@ -301,6 +328,9 @@ class AppUpdateManager(
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         const val NETWORK_TIMEOUT_MS = 20_000
         const val PROGRESS_STEP_BYTES = 128L * 1024L
+        const val UPDATE_PREFERENCES = "app-update-checks"
+        const val LAST_CHECK_AT = "last-successful-check-at"
+        const val CHECK_INTERVAL_MS = 24L * 60L * 60L * 1_000L
     }
 }
 

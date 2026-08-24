@@ -667,7 +667,12 @@ private fun StremioSyncCard(
         state.error?.let { InlineMessage(it.text(), isError = true) }
         state.report?.let { report ->
             InlineMessage(
-                stringResource(R.string.addons_import_report_count, report.imported.size, report.received),
+                pluralStringResource(
+                    R.plurals.addons_import_report_count,
+                    report.imported.size,
+                    report.imported.size,
+                    report.received,
+                ),
                 isError = false,
             )
             if (report.imported.isNotEmpty()) {
@@ -841,7 +846,9 @@ private fun FirebaseSyncCard(
         }
         state.lastDelta?.let { delta ->
             InlineMessage(
-                if (delta > 0) stringResource(R.string.addons_delta_changed, delta)
+                if (delta > 0) {
+                    pluralStringResource(R.plurals.addons_delta_changed, delta, delta)
+                }
                 else stringResource(R.string.addons_delta_unchanged),
                 isError = false,
             )

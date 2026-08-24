@@ -53,13 +53,12 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
@@ -82,8 +81,10 @@ import kotlinx.coroutines.isActive
  * it", and the hero's lower edge is where that line falls.
  */
 @Composable
-internal fun spotlightHeroHeight(): androidx.compose.ui.unit.Dp =
-    LocalConfiguration.current.screenHeightDp.dp * HERO_HEIGHT_FRACTION
+internal fun spotlightHeroHeight(): androidx.compose.ui.unit.Dp {
+    val windowHeightPx = LocalWindowInfo.current.containerSize.height
+    return with(LocalDensity.current) { windowHeightPx.toDp() } * HERO_HEIGHT_FRACTION
+}
 
 /**
  * The site's hero, on a television.
@@ -91,7 +92,7 @@ internal fun spotlightHeroHeight(): androidx.compose.ui.unit.Dp =
  * This is a direct port of `mdblist-hub`'s `app-hero` — the block that opens
  * openstream.com.br — rather than a Compose design that resembles it: the
  * same stack (artwork under a two-part veil, copy along the bottom-left), the
- * same order within the copy (eyebrow, title, meta line, synopsis, two pill
+ * same order within the copy (title, meta line, synopsis, two pill
  * actions), and the same camera move over the artwork. Where the web build's
  * `:host-context(html.tv)` block already answers a question for the ten-foot
  * case — a gentler pan, a veil pulled back to the corners so the artwork is
@@ -179,9 +180,6 @@ fun SpotlightHero(
                 HeroSkeleton()
                 return@Column
             }
-
-            HeroEyebrow()
-            Spacer(Modifier.height(14.dp))
 
             Text(
                 text = item.title,
@@ -343,31 +341,6 @@ private fun HeroVeil() {
     )
 }
 
-/**
- * The web hero's `.eyebrow`: a small capitalised pill in the accent colour.
- *
- * Two fills, where the CSS has one. There the pill is a 16% accent wash over
- * `backdrop-filter: blur(8px)`, and the blur is doing half the work — it is
- * what stops the label dissolving into a bright backdrop, because whatever is
- * behind arrives smeared and low-contrast. Compose has no backdrop filter, so
- * the blur is traded for a scrim in the theme's own background colour, laid
- * under the same accent wash. Same job, same look, one draw call more.
- */
-@Composable
-private fun HeroEyebrow() {
-    Text(
-        text = stringResource(R.string.home_spotlight_eyebrow).uppercase(),
-        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 2.sp),
-        color = HubColors.AccentSoft,
-        modifier = Modifier
-            .clip(CircleShape)
-            .background(HubColors.Background.copy(alpha = 0.55f))
-            .background(HubColors.Accent.copy(alpha = 0.16f))
-            .border(1.dp, HubColors.Accent.copy(alpha = 0.34f), CircleShape)
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    )
-}
-
 /** `.meta`: score, year, a dot, the type, then up to three genres. */
 @Composable
 private fun SpotlightMeta(item: MediaItem, detail: MediaDetail?) {
@@ -502,11 +475,10 @@ private fun HeroPill(
         label = "hero-pill-lift",
     )
 
-    // The two accents the palette already names, rather than the site's own
-    // purple: `Accent` is what every theme calls its primary, and the focused
-    // state moves to `AccentSoft` because that is what the palette means by
-    // "the same colour, brighter".
-    val base = if (focused) HubColors.AccentSoft else HubColors.Accent
+    // The primary action rests on the lighter accent and becomes the solid,
+    // darker accent on focus. This keeps the focused state visually anchored
+    // instead of flashing brighter than the hero copy around it.
+    val base = if (focused) HubColors.Accent else HubColors.AccentSoft
     val fill = when {
         primary -> Brush.linearGradient(listOf(base, base.lighten(PILL_HIGHLIGHT)))
         // The ghost pill is the theme's text colour at low alpha, not white:

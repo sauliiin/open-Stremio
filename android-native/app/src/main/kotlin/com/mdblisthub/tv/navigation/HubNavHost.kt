@@ -1,4 +1,5 @@
 package com.mdblisthub.tv.navigation
+import androidx.activity.compose.ReportDrawnWhen
 import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 
@@ -40,6 +41,7 @@ import com.mdblisthub.tv.ui.search.SearchScreen
 import com.mdblisthub.tv.ui.settings.SettingsScreen
 import com.mdblisthub.tv.ui.welcome.WelcomeScreen
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -107,15 +109,29 @@ fun HubNavHost(graph: DataGraph) {
     // downstream can assume the session is real.
     LaunchedEffect(Unit) {
         graph.auth.restore()
-        graph.listPreferencesSync.restore()
-        graph.firebaseSync.restore()
-        graph.scheduler.syncNow()
         val signedIn = graph.auth.signedIn.first()
         val setupCompleted = graph.uiPreferences.setupCompleted.first()
         startDestination = if (signedIn) {
             if (setupCompleted) Routes.HOME else Routes.WELCOME
         } else Routes.LOGIN
     }
+
+    // Cloud reconciliation is important, but it does not decide which screen
+    // is first. Starting it after the destination has drawn keeps Firebase,
+    // Room and WorkManager off the critical first-frame path while preserving
+    // the same eventual sync behaviour for signed-in users.
+    LaunchedEffect(startDestination) {
+        val destination = startDestination
+        if (destination != Routes.HOME && destination != Routes.WELCOME) return@LaunchedEffect
+        delay(BACKGROUND_RESTORE_DELAY_MS)
+        launch { graph.listPreferencesSync.restore() }
+        launch { graph.firebaseSync.restore() }
+        launch { graph.scheduler.syncNow() }
+    }
+
+    // TTFD now means the first real destination is known and can be drawn,
+    // rather than merely the Activity's empty window becoming visible.
+    ReportDrawnWhen { startDestination != null }
 
     val start = startDestination
     if (start == null) {
@@ -355,3 +371,5 @@ fun HubNavHost(graph: DataGraph) {
         }
     }
 }
+
+private const val BACKGROUND_RESTORE_DELAY_MS = 1_500L

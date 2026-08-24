@@ -528,11 +528,9 @@ fun SettingsScreen(
                     .fillMaxHeight()
                     .focusGroup()
                     .focusProperties {
-                        exit = { direction ->
-                            if (direction == FocusDirection.Left) {
-                                railFocusRequesters.getValue(selectedSection)
-                            } else {
-                                FocusRequester.Default
+                        onExit = {
+                            if (requestedFocusDirection == FocusDirection.Left) {
+                                railFocusRequesters.getValue(selectedSection).requestFocus()
                             }
                         }
                     },
