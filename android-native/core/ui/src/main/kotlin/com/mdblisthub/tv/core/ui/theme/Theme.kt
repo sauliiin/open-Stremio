@@ -7,12 +7,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
+import com.mdblisthub.tv.core.ui.R
 
 /**
  * Type sized for a couch.
@@ -21,7 +24,14 @@ import androidx.tv.material3.darkColorScheme
  * a 1080p panel three metres away: what reads as generous on a monitor is
  * barely legible from a sofa, and Kodi's skins are sized the same way.
  */
-private val HubTypography = Typography(
+private val InterFontFamily = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
+private val BaseHubTypography = Typography(
     displayLarge = TextStyle(fontSize = 48.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp),
     headlineLarge = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold),
     headlineMedium = TextStyle(fontSize = 26.sp, fontWeight = FontWeight.SemiBold),
@@ -31,6 +41,25 @@ private val HubTypography = Typography(
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp),
     labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp),
     labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
+)
+
+/** Applies Inter to every Material text role while preserving the TV-specific scale above. */
+private val HubTypography = BaseHubTypography.copy(
+    displayLarge = BaseHubTypography.displayLarge.copy(fontFamily = InterFontFamily),
+    displayMedium = BaseHubTypography.displayMedium.copy(fontFamily = InterFontFamily),
+    displaySmall = BaseHubTypography.displaySmall.copy(fontFamily = InterFontFamily),
+    headlineLarge = BaseHubTypography.headlineLarge.copy(fontFamily = InterFontFamily),
+    headlineMedium = BaseHubTypography.headlineMedium.copy(fontFamily = InterFontFamily),
+    headlineSmall = BaseHubTypography.headlineSmall.copy(fontFamily = InterFontFamily),
+    titleLarge = BaseHubTypography.titleLarge.copy(fontFamily = InterFontFamily),
+    titleMedium = BaseHubTypography.titleMedium.copy(fontFamily = InterFontFamily),
+    titleSmall = BaseHubTypography.titleSmall.copy(fontFamily = InterFontFamily),
+    bodyLarge = BaseHubTypography.bodyLarge.copy(fontFamily = InterFontFamily),
+    bodyMedium = BaseHubTypography.bodyMedium.copy(fontFamily = InterFontFamily),
+    bodySmall = BaseHubTypography.bodySmall.copy(fontFamily = InterFontFamily),
+    labelLarge = BaseHubTypography.labelLarge.copy(fontFamily = InterFontFamily),
+    labelMedium = BaseHubTypography.labelMedium.copy(fontFamily = InterFontFamily),
+    labelSmall = BaseHubTypography.labelSmall.copy(fontFamily = InterFontFamily),
 )
 
 /** Overscan inset. TVs still crop the edges, and Kodi budgets for it too. */

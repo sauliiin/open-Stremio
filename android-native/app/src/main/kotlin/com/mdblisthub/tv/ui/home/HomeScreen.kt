@@ -365,12 +365,12 @@ fun HomeScreen(
     val spotlightOwnsViewport = hasSpotlightHero && !showFocusedHeroForRows
     val focusedShelfHeroAlpha by animateFloatAsState(
         targetValue = if (showFocusedHeroForRows || !hasSpotlightHero) 1f else 0f,
-        animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+        animationSpec = tween(HERO_CROSSFADE_DURATION_MS, easing = HubMotion.StandardEasing),
         label = "focused-shelf-hero-alpha",
     )
     val spotlightHeroAlpha by animateFloatAsState(
         targetValue = if (spotlightExitPending) 0f else 1f,
-        animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
+        animationSpec = tween(HERO_CROSSFADE_DURATION_MS, easing = HubMotion.StandardEasing),
         label = "spotlight-exit-alpha",
         finishedListener = { alpha ->
             if (
@@ -1215,6 +1215,7 @@ fun HomeScreen(
                                     onInitialFocusHandled = onInitialNormalFocusHandled,
                                     primaryFocusRequester = heroPrimaryFocusRequester,
                                     modifier = Modifier
+                                        .animateItem()
                                         .alpha(spotlightHeroAlpha)
                                         .onFocusChanged { focus ->
                                             if (focus.hasFocus) {
@@ -1233,7 +1234,9 @@ fun HomeScreen(
                         // Normal joins the themes whose hero is fixed above the shelves.
                         if (hasHeroItem) {
                             item(key = "hero") {
-                                HeroPanel(viewModel)
+                                Box(modifier = Modifier.animateItem()) {
+                                    HeroPanel(viewModel)
+                                }
                             }
                         }
 
@@ -1244,6 +1247,7 @@ fun HomeScreen(
                             onDispose { if (lastFocusedRow === resumeRowFocus) lastFocusedRow = null }
                         }
                         MediaRow(
+                            modifier = Modifier.animateItem(),
                             title = stringResource(R.string.home_resume_row),
                             items = resumeCards,
                             // `card` alone cannot say which episode this is —
@@ -1342,6 +1346,7 @@ fun HomeScreen(
                             val list = row.list
                             val itemFlow = remember(list.id) { viewModel.itemsFor(list.id) }
                             ListRow(
+                                modifier = Modifier.animateItem(),
                                 list = list,
                                 itemFlow = itemFlow,
                                 isEditMode = isEditMode,
@@ -1377,6 +1382,7 @@ fun HomeScreen(
                                 viewModel.itemsForCatalog(catalog)
                             }
                             AddonCatalogRow(
+                                modifier = Modifier.animateItem(),
                                 catalog = catalog,
                                 itemFlow = itemFlow,
                                 isEditMode = isEditMode,
@@ -1417,6 +1423,7 @@ fun HomeScreen(
                             // however unchanged the items were.
                             val cards = remember(feed.items) { feed.items.map { it.media } }
                             MediaRow(
+                                modifier = Modifier.animateItem(),
                                 title = feed.name,
                                 items = cards,
                                 isEditMode = isEditMode,
@@ -1493,6 +1500,7 @@ fun HomeScreen(
                             onDispose { if (lastFocusedRow === bywRowFocus) lastFocusedRow = null }
                         }
                         MediaRow(
+                            modifier = Modifier.animateItem(),
                             title = stringResource(R.string.home_because_you_watched, row.seedTitle),
                             items = row.items,
                             onItemClick = onOpenTitle,
@@ -1529,6 +1537,7 @@ fun HomeScreen(
 
 @Composable
 private fun AddonCatalogRow(
+    modifier: Modifier = Modifier,
     catalog: AddonCatalog,
     itemFlow: StateFlow<List<MediaItem>>,
     isEditMode: Boolean,
@@ -1554,6 +1563,7 @@ private fun AddonCatalogRow(
     val items by itemFlow.collectAsStateWithLifecycle()
     LaunchedEffect(catalog.addonBase, catalog.key) { onEnsure() }
     MediaRow(
+        modifier = modifier,
         title = catalog.name,
         items = items,
         isEditMode = isEditMode,
@@ -1603,6 +1613,7 @@ private fun AddonCatalog.mdblistMirrorListId(): Long? {
  */
 @Composable
 private fun ListRow(
+    modifier: Modifier = Modifier,
     list: MediaList,
     itemFlow: StateFlow<List<MediaItem>>,
     isEditMode: Boolean = false,
@@ -1631,6 +1642,7 @@ private fun ListRow(
     LaunchedEffect(list.id) { onEnsure() }
 
     MediaRow(
+        modifier = modifier,
         title = list.name,
         items = items,
         isEditMode = isEditMode,
@@ -1948,6 +1960,9 @@ private const val RAIL_EXPAND_MS = 250L
 
 /** Steady-state cadence once real content holds focus — cheap, two boolean reads. */
 private const val POLL_MS = 1_000L
+
+/** Crossfade between the opening spotlight and the focused shelf hero. */
+private const val HERO_CROSSFADE_DURATION_MS = 500
 
 /**
  * Share of the hero's width CyberFlix gives the artwork block.

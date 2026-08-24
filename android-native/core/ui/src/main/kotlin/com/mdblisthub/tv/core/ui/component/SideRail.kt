@@ -121,7 +121,7 @@ fun SideRail(
             // bleeding through its labels and icons.
             .background(HubColors.Background)
             .padding(vertical = 30.dp, horizontal = if (expanded) 18.dp else 0.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
     ) {
         items.forEach { item ->
             RailRow(
