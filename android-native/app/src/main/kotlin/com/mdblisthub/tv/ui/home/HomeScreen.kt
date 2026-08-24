@@ -705,6 +705,12 @@ fun HomeScreen(
                     ?: onChooseSource(target.item, target.season, target.episode)
                 optionTarget = null
             },
+            onReset = target.resumePoint?.let { point ->
+                {
+                    viewModel.resetResumePoint(point)
+                    optionTarget = null
+                }
+            },
             onDismiss = { optionTarget = null },
         )
     }

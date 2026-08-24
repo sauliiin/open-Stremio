@@ -40,6 +40,7 @@ fun MediaOptionsDialog(
     onInfo: () -> Unit,
     onToggleWatched: () -> Unit,
     onChooseSource: () -> Unit,
+    onReset: (() -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val firstActionFocus = remember { FocusRequester() }
@@ -107,6 +108,15 @@ fun MediaOptionsDialog(
                             else R.string.detail_mark_watched,
                         ),
                     )
+                }
+                if (onReset != null) {
+                    Button(
+                        onClick = onReset,
+                        scale = actionScale,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.media_options_reset))
+                    }
                 }
             }
         }

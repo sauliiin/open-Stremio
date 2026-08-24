@@ -271,7 +271,7 @@ fun PlayerScreen(
     // Set the moment OK/Enter wakes a hidden OSD, so focus can land on Play
     // as soon as it composes — the button does not exist yet in the same
     // frame the key press arrives in.
-    var wantsPlayFocus by remember { mutableStateOf(false) }
+    var wantsPlayFocus by remember { mutableStateOf(true) }
     // Direction Down has a different intent from OK: it means "enter the
     // controls", so land directly on the first action row (Subtitles) rather
     // than making the viewer press Down a second time from Play.
@@ -431,7 +431,7 @@ fun PlayerScreen(
                     // just did; and only once the OSD is already up with
                     // nothing focused does the old "OK toggles play" shortcut
                     // apply.
-                    Key.DirectionCenter, Key.Enter, Key.Spacebar -> {
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Spacebar -> {
                         when {
                             controlsFocused -> false
                             wasHidden -> {
@@ -620,6 +620,7 @@ fun PlayerScreen(
                     playback.currentSubtitleId != NO_TRACK,
                 scaleType = playback.scaleType,
                 onTogglePlay = { viewModel.controller.togglePlayPause(); poke() },
+                onSeek = { deltaMs -> viewModel.controller.seekBy(deltaMs); poke() },
                 onCycleScale = { viewModel.controller.cycleScale(); poke() },
                 onOpenSubtitles = {
                     castRailOpen = false
@@ -1142,6 +1143,7 @@ private fun PlayerOsd(
     subtitleActive: Boolean,
     scaleType: VideoScaleType,
     onTogglePlay: () -> Unit,
+    onSeek: (Long) -> Unit,
     onCycleScale: () -> Unit,
     onOpenSubtitles: () -> Unit,
     onOpenAudio: () -> Unit,
@@ -1155,8 +1157,6 @@ private fun PlayerOsd(
     firstFlatControlFocusRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
-    val progressBarFocusRequester = remember { FocusRequester() }
-
     // Collected here rather than passed in as two Longs. The tick is twice a
     // second while the controls are up, and this is the deepest point that
     // still covers all three readers below — the elapsed label, the bar and
@@ -1198,22 +1198,9 @@ private fun PlayerOsd(
                 cast = cast,
                 preview = castPreview,
                 onPreview = onPreviewCast,
-                onMoveDown = { progressBarFocusRequester.requestFocus() },
+                onMoveDown = { playButtonFocusRequester.requestFocus() },
             )
         }
-
-        val progressBarInteraction = remember { MutableInteractionSource() }
-        val progressBarFocused by progressBarInteraction.collectIsFocusedAsState()
-        val progressBarHeight by animateDpAsState(
-            if (progressBarFocused) 10.dp else 5.dp,
-            focusTween(),
-            label = "progress-bar-height",
-        )
-        val progressBarGlow by animateDpAsState(
-            if (progressBarFocused) 3.dp else 0.dp,
-            focusTween(),
-            label = "progress-bar-glow",
-        )
 
         BoxWithConstraints(
             modifier = Modifier.fillMaxWidth(),
@@ -1232,7 +1219,14 @@ private fun PlayerOsd(
                     .onKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                         when (event.key) {
-                            Key.DirectionRight -> progressBarFocusRequester.requestFocus()
+                            Key.DirectionLeft -> {
+                                onSeek(-SEEK_STEP_MS)
+                                true
+                            }
+                            Key.DirectionRight -> {
+                                onSeek(SEEK_STEP_MS)
+                                true
+                            }
                             Key.DirectionDown -> firstFlatControlFocusRequester.requestFocus()
                             else -> false
                         }
@@ -1249,24 +1243,9 @@ private fun PlayerOsd(
             Box(
                 Modifier
                     .weight(1f)
-                    .height(progressBarHeight)
+                    .height(5.dp)
                     .clip(RoundedCornerShape(HubShapes.Pill))
                     .background(Color(0xFFD9D9D9).copy(alpha = 0.6f))
-                    .border(
-                        width = progressBarGlow,
-                        color = if (progressBarFocused) HubColors.Accent else Color.Transparent,
-                        shape = RoundedCornerShape(HubShapes.Pill),
-                    )
-                    .focusRequester(progressBarFocusRequester)
-                    .focusable(interactionSource = progressBarInteraction)
-                    .onKeyEvent { event ->
-                        if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
-                        when (event.key) {
-                            Key.DirectionUp -> playButtonFocusRequester.requestFocus()
-                            Key.DirectionDown -> firstFlatControlFocusRequester.requestFocus()
-                            else -> false
-                        }
-                    },
             ) {
                 val fraction = if (durationMs > 0) {
                     (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
@@ -1276,7 +1255,7 @@ private fun PlayerOsd(
                         .fillMaxHeight()
                         .fillMaxWidth(fraction)
                         .clip(RoundedCornerShape(HubShapes.Pill))
-                        .background(if (progressBarFocused) HubColors.AccentSoft else HubColors.Accent),
+                        .background(HubColors.Accent),
                 )
             }
             Text(
@@ -1295,7 +1274,7 @@ private fun PlayerOsd(
                 .offset(y = (-4).dp)
                 .onKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
-                        progressBarFocusRequester.requestFocus(); true
+                        playButtonFocusRequester.requestFocus(); true
                     } else false
                 },
             horizontalArrangement = Arrangement.Center,

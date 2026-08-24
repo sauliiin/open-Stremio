@@ -686,6 +686,40 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch { graph.playback.clear(point.toTarget()) }
     }
 
+    /**
+     * Returns a continue-watching entry to a never-played state.
+     *
+     * Playback and watched history are separate records at MDBList, Trakt and
+     * Simkl. Deleting only the paused session removes the Home card but can
+     * leave the title/episode marked as watched, so Reset deliberately clears
+     * both records and updates their Room mirrors as well.
+     */
+    fun resetResumePoint(point: ResumePoint) {
+        viewModelScope.launch {
+            graph.playback.clear(point.toTarget())
+
+            val season = point.season
+            val episode = point.episode
+            if (point.type == MediaType.SHOW && season != null && episode != null) {
+                graph.library.setEpisodeWatched(
+                    showTmdbId = point.tmdbId ?: 0,
+                    showImdbId = point.imdbId,
+                    season = season,
+                    episode = episode,
+                    watched = false,
+                )
+            } else if (point.tmdbId != null || point.imdbId != null) {
+                graph.library.toggle(
+                    bucket = LibraryBucket.WATCHED,
+                    type = point.type,
+                    tmdbId = point.tmdbId ?: 0,
+                    imdbId = point.imdbId,
+                    add = false,
+                )
+            }
+        }
+    }
+
     /** Sets the watched state of either a title or one concrete episode. */
     fun setWatched(
         item: MediaItem,

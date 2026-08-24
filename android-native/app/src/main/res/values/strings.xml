@@ -82,6 +82,7 @@
     <string name="home_item_options_title">Opções</string>
     <string name="media_options_play">Reproduzir</string>
     <string name="media_options_info">Informações</string>
+    <string name="media_options_reset">Reset</string>
     <string name="detail_clear_progress">Resetar Progresso</string>
     <string name="detail_reviews">Reviews</string>
     <string name="search_title">Buscar no TMDB</string>

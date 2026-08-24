@@ -106,9 +106,11 @@ class PlaybackRepository(
     suspend fun clear(target: ScrobbleTarget): Result<Unit> {
         val key = keyFor(target)
         val stored = dao.resumePoint(key)
-        val result = runCatching { source().clear(target, stored?.playbackId) }
+        // Make the explicit user action visible immediately. A failed remote
+        // delete is reconciled by the next refresh, as documented above, but
+        // must not keep a card on Home while the network request is in flight.
         dao.deleteResumePoint(key)
-        return result
+        return runCatching { source().clear(target, stored?.playbackId) }
     }
 
     /**

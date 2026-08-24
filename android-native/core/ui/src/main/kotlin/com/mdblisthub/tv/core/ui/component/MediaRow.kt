@@ -90,10 +90,10 @@ private class LeadingColumnScroll(private val insetPx: Float) : BringIntoViewSpe
 /**
  * A list, rendered as a row of posters.
  *
- * Every vertical entry starts at the first card. Rows deliberately do not
- * restore their previous horizontal position: otherwise entering a shelf
- * from its fourth card once makes every later Up/Down jump return to that
- * stale fourth position, even when the viewer is arriving from another row.
+ * Each shelf remembers its own last focused card. This is important for D-pad
+ * navigation: leaving shelf two from item four and returning from shelf one
+ * must restore item four, rather than using shelf one's horizontal position or
+ * advancing to the next card through geometric focus search.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -158,9 +158,16 @@ fun MediaRow(
 ) {
     if (items.isEmpty() && !isEditMode) return
 
-    val firstItemFocusRequester = remember { FocusRequester() }
+    // Keep a requester for every position, not just for the first card. The
+    // focus system's geometry can otherwise select the next card when a
+    // different shelf is left and re-entered.
+    val itemFocusRequesters = remember(items.size) {
+        List(items.size) { FocusRequester() }
+    }
+    val lastFocusedIndex = remember(items.size) { androidx.compose.runtime.mutableIntStateOf(0) }
+    val firstItemFocusRequester = itemFocusRequesters.firstOrNull()
     LaunchedEffect(requestInitialFocus) {
-        if (requestInitialFocus && firstItemFocusRequester.requestFocus()) {
+        if (requestInitialFocus && firstItemFocusRequester?.requestFocus() == true) {
             onInitialFocusHandled()
         }
     }
@@ -277,20 +284,24 @@ fun MediaRow(
                     .fillMaxWidth()
                     .let { if (rowFocusRequester != null) it.focusRequester(rowFocusRequester) else it }
                     .focusProperties {
-                        onEnter = { firstItemFocusRequester.requestFocus() }
+                        onEnter = {
+                            itemFocusRequesters
+                                .getOrNull(lastFocusedIndex.intValue)
+                                ?.requestFocus() == true
+                        }
                     },
             ) {
                 itemsIndexed(items, key = key) { index, item ->
                     PosterCard(
                         item = item,
-                        // This requester is always attached, not only during
-                        // the initial app focus, because every later vertical
-                        // entry into the row is explicitly reset to item zero.
+                        // The first item is the initial screen entry target;
+                        // later returns are handled by this row's restorer.
                         initialFocusRequester = firstItemFocusRequester.takeIf { index == 0 },
                         onClick = {
                             onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
                         },
                         onFocused = { focused ->
+                            lastFocusedIndex.intValue = index
                             onItemFocused(focused)
                             // Paging off focus rather than off scroll position:
                             // on a remote the two are the same thing, and focus
@@ -308,7 +319,9 @@ fun MediaRow(
                         } else {
                             null
                         },
-                        modifier = Modifier.focusProperties { canFocus = !isEditMode },
+                        modifier = Modifier
+                            .focusRequester(itemFocusRequesters[index])
+                            .focusProperties { canFocus = !isEditMode },
                     )
                 }
             }
