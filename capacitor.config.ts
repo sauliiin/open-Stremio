@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   appId: 'com.mdblisthub.app',
   appName: 'mdblist hub',
   // O site vive no repo irmão ../mdblist-hub; `cap sync` lê o build dele daqui.
-  webDir: '../mdblist-hub/dist/mdblist-hub/browser',
+  webDir: '../../mdblist-hub/dist/mdblist-hub/browser',
   backgroundColor: '#07080c',
   android: {
     // Some personal Stremio addons return direct HTTP video URLs.

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mdblisthub.tv.core.data.DataGraph
@@ -32,6 +34,7 @@ import com.mdblisthub.tv.ui.addons.AddonsScreen
 import com.mdblisthub.tv.ui.detail.DetailScreen
 import com.mdblisthub.tv.ui.home.HomeScreen
 import com.mdblisthub.tv.ui.login.LoginScreen
+import com.mdblisthub.tv.ui.player.MiniPlayerOverlay
 import com.mdblisthub.tv.ui.player.PlayerScreen
 import com.mdblisthub.tv.ui.search.SearchScreen
 import com.mdblisthub.tv.ui.settings.SettingsScreen
@@ -73,6 +76,8 @@ object Routes {
 @Composable
 fun HubNavHost(graph: DataGraph) {
     val navController = rememberNavController()
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
 
     /**
      * Where the graph starts — decided **once**, from a snapshot, and never
@@ -163,18 +168,19 @@ fun HubNavHost(graph: DataGraph) {
     }
 
     CompositionLocalProvider(LocalLandscapeArtworkLoader provides artworkLoader) {
-        NavHost(
-            navController = navController,
-            startDestination = start,
-            // Bare `NavHost` defaults to an instant cut between screens.
-            // A shared fade is cheap insurance against that jump on every
-            // transition the more specific fixes below don't already cover
-            // (Detail's own hero continuity, the player's own transitions).
-            enterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
-            exitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
-            popEnterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
-            popExitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
-        ) {
+        Box {
+            NavHost(
+                navController = navController,
+                startDestination = start,
+                // Bare `NavHost` defaults to an instant cut between screens.
+                // A shared fade is cheap insurance against that jump on every
+                // transition the more specific fixes below don't already cover
+                // (Detail's own hero continuity, the player's own transitions).
+                enterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+                exitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+                popEnterTransition = { fadeIn(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+                popExitTransition = { fadeOut(tween(HubMotion.Content, easing = HubMotion.StandardEasing)) },
+            ) {
         composable(Routes.LOGIN) {
             val scope = rememberCoroutineScope()
             LoginScreen(
@@ -335,6 +341,17 @@ fun HubNavHost(graph: DataGraph) {
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
             )
         }
+            }
+
+            // The controller survives the player route when playback is
+            // minimized. Hosting this once above the NavHost makes that live
+            // session visible on Home, Search, Details and Settings, while
+            // the route guard inside the overlay keeps it out of fullscreen.
+            MiniPlayerOverlay(
+                graph = graph,
+                navController = navController,
+                currentRoute = currentRoute,
+            )
         }
     }
 }
