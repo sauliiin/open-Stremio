@@ -134,7 +134,7 @@
     <string name="loading_fetching">Loading details…</string>
     <string name="login_error_google">Could not sign in with Google.</string>
     <string name="login_error_mdblist_link">Could not link MDBList. Check the key and try again.</string>
-    <string name="login_error_mdblist_required">Could not proceed without MDBList.</string>
+    <string name="login_error_mdblist_required">Failed to skip MDBList. Try again.</string>
     <string name="login_error_guest">Could not start guest mode.</string>
     <string name="addons_mdblist_linked">MDBList linked. Enable lists addons only if you want to use them in Stremio.</string>
     <string name="addons_mdblist_link_error">Could not link MDBList. %1$s</string>
@@ -251,7 +251,7 @@
     <string name="login_guest_button">Continue as guest</string>
     <string name="login_google_connected">Google connected: %1$s</string>
     <string name="login_checking_key">Checking for a saved MDBList key…</string>
-    <string name="login_mdblist_intro">Enter an MDBList API key for ratings, trailers, lists and sync.</string>
+    <string name="login_mdblist_intro">Enter an MDBList API key (optional) for ratings, trailers, lists and sync — or tap \"Continue without MDBList\" below to skip.</string>
     <string name="login_mdblist_signup">No account? Go to https://mdblist.com/ and create a free one to get your key.</string>
     <string name="login_error_no_credential">The account you chose did not return a Google credential.</string>
     <string name="login_error_cancelled">Google sign-in cancelled.</string>
@@ -263,7 +263,7 @@
     <string name="login_link_mdblist">Link MDBList</string>
     <string name="login_continue_without">Continue without MDBList</string>
     <string name="login_create_account">Create a free account</string>
-    <string name="login_mdblist_only_button">Sign in with MDBList only</string>
+    <string name="login_mdblist_only_button">Sign in with MDBList</string>
     <string name="login_mdblist_only_intro">Without a Google account, addons and list order stay on this device only — they will not sync with your other TVs or phone. Lists, watchlist and continue watching keep working normally, through your MDBList account itself.</string>
     <string name="login_mdblist_only_submit">Sign in</string>
     <string name="login_mdblist_only_back">Back</string>

@@ -134,7 +134,7 @@
     <string name="loading_fetching">Carregando ficha…</string>
     <string name="login_error_google">Não consegui entrar com o Google.</string>
     <string name="login_error_mdblist_link">Não consegui vincular a MDBList. Confira a chave e tente de novo.</string>
-    <string name="login_error_mdblist_required">Não foi possível prosseguir sem MDBList.</string>
+    <string name="login_error_mdblist_required">Falha ao pular a MDBList. Tente novamente.</string>
     <string name="login_error_guest">Não foi possível iniciar o modo convidado.</string>
     <string name="addons_mdblist_linked">MDBList vinculada. Ative os addons de listas somente se quiser usá-los no Stremio.</string>
     <string name="addons_mdblist_link_error">Não consegui vincular a MDBList. %1$s</string>
@@ -251,7 +251,7 @@
     <string name="login_guest_button">Entrar como convidado</string>
     <string name="login_google_connected">Google conectado: %1$s</string>
     <string name="login_checking_key">Verificando se já existe uma chave MDBList salva…</string>
-    <string name="login_mdblist_intro">Insira uma chave API MDBList para avaliações, trailers, listas e sincronização.</string>
+    <string name="login_mdblist_intro">Insira uma chave API MDBList (opcional) para avaliações, trailers, listas e sincronização — ou toque em \"Prosseguir sem MDBList\" abaixo para pular.</string>
     <string name="login_mdblist_signup">Não possui conta? Entre em https://mdblist.com/ e crie uma conta gratuita para obter sua chave.</string>
     <string name="login_error_no_credential">A conta escolhida não devolveu uma credencial Google.</string>
     <string name="login_error_cancelled">Login com o Google cancelado.</string>
@@ -263,7 +263,7 @@
     <string name="login_link_mdblist">Vincular MDBList</string>
     <string name="login_continue_without">Prosseguir sem MDBList</string>
     <string name="login_create_account">Criar conta gratuita</string>
-    <string name="login_mdblist_only_button">Entrar apenas com a MDBList</string>
+    <string name="login_mdblist_only_button">Entrar com a MDBList</string>
     <string name="login_mdblist_only_intro">Sem conta Google os addons e a ordem das listas ficam somente neste aparelho — não sincronizam com sua TV ou celular. Listas, watchlist e continuar assistindo seguem funcionando normalmente, pela própria conta MDBList.</string>
     <string name="login_mdblist_only_submit">Entrar</string>
     <string name="login_mdblist_only_back">Voltar</string>
