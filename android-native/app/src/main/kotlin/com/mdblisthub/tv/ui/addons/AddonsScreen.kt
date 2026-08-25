@@ -170,6 +170,13 @@ data class MdblistCatalogUi(
 sealed interface MdblistCatalogMessage {
     data object Linked : MdblistCatalogMessage
     data object Disabled : MdblistCatalogMessage
+
+    /**
+     * The key works, the account simply has no lists to turn into catalogs.
+     * Says so plainly instead of reporting "0 addons added" next to a toggle
+     * that stays off — enrichment is running either way.
+     */
+    data object NoLists : MdblistCatalogMessage
     data class Removed(val count: Int) : MdblistCatalogMessage
     data class Enabled(val count: Int, val failed: List<String>) : MdblistCatalogMessage
     data class Updated(val count: Int, val failed: List<String>) : MdblistCatalogMessage
@@ -419,12 +426,16 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     onSuccess = { report ->
                         _mdblistCatalog.update {
                             it.copy(
-                                enabled = true,
+                                enabled = report.exported.isNotEmpty(),
                                 busy = false,
-                                message = MdblistCatalogMessage.Enabled(
-                                    count = report.exported.size,
-                                    failed = report.failed,
-                                ),
+                                message = if (report.exported.isEmpty() && report.failed.isEmpty()) {
+                                    MdblistCatalogMessage.NoLists
+                                } else {
+                                    MdblistCatalogMessage.Enabled(
+                                        count = report.exported.size,
+                                        failed = report.failed,
+                                    )
+                                },
                             )
                         }
                     },
@@ -445,10 +456,14 @@ class AddonsViewModel(private val graph: DataGraph) : ViewModel() {
                     _mdblistCatalog.update {
                         it.copy(
                             busy = false,
-                            message = MdblistCatalogMessage.Updated(
-                                count = report.exported.size,
-                                failed = report.failed,
-                            ),
+                            message = if (report.exported.isEmpty() && report.failed.isEmpty()) {
+                                MdblistCatalogMessage.NoLists
+                            } else {
+                                MdblistCatalogMessage.Updated(
+                                    count = report.exported.size,
+                                    failed = report.failed,
+                                )
+                            },
                         )
                     }
                 },
@@ -796,9 +811,11 @@ private fun MdblistCatalogCard(
             }
         }
 
-        state.error?.let {
-            InlineMessage(stringResource(R.string.addons_mdblist_link_error, it), isError = true)
-        }
+        // Resolve the error to its own wording rather than formatting the
+        // AppError into a "could not link" sentence: this one field is shared
+        // by linking, the catalog toggle and sync, so the linking prefix was
+        // wrong for two of the three, and the raw enum name leaked through.
+        state.error?.let { InlineMessage(it.text(), isError = true) }
         state.message?.let { InlineMessage(it.text(), isError = false) }
     }
 }
@@ -1127,6 +1144,7 @@ private fun HubTextField(
 private fun MdblistCatalogMessage.text(): String = when (this) {
     MdblistCatalogMessage.Linked -> stringResource(R.string.addons_mdblist_linked)
     MdblistCatalogMessage.Disabled -> stringResource(R.string.addons_mdblist_disabled)
+    MdblistCatalogMessage.NoLists -> stringResource(R.string.addons_mdblist_no_lists)
     is MdblistCatalogMessage.Removed ->
         pluralStringResource(R.plurals.addons_mdblist_removed, count, count)
     is MdblistCatalogMessage.Enabled ->

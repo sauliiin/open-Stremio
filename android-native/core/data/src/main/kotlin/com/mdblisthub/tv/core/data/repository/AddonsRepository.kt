@@ -273,7 +273,12 @@ class AddonsRepository(
 
         lists.refreshLists(force = true).getOrThrow()
         val mdblistLists = lists.listsOnce()
-        requireOrFail(mdblistLists.isNotEmpty()) { AppError.MdblistNoLists }
+        // No lists is not a failure. A valid key with no lists of its own still
+        // powers ratings, trailers and the rest of the metadata enrichment —
+        // there is simply nothing to turn into a catalog addon here.
+        if (mdblistLists.isEmpty()) {
+            return@runCatching MdblistAddonExportReport(exported = emptyList(), failed = emptyList())
+        }
 
         val manifestGate = Semaphore(4)
         val manifestResults = coroutineScope {

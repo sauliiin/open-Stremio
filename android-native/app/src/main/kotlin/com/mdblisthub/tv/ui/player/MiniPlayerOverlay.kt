@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,8 +99,22 @@ fun MiniPlayerOverlay(graph: DataGraph, navController: NavController, currentRou
     // without first fighting through Home's own back stack. Once the window
     // actually holds focus, Back is unclaimed again: this only ever eats the
     // one press needed to arrive here.
-    BackHandler(enabled = !miniPlayerFocused) {
-        fullscreenFocusRequester.requestFocus()
+    //
+    // `key(currentRoute)` rather than a bare `BackHandler` call: the system
+    // dispatcher answers Back with whichever callback registered *most
+    // recently*, and every screen this overlay floats over — Home's own
+    // rail-focus handler among them — installs its own on the same pass it
+    // composes. Left unkeyed, this handler stayed pinned wherever it first
+    // mounted while each new screen's handler kept registering after it,
+    // and it lost the race the moment the viewer left whatever screen was
+    // showing when the mini-player first appeared. Rekeying on the route
+    // tears this down and remounts it on every navigation, which is what
+    // keeps it the newest registration — and so the one Back answers to —
+    // no matter where the viewer has wandered since minimizing.
+    key(currentRoute) {
+        BackHandler(enabled = !miniPlayerFocused) {
+            fullscreenFocusRequester.requestFocus()
+        }
     }
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {

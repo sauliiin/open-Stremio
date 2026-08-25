@@ -381,11 +381,20 @@ fun PlayerScreen(
                 // from being carried around Home as a decoder no one is
                 // watching. See `PlayerViewModel.minimize`.
                 val remainingMs = position.durationMs - position.positionMs
+                android.util.Log.w(
+                    "BACKPLAYER",
+                    "canShowVideo=${playback.canShowVideo} durationMs=${position.durationMs} " +
+                        "positionMs=${position.positionMs} remainingMs=$remainingMs " +
+                        "osdVisible=$osdVisible isPlaying=${playback.isPlaying}",
+                )
                 if (playback.canShowVideo &&
                     position.durationMs > 0 &&
                     remainingMs > MINI_PLAYER_MIN_REMAINING_MS
                 ) {
+                    android.util.Log.w("BACKPLAYER", "minimizing")
                     viewModel.minimize()
+                } else {
+                    android.util.Log.w("BACKPLAYER", "NOT minimizing")
                 }
                 onBack()
             }

@@ -137,8 +137,8 @@
     <string name="login_error_mdblist_required">Error al omitir MDBList. Inténtalo de nuevo.</string>
     <string name="login_error_guest">No se pudo iniciar el modo invitado.</string>
     <string name="addons_mdblist_linked">MDBList vinculada. Activa los addons de listas solo si quieres usarlos en Stremio.</string>
-    <string name="addons_mdblist_link_error">No se pudo vincular MDBList. %1$s</string>
     <string name="addons_mdblist_disabled">Uso de las listas de MDBList como addons desactivado.</string>
+    <string name="addons_mdblist_no_lists">Tu cuenta de MDBList aún no tiene listas propias, así que no hay nada que añadir como catálogo. Las calificaciones, tráilers y los demás metadatos siguen funcionando con normalidad.</string>
 
     <plurals name="addons_mdblist_removed">
         <item quantity="one">%1$d addon de MDBList eliminado de OmniStream.</item>

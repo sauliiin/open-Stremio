@@ -137,8 +137,8 @@
     <string name="login_error_mdblist_required">Failed to skip MDBList. Try again.</string>
     <string name="login_error_guest">Could not start guest mode.</string>
     <string name="addons_mdblist_linked">MDBList linked. Enable lists addons only if you want to use them in Stremio.</string>
-    <string name="addons_mdblist_link_error">Could not link MDBList. %1$s</string>
     <string name="addons_mdblist_disabled">Using MDBList lists as addons disabled.</string>
+    <string name="addons_mdblist_no_lists">Your MDBList account has no lists of its own yet, so there is nothing to add as a catalog. Ratings, trailers and the other metadata keep working normally.</string>
 
     <plurals name="addons_mdblist_removed">
         <item quantity="one">%1$d MDBList addon removed from OmniStream.</item>

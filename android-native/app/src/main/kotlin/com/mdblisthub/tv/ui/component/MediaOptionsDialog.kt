@@ -44,21 +44,10 @@ fun MediaOptionsDialog(
     onDismiss: () -> Unit,
 ) {
     val firstActionFocus = remember { FocusRequester() }
-    // The long-press that opened this dialog is often still physically held
-    // when focus reaches Play, and a TV `Button` fires on key *up* — so that
-    // release would land as a click on whichever action focus went to.
-    //
-    // What identifies that stray release is not elapsed time but pairing: it
-    // is a key-up with no key-down before it, because the down half happened
-    // on the poster, before this dialog existed. A genuine press always shows
-    // both halves here.
-    //
-    // The previous guard instead armed a flag until *any* confirm release
-    // arrived. When the viewer had already let go before the dialog attached
-    // — the common case on a quick long-press — no such release ever came,
-    // the flag stayed armed, and it ate the first real press instead. Every
-    // action in this menu then needed pressing twice.
-    var sawConfirmKeyDown by remember { mutableStateOf(false) }
+    // The long-press that opened this dialog is still physically held when
+    // focus moves to Play. Consume its matching release so the TV Button does
+    // not interpret it as a new click on the first action.
+    var consumeOpeningConfirmRelease by remember { mutableStateOf(true) }
     val actionScale = ButtonDefaults.scale(focusedScale = 1.03f)
     LaunchedEffect(Unit) {
         repeat(3) {
@@ -77,18 +66,11 @@ fun MediaOptionsDialog(
                         event.key == Key.Enter ||
                         event.key == Key.NumPadEnter ||
                         event.key == Key.Spacebar
-                    when {
-                        !isConfirm -> false
-                        event.type == KeyEventType.KeyDown -> {
-                            sawConfirmKeyDown = true
-                            false
-                        }
-                        event.type == KeyEventType.KeyUp -> {
-                            val strayOpeningRelease = !sawConfirmKeyDown
-                            sawConfirmKeyDown = false
-                            strayOpeningRelease
-                        }
-                        else -> false
+                    if (consumeOpeningConfirmRelease && isConfirm && event.type == KeyEventType.KeyUp) {
+                        consumeOpeningConfirmRelease = false
+                        true
+                    } else {
+                        false
                     }
                 }
                 .padding(14.dp),
