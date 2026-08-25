@@ -260,8 +260,14 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                             // through a device flow for would be asking twice.
                             graph.switchLibraryProvider(LibraryProvider.TRAKT)
                             refreshLibraryRows()
-                            delay(LINKED_VISIBLE_MS)
-                            _traktLink.value = null
+                            // Deliberately left on screen rather than closed
+                            // after a beat. This is the only moment the flow
+                            // ever confirms it worked, and a device link is
+                            // long enough — open a browser, type a code — that
+                            // the viewer is often not watching the television
+                            // when it lands. A confirmation nobody is looking
+                            // at is the same as no confirmation, so it waits
+                            // to be dismissed instead.
                         }
                     }
                 },

@@ -17,6 +17,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.runningFold
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
@@ -276,6 +279,79 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     val focused: StateFlow<MediaItem?> = _focused.asStateFlow()
 
     /**
+     * The "Continuar assistindo" entry behind [focused], when there is one.
+     *
+     * Kept beside [_focused] rather than folded into it because a [MediaItem]
+     * has no season or episode — `ResumePoint.toCardItem()` drops both — and
+     * the hero writes the resumed episode's own air date and number. Null for
+     * every other row, which is what puts the hero back on the title-level
+     * line those rows want.
+     */
+    private val _focusedResume = MutableStateFlow<ResumePoint?>(null)
+
+    /** The app's language code, for writing the episode's air date. */
+    val language: StateFlow<String> = graph.uiPreferences.language
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "en")
+
+    /**
+     * The episode row for whatever "Continuar assistindo" card holds focus.
+     *
+     * Settled on the same clock as the rest of the hero, so sweeping the row
+     * does not queue a season fetch per card passed over.
+     */
+    val focusedEpisode: StateFlow<com.mdblisthub.tv.core.model.Episode?> = _focusedResume
+        .debounce { if (it == null) 0L else FANART_SETTLE_MS }
+        .flatMapLatest { point ->
+            val showId = point?.tmdbId
+            val season = point?.season
+            val number = point?.episode
+            if (point == null || showId == null || showId <= 0 || season == null || number == null) {
+                flowOf(null)
+            } else {
+                graph.media.observeEpisodes(showId, season)
+                    .map { episodes -> episodes.firstOrNull { it.episodeNumber == number } }
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * [_focused], held still.
+     *
+     * Everything the hero draws hangs off this rather than off [focused]
+     * directly, and [focused] deliberately is not settled: the panel's title
+     * and year are a text swap and should track the remote exactly, but each
+     * distinct backdrop below is a full-screen `w1280` decode. Sweeping a row
+     * used to queue one per card passed over, which is the single heaviest
+     * thing the home screen did.
+     *
+     * The wait is per-move rather than fixed. Settling exists to protect a
+     * picture that is *already on screen* from being replaced by one the
+     * viewer is only passing through — so on the one move where nothing is up
+     * yet, it is protecting nothing and costs an empty hero for its trouble.
+     */
+    private val settledFocus: Flow<MediaItem?> = _focused
+        // Carries the previous card alongside the current one, which is the
+        // only thing `debounce` cannot see for itself.
+        .runningFold<MediaItem?, Pair<MediaItem?, MediaItem?>>(null to null) { step, item ->
+            step.second to item
+        }
+        .drop(1)
+        .debounce { (previous, current) ->
+            when {
+                current == null -> 0L
+                // Nothing is on screen to protect: this is the first card
+                // focused after the opening spotlight, and the hero behind it
+                // is empty. Waiting the full settle here buys nothing and
+                // lands the artwork after the hero has finished arriving
+                // rather than while it still is — see `HERO_ENTER_MS`.
+                previous == null -> FANART_FIRST_SETTLE_MS
+                else -> FANART_SETTLE_MS
+            }
+        }
+        .map { (_, current) -> current }
+
+    /**
      * Drives the fanart specifically — separate from [focused] because a
      * list card only ever carries a poster, never a backdrop (mdblist's list
      * endpoint doesn't return one), so the raw item's own `backdropUrl` is
@@ -288,15 +364,8 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
      * event for the "open feels instant" reason. The poster fallback still
      * covers the gap before that detail lands; once it does, the fanart
      * upgrades to the real backdrop in place.
-     *
-     * Debounced, and [focused] deliberately is not: the panel's title and
-     * year are a text swap and should track the remote exactly, but each
-     * distinct URL here is a full-screen `w1280` decode. Sweeping a row used
-     * to queue one per card passed over, which is the single heaviest thing
-     * the home screen did.
      */
-    val focusedBackdropUrl: StateFlow<String?> = _focused
-        .debounce { if (it == null) 0L else FANART_SETTLE_MS }
+    val focusedBackdropUrl: StateFlow<String?> = settledFocus
         .flatMapLatest { item ->
             if (item == null) {
                 flowOf(null)
@@ -319,8 +388,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val focusedDetail: StateFlow<com.mdblisthub.tv.core.model.MediaDetail?> = _focused
-        .debounce { if (it == null) 0L else FANART_SETTLE_MS }
+    val focusedDetail: StateFlow<com.mdblisthub.tv.core.model.MediaDetail?> = settledFocus
         .flatMapLatest { item ->
             if (item == null || item.tmdbId <= 0) {
                 flowOf(null)
@@ -570,9 +638,17 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         }
     }
 
-    fun onFocused(item: MediaItem) {
+    fun onFocused(item: MediaItem, resumePoint: ResumePoint? = null) {
         if (_focused.value?.key != item.key) {
             _trailerPlayingItemKey.value = null
+        }
+        _focusedResume.value = resumePoint
+        // The season is fetched once and cached; `ensureEpisodes` is a no-op
+        // afterwards, the same way `prefetch` below is for the detail row.
+        val showId = resumePoint?.tmdbId
+        val season = resumePoint?.season
+        if (showId != null && showId > 0 && season != null) {
+            viewModelScope.launch { graph.media.ensureEpisodes(showId, season) }
         }
         _focused.value = item
         // Warming the detail on focus is what makes opening a title feel
@@ -597,6 +673,22 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Focus went back up to the spotlight, so nothing below it is focused.
+     *
+     * Worth saying out loud rather than leaving [_focused] pointing at the
+     * card the viewer last passed over: while the spotlight owns the viewport
+     * the hero that reads [_focused] is not in composition at all, so the
+     * value is describing something nobody can see. Clearing it is what lets
+     * the next move down be recognised as an arrival onto an empty hero and
+     * take [FANART_FIRST_SETTLE_MS] rather than the full sweep settle.
+     */
+    fun onSpotlightFocused() {
+        _trailerPlayingItemKey.value = null
+        _focusedResume.value = null
+        _focused.value = null
     }
 
     fun onTrailerPlaybackChanged(itemKey: String?, playing: Boolean) {
@@ -776,6 +868,16 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
          * fallback flashing first.
          */
         const val FANART_SETTLE_MS = 350L
+
+        /**
+         * The settle for the first card focused after the spotlight.
+         *
+         * Short enough that the backdrop is already crossfading in while the
+         * hero block is still travelling into place, and long enough to still
+         * absorb the case where the viewer presses down and immediately
+         * carries on sideways along the row.
+         */
+        const val FANART_FIRST_SETTLE_MS = 180L
 
         /**
          * How still the remote has to be before a trailer is even looked up.

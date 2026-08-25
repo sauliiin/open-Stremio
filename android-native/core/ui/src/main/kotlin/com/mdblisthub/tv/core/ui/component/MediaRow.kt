@@ -137,6 +137,16 @@ fun MediaRow(
     onItemClickIndexed: ((Int, MediaItem) -> Unit)? = null,
     /** Held OK on a card — see [PosterCard]. Indexed for the same reason as above. */
     onItemLongClickIndexed: ((Int, MediaItem) -> Unit)? = null,
+    /**
+     * Takes priority over [onItemFocused] when set, and exists for the same
+     * ambiguity as the two above: "Continuar assistindo" builds cards whose
+     * `MediaItem`s are structurally equal across two episodes of one show, so
+     * the item handed to a focus callback cannot say *which* episode the
+     * viewer is now looking at. The hero above the rows needs exactly that —
+     * it writes the episode's own air date and number — and only the position
+     * carries it.
+     */
+    onItemFocusedIndexed: ((Int, MediaItem) -> Unit)? = null,
     progressPercent: ((Int, MediaItem) -> Float?)? = null,
     isWatched: ((Int, MediaItem) -> Boolean)? = null,
     requestInitialFocus: Boolean = false,
@@ -302,7 +312,7 @@ fun MediaRow(
                         },
                         onFocused = { focused ->
                             lastFocusedIndex.intValue = index
-                            onItemFocused(focused)
+                            onItemFocusedIndexed?.invoke(index, focused) ?: onItemFocused(focused)
                             // Paging off focus rather than off scroll position:
                             // on a remote the two are the same thing, and focus
                             // is the one that fires exactly once per card.

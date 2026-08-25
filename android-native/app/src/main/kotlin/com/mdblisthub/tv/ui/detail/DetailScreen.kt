@@ -96,6 +96,7 @@ import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
+import com.mdblisthub.tv.ui.component.formatAirDate
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.MediaRow
@@ -112,7 +113,6 @@ import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -835,31 +835,6 @@ private val UNWATCHED_BLUR_RADIUS = 6.dp
  */
 private const val UNWATCHED_ALPHA_FALLBACK = 0.45f
 
-/**
- * TMDB's `air_date` ("2026-12-18") as a short weekday + date, matching the
- * three formats this app ships strings for:
- *
- * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"   es: "vie., 18 dic 2026"
- *
- * Takes the raw "pt"/"en"/"es" code rather than a `Locale` — `Locale.forLanguageTag`
- * on a bare "pt" resolves to European Portuguese, whose CLDR weekday
- * abbreviations don't reliably match Brazil's; building the locale explicitly
- * for each branch pins the exact one this format was written against.
- *
- * `minSdk` is 24 without core library desugaring — see the note on
- * `SyncMappers.formatter()` — so this reaches for `SimpleDateFormat` rather
- * than `java.time`, the same tradeoff the rest of the app already made.
- */
-private fun formatAirDate(airDate: String, language: String): String? {
-    val parsed = runCatching {
-        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(airDate)
-    }.getOrNull() ?: return null
-    return when (language) {
-        "pt" -> SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
-        "es" -> SimpleDateFormat("EEE, d MMM yyyy", Locale.forLanguageTag("es")).format(parsed)
-        else -> SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

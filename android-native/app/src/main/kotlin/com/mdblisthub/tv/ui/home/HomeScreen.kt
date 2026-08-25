@@ -1,11 +1,11 @@
 package com.mdblisthub.tv.ui.home
 
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.foundation.verticalScroll
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -73,6 +73,7 @@ import androidx.tv.material3.Button
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import androidx.compose.ui.res.stringResource
+import com.mdblisthub.tv.LocalHostActivity
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
@@ -96,6 +97,7 @@ import coil3.compose.AsyncImage
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.MediaOptionsDialog
+import com.mdblisthub.tv.ui.component.formatAirDate
 import com.mdblisthub.tv.ui.hubViewModel
 import com.mdblisthub.tv.ui.player.MiniPlayerCoordinator
 import kotlinx.coroutines.flow.StateFlow
@@ -103,6 +105,22 @@ import kotlinx.coroutines.launch
 
 /** Where a focused row parks: 30% down the viewport, the same pivot Compose's own (internal) TV spec uses. */
 private const val ROW_PIVOT = 0.3f
+
+/**
+ * A Cyberpunk row heading's own height: `titleMedium` (17sp) plus the 6 dp
+ * gap before its poster strip (see `MediaRow`'s `Column` spacing). Landing a
+ * focused row exactly this far from the top is what puts its own heading
+ * flush against the viewport edge with nothing of the previous shelf
+ * showing — not a fragment of its title, not its posters, nothing.
+ *
+ * A fraction of the viewport was tried first and both directions of tuning
+ * it were wrong: too small a fraction cut the previous heading mid-glyph,
+ * and enlarging it revealed that heading's full text with its posters still
+ * clipped off beneath — a floating, image-less line of titles, worse than
+ * the fragment it replaced. A fraction can only approximate a fixed line
+ * height; this measures it directly instead.
+ */
+private val CYBERPUNK_ROW_HEADER_HEIGHT = 30.dp
 
 /** Rounding tolerance on the hero's bounds — not a widening of them. */
 private const val SUB_PIXEL_SLACK = 1f
@@ -157,6 +175,15 @@ private data class HomeOptionTarget(
 private class RowPivotScroll(
     private val variant: HubThemeVariant,
     private val normalFirstRowOffsetPx: Float,
+    /**
+     * Cyberpunk's own version of [normalFirstRowOffsetPx]: the exact height
+     * of a row's own heading (`titleMedium`) plus the gap before its posters
+     * — see [CYBERPUNK_ROW_HEADER_HEIGHT]. Parking a focused row here, rather
+     * than at a fraction of the viewport, is what makes its own heading land
+     * flush with the top edge with nothing of the previous shelf showing,
+     * the same way [normalFirstRowOffsetPx] does for Normal.
+     */
+    private val cyberpunkRowOffsetPx: Float,
     private val focusedShelfViewportHeightPx: Float,
     /**
      * True while focus is away on the side rail, and for a moment after it
@@ -233,6 +260,15 @@ private class RowPivotScroll(
             // a focused row in the same place. The per-variant landing points
             // below were each measured against that theme's own fixed row
             // strip, and none of those strips is on screen while the hero is.
+            //
+            // Cyberpunk is the one exception: its own row heading is short
+            // enough (titleMedium, not titleLarge) that the shared 36 dp
+            // offset lands mid-glyph through the *previous* shelf's title
+            // instead of past it, leaving a fragment of that heading on
+            // screen — never a full row, just torn text. It needs the same
+            // taller pivot here that it uses once the spotlight is gone.
+            spotlightHero.value && variant == HubThemeVariant.CYBERPUNK ->
+                cyberpunkRowOffsetPx
             spotlightHero.value -> normalFirstRowOffsetPx
             variant == HubThemeVariant.NORMAL -> normalFirstRowOffsetPx
             // The focused child is the card, not the whole shelf. This offset
@@ -249,9 +285,13 @@ private class RowPivotScroll(
             //
             variant == HubThemeVariant.NETFLIXY ||
                 variant == HubThemeVariant.CYBERFLIX -> 0.18f * containerSize
-            // Parks the focused shelf higher so it and the next two shelves
-            // remain fully visible together on the TV viewport.
-            variant == HubThemeVariant.CYBERPUNK -> 0.06f * containerSize
+            // The row's own heading lands at the viewport top, exactly as
+            // it does for Primefly/Optimus Prime above — see
+            // [cyberpunkRowOffsetPx]. A fraction of the viewport (this
+            // branch's own previous shape) can only approximate that; a
+            // fixed offset matching the heading's actual measured height is
+            // what makes it exact regardless of screen size.
+            variant == HubThemeVariant.CYBERPUNK -> cyberpunkRowOffsetPx
             else -> ROW_PIVOT * containerSize
         }
 
@@ -317,6 +357,7 @@ fun HomeScreen(
     val mdblistLinked by graph.auth.mdblistLinked.collectAsStateWithLifecycle(initialValue = false)
     val deletedListIds by graph.session.deletedListIds.collectAsStateWithLifecycle(initialValue = emptySet())
     val scope = rememberCoroutineScope()
+    val hostActivity = LocalHostActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val isNormalTheme = HubColors.variant == HubThemeVariant.NORMAL
     var initialNormalFocusPending by remember { mutableStateOf(false) }
@@ -363,14 +404,18 @@ fun HomeScreen(
         usesFocusedShelfHero &&
         browsingRowsWithFocusedHero
     val spotlightOwnsViewport = hasSpotlightHero && !showFocusedHeroForRows
+    // The two halves of one handover along a shared vertical axis, rather than
+    // a cross-dissolve. See [HERO_EXIT_MS] for why the old symmetric fade had
+    // to be a full second and this does not.
+    val heroAxisShiftPx = with(LocalDensity.current) { HERO_AXIS_SHIFT.toPx() }
     val focusedShelfHeroAlpha by animateFloatAsState(
         targetValue = if (showFocusedHeroForRows || !hasSpotlightHero) 1f else 0f,
-        animationSpec = tween(HERO_CROSSFADE_DURATION_MS, easing = HubMotion.StandardEasing),
+        animationSpec = tween(HERO_ENTER_MS, easing = HubMotion.EmphasizedDecelerate),
         label = "focused-shelf-hero-alpha",
     )
     val spotlightHeroAlpha by animateFloatAsState(
         targetValue = if (spotlightExitPending) 0f else 1f,
-        animationSpec = tween(HERO_CROSSFADE_DURATION_MS, easing = HubMotion.StandardEasing),
+        animationSpec = tween(HERO_EXIT_MS, easing = HubMotion.EmphasizedAccelerate),
         label = "spotlight-exit-alpha",
         finishedListener = { alpha ->
             if (
@@ -609,6 +654,7 @@ fun HomeScreen(
         }
     }
     val normalFirstRowOffsetPx = with(LocalDensity.current) { 36.dp.toPx() }
+    val cyberpunkRowOffsetPx = with(LocalDensity.current) { CYBERPUNK_ROW_HEADER_HEIGHT.toPx() }
     val spotlightHeroHeightPx = with(LocalDensity.current) { spotlightHeroHeight().toPx() }
     val focusedShelfViewportHeightPx = with(LocalDensity.current) {
         when {
@@ -646,12 +692,14 @@ fun HomeScreen(
     val rowPivotScroll = remember(
         HubColors.variant,
         normalFirstRowOffsetPx,
+        cyberpunkRowOffsetPx,
         spotlightHeroHeightPx,
         focusedShelfViewportHeightPx,
     ) {
         RowPivotScroll(
             HubColors.variant,
             normalFirstRowOffsetPx,
+            cyberpunkRowOffsetPx,
             focusedShelfViewportHeightPx,
             pinnedForRail,
             heroPresent,
@@ -903,6 +951,39 @@ fun HomeScreen(
         }
     }
 
+    /**
+     * Back, on the screen Back lands on most often.
+     *
+     * Home is the root of the graph, so this button used to fall straight
+     * through to the system: one press anywhere in the rows and the app was
+     * gone, with no step in between. That is the wrong weight for a key people
+     * press to mean "up a level".
+     *
+     * The first press now means exactly that, and hands focus to the rail —
+     * the only thing on this screen Back could sensibly go *to*. A second
+     * press, with the rail already holding focus, has nowhere further up to go
+     * and leaves.
+     *
+     * Expanding before asking for focus is the rail rescue's dance, borrowed
+     * for the reason it exists there: the rail is collapsed until something
+     * inside it holds focus, and a collapsed rail has no target to give. Once
+     * focus lands, the rail pins itself open (see its `onFocusChanged`), which
+     * is why the override is dropped again straight after.
+     */
+    BackHandler {
+        if (railFocused) {
+            hostActivity?.finish()
+        } else {
+            scope.launch {
+                railRescue = true
+                delay(RAIL_EXPAND_MS)
+                runCatching { railFocusRequester.requestFocus() }
+                delay(RAIL_EXPAND_MS)
+                railRescue = false
+            }
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -1109,7 +1190,14 @@ fun HomeScreen(
                     Box(
                         Modifier
                             .weight(1f)
-                            .alpha(focusedShelfHeroAlpha),
+                            // Arrives along the same axis the spotlight left
+                            // on, which is what makes the two halves read as
+                            // one movement instead of two fades.
+                            .graphicsLayer {
+                                alpha = focusedShelfHeroAlpha
+                                translationY =
+                                    (1f - focusedShelfHeroAlpha) * heroAxisShiftPx
+                            },
                     ) {
                         // Under the panel, not over it: the title, metadata and
                         // synopsis have to stay legible across the whole
@@ -1222,11 +1310,23 @@ fun HomeScreen(
                                     primaryFocusRequester = heroPrimaryFocusRequester,
                                     modifier = Modifier
                                         .animateItem()
-                                        .alpha(spotlightHeroAlpha)
+                                        // Leaves along the axis the D-pad was
+                                        // pressed in, so the exit reads as the
+                                        // page moving rather than as artwork
+                                        // dissolving.
+                                        .graphicsLayer {
+                                            alpha = spotlightHeroAlpha
+                                            translationY =
+                                                -(1f - spotlightHeroAlpha) * heroAxisShiftPx
+                                        }
                                         .onFocusChanged { focus ->
                                             if (focus.hasFocus) {
                                                 lastContentFocusWasSpotlight = true
                                                 spotlightExitPending = false
+                                                // Nothing below is focused any
+                                                // more, and the hero that reads
+                                                // it has left composition.
+                                                viewModel.onSpotlightFocused()
                                                 if (browsingRowsWithFocusedHero) {
                                                     browsingRowsWithFocusedHero = false
                                                     scope.launch { homeListState.animateScrollToItem(0) }
@@ -1265,9 +1365,12 @@ fun HomeScreen(
                             // and `resumePoints` are the same list at the same
                             // indices (see their construction above), so only
                             // the position — not the card's own equality —
-                            // can say correctly which point this was.
-                            onItemFocused = {
-                                viewModel.onFocused(it)
+                            // can say correctly which point this was. The hero
+                            // needs that same position for the same reason —
+                            // it writes the resumed episode's air date — which
+                            // is why focus is reported indexed here too.
+                            onItemFocusedIndexed = { index, focusedItem ->
+                                viewModel.onFocused(focusedItem, resumePoints.getOrNull(index))
                                 lastFocusedRow = resumeRowFocus
                                 lastFocusedListItemIndex = shelfLeadingItemCount
                                 onShelfItemFocused()
@@ -1482,7 +1585,21 @@ fun HomeScreen(
                                         watchedIds.contains(item.tmdbId)
                                     }
                                 },
-                                onItemFocused = trackFocus,
+                                // Only this row type carries season and
+                                // episode per card (`MdblistHomeFeedItem`,
+                                // unlike `MediaItem` itself) — "Up Next" is
+                                // built from it — so it alone reports focus
+                                // indexed, passing the matching feed entry's
+                                // episode along to the hero as a resume point.
+                                onItemFocusedIndexed = { itemIndex, focusedItem ->
+                                    viewModel.onFocused(
+                                        focusedItem,
+                                        feed.items.getOrNull(itemIndex)?.toResumePoint(),
+                                    )
+                                    lastFocusedRow = rowFocus
+                                    lastFocusedListItemIndex = homeRowsStartIndex + index
+                                    onShelfItemFocused()
+                                },
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
@@ -1801,11 +1918,18 @@ private fun SpotlightHeroBlock(
 private fun HeroPanel(viewModel: HomeViewModel) {
     val item by viewModel.focused.collectAsStateWithLifecycle()
     val itemDetail by viewModel.focusedDetail.collectAsStateWithLifecycle()
-    HeroPanelContent(item, itemDetail)
+    val resumedEpisode by viewModel.focusedEpisode.collectAsStateWithLifecycle()
+    val language by viewModel.language.collectAsStateWithLifecycle()
+    HeroPanelContent(item, itemDetail, resumedEpisode, language)
 }
 
 @Composable
-private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
+private fun HeroPanelContent(
+    item: MediaItem?,
+    itemDetail: MediaDetail?,
+    resumedEpisode: com.mdblisthub.tv.core.model.Episode? = null,
+    language: String = "en",
+) {
     if (HubColors.isNetflixLayout || HubColors.isPrimefly) {
         Column(
             modifier = Modifier
@@ -1854,6 +1978,8 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
             HeroMetadataRow(
                 item = item,
                 detail = itemDetail,
+                resumedEpisode = resumedEpisode,
+                language = language,
                 modifier = Modifier.padding(bottom = if (HubColors.isPrimefly) 6.dp else 12.dp),
             )
 
@@ -1901,7 +2027,12 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.height(6.dp))
-            HeroMetadataRow(item = item, detail = itemDetail)
+            HeroMetadataRow(
+                item = item,
+                detail = itemDetail,
+                resumedEpisode = resumedEpisode,
+                language = language,
+            )
         }
     }
 }
@@ -1911,16 +2042,40 @@ private fun HeroPanelContent(item: MediaItem?, itemDetail: MediaDetail?) {
 private fun HeroMetadataRow(
     item: MediaItem,
     detail: MediaDetail?,
+    resumedEpisode: com.mdblisthub.tv.core.model.Episode? = null,
+    language: String = "en",
     modifier: Modifier = Modifier,
 ) {
-    val values = listOfNotNull(
-        (item.year ?: detail?.year)?.toString(),
-        item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
-            ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
-        (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
-            stringResource(R.string.home_minutes, it)
-        },
-    )
+    // "Continuar assistindo" swaps the title-level year for the resumed
+    // episode's own air date and number — what the viewer is actually about
+    // to watch — the same substitution the web build's `app-hero` makes.
+    // Genre and runtime stay title-level either way: mdblist's episode rows
+    // carry neither, and the season's own runtime is usually close enough
+    // that repeating it here would only restate the line above.
+    val airDate = resumedEpisode?.airDate?.let { formatAirDate(it, language) }
+    val episodeCode = resumedEpisode?.let {
+        stringResource(R.string.home_episode_code, it.seasonNumber, it.episodeNumber)
+    }
+    val values = if (airDate != null && episodeCode != null) {
+        listOfNotNull(
+            airDate,
+            episodeCode,
+            item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
+            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
+                stringResource(R.string.home_minutes, it)
+            },
+        )
+    } else {
+        listOfNotNull(
+            (item.year ?: detail?.year)?.toString(),
+            item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
+            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
+                stringResource(R.string.home_minutes, it)
+            },
+        )
+    }
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1967,8 +2122,37 @@ private const val RAIL_EXPAND_MS = 250L
 /** Steady-state cadence once real content holds focus — cheap, two boolean reads. */
 private const val POLL_MS = 1_000L
 
-/** Crossfade between the opening spotlight and the focused shelf hero. */
-private const val HERO_CROSSFADE_DURATION_MS = 500
+/**
+ * The handover between the opening spotlight and the focused shelf hero.
+ *
+ * These are two *layouts*, not two pictures: with the spotlight up it is the
+ * list's own first item and the list owns the viewport, and once the rows have
+ * focus the hero is a sibling above a list shortened to a fixed strip. The
+ * swap itself therefore cannot be animated, and the previous timings existed
+ * to hide it — half a second fading to nothing, the reconfiguration in the
+ * dark, half a second fading back. That is a second of screen time spent
+ * concealing something, and concealment is what made it feel heavy.
+ *
+ * So the swap is covered rather than hidden. The spotlight leaves in
+ * [HERO_EXIT_MS] on an accelerating curve; the reconfiguration still happens
+ * at the bottom of that fade, where there is now a tenth of a second of cover
+ * instead of half of one; and the shelf hero arrives over [HERO_ENTER_MS] on a
+ * decelerating one. Both halves also travel [HERO_AXIS_SHIFT] along the axis
+ * the viewer just pressed, so the eye follows a movement through the swap and
+ * never waits on an empty screen.
+ */
+private const val HERO_EXIT_MS = 110
+private const val HERO_ENTER_MS = 240
+
+/**
+ * How far each half of the handover travels.
+ *
+ * Deliberately a short, fixed distance rather than anything derived from the
+ * hero's own height: displacing a block this size by its full extent is the
+ * literal definition of a heavy transition, and past roughly 30 dp the motion
+ * stops reading as the page settling and starts reading as a slide.
+ */
+private val HERO_AXIS_SHIFT = 28.dp
 
 /**
  * Share of the hero's width CyberFlix gives the artwork block.

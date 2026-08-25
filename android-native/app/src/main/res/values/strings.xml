@@ -167,6 +167,8 @@
     <string name="home_type_show">Série</string>
     <string name="home_type_movie">Filme</string>
     <string name="home_minutes">%1$d min</string>
+    <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
+    <string name="home_episode_code">S%1$02dE%2$02d</string>
     <string name="home_exit_question">Deseja realmente sair?</string>
     <string name="home_no_visible_rows">Nenhuma fileira está visível</string>
     <string name="home_no_lists">Nenhuma lista disponível</string>
@@ -303,10 +305,13 @@
     <string name="trakt_link_cancel">Cancelar</string>
     <string name="trakt_link_close">Fechar</string>
     <string name="trakt_link_retry">Tentar de novo</string>
-    <string name="trakt_link_error_expired">O código expirou antes de ser aprovado. Peça um novo.</string>
+    <string name="trakt_link_error_expired">O código expirou antes de ser aprovado no Trakt.</string>
     <string name="trakt_link_error_denied">O acesso foi recusado no Trakt.</string>
-    <string name="trakt_link_error_unavailable">Não foi possível falar com o Trakt. Tente de novo.</string>
+    <string name="trakt_link_error_unavailable">Não foi possível falar com o Trakt.</string>
     <string name="trakt_link_error_credentials">Este build não traz credenciais do Trakt.</string>
+    <string name="trakt_link_success">Autenticação concluída</string>
+    <string name="trakt_link_failed_title">Não foi possível concluir a autenticação</string>
+    <string name="trakt_link_try_again">Tente novamente.</string>
     <string name="trakt_link_vip_limit_warning">Contas Trakt gratuitas conectam só um app de terceiros por vez.</string>
 
     <!-- Atualização automática via GitHub Releases -->

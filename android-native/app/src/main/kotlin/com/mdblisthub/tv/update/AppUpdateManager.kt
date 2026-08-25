@@ -330,7 +330,18 @@ class AppUpdateManager(
         const val PROGRESS_STEP_BYTES = 128L * 1024L
         const val UPDATE_PREFERENCES = "app-update-checks"
         const val LAST_CHECK_AT = "last-successful-check-at"
-        const val CHECK_INTERVAL_MS = 24L * 60L * 60L * 1_000L
+        /**
+         * How long a successful check suppresses the next one.
+         *
+         * A day was chosen against hammering GitHub, but it is the wrong
+         * trade for this app: a release *is* the delivery channel here, and
+         * the check is one small JSON GET on a screen the viewer opened
+         * themselves. At 24 h a release published an hour after the day's
+         * first launch stays invisible until the following day, which reads
+         * as the updater being broken. Three hours keeps the request rare and
+         * puts a release in front of the viewer the same evening it ships.
+         */
+        const val CHECK_INTERVAL_MS = 3L * 60L * 60L * 1_000L
     }
 }
 

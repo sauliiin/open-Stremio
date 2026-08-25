@@ -171,6 +171,8 @@
     <string name="home_type_show">Serie</string>
     <string name="home_type_movie">Película</string>
     <string name="home_minutes">%1$d min</string>
+    <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
+    <string name="home_episode_code">S%1$02dE%2$02d</string>
     <string name="home_exit_question">¿Cerrar sesión?</string>
     <string name="home_no_visible_rows">No hay filas visibles</string>
     <string name="home_no_lists">No hay listas disponibles</string>
@@ -309,10 +311,13 @@
     <string name="trakt_link_cancel">Cancelar</string>
     <string name="trakt_link_close">Cerrar</string>
     <string name="trakt_link_retry">Intentar de nuevo</string>
-    <string name="trakt_link_error_expired">El código expiró antes de ser aprobado. Pide uno nuevo.</string>
+    <string name="trakt_link_error_expired">El código expiró antes de ser aprobado en Trakt.</string>
     <string name="trakt_link_error_denied">El acceso fue denegado en Trakt.</string>
-    <string name="trakt_link_error_unavailable">No se pudo contactar a Trakt. Inténtalo de nuevo.</string>
+    <string name="trakt_link_error_unavailable">No se pudo contactar a Trakt.</string>
     <string name="trakt_link_error_credentials">Esta versión no incluye credenciales de Trakt.</string>
+    <string name="trakt_link_success">Autenticación completada</string>
+    <string name="trakt_link_failed_title">No se pudo completar la autenticación</string>
+    <string name="trakt_link_try_again">Inténtalo de nuevo.</string>
     <string name="trakt_link_vip_limit_warning">Las cuentas gratuitas de Trakt conectan solo una app de terceros a la vez.</string>
 
     <!-- Actualización automática por GitHub Releases -->

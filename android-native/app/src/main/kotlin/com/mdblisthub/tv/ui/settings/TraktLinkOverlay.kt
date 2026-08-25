@@ -21,11 +21,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -61,6 +64,16 @@ fun TraktLinkOverlay(
     onRetry: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Both terminal states now wait for the viewer instead of vanishing on a
+    // timer, so each needs something for the D-pad to land on. Requested per
+    // state rather than once: `Failed` focuses its retry, `Linked` its close.
+    val actionFocus = remember { FocusRequester() }
+    LaunchedEffect(state::class) {
+        if (state is TraktLinkState.Linked || state is TraktLinkState.Failed) {
+            runCatching { actionFocus.requestFocus() }
+        }
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -179,19 +192,58 @@ fun TraktLinkOverlay(
                         )
                     }
 
-                    is TraktLinkState.Linked -> Text(
-                        stringResource(R.string.trakt_link_linked, state.account.handle),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = HubColors.Text,
-                        textAlign = TextAlign.Center,
-                    )
+                    // Said in two parts, because they answer two different
+                    // questions: whether the device flow actually completed,
+                    // and which account it completed as. The second alone is
+                    // what used to be here, and an account name on its own
+                    // does not read as "this worked".
+                    is TraktLinkState.Linked -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.trakt_link_success),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = HubColors.Fresh,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            stringResource(R.string.trakt_link_linked, state.account.handle),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = HubColors.Text,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
 
-                    is TraktLinkState.Failed -> Text(
-                        stringResource(state.reason.messageRes()),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = HubColors.TextDim,
-                        textAlign = TextAlign.Center,
-                    )
+                    // Same two parts, inverted: what went wrong, and what to
+                    // do about it. The reason strings deliberately no longer
+                    // carry their own "try again" — one instruction, in one
+                    // place, and only when trying again could actually help.
+                    is TraktLinkState.Failed -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.trakt_link_failed_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = HubColors.Rotten,
+                            textAlign = TextAlign.Center,
+                        )
+                        Text(
+                            stringResource(state.reason.messageRes()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = HubColors.TextDim,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (state.reason != TraktLinkFailure.MISSING_CREDENTIALS) {
+                            Text(
+                                stringResource(R.string.trakt_link_try_again),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = HubColors.Text,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    }
                 }
 
                 // A failure that a new code could fix gets a retry; one that
@@ -204,7 +256,9 @@ fun TraktLinkOverlay(
                         text = stringResource(R.string.trakt_link_retry),
                         primary = true,
                         onClick = onRetry,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(actionFocus),
                     )
                 }
 
@@ -216,8 +270,17 @@ fun TraktLinkOverlay(
                             R.string.trakt_link_close
                         },
                     ),
+                    primary = state is TraktLinkState.Linked,
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                            if (state is TraktLinkState.Linked) {
+                                Modifier.focusRequester(actionFocus)
+                            } else {
+                                Modifier
+                            },
+                        ),
                 )
             }
         }

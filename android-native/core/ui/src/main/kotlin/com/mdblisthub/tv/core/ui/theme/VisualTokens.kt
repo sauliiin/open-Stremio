@@ -1,5 +1,6 @@
 package com.mdblisthub.tv.core.ui.theme
 
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.unit.dp
@@ -24,6 +25,20 @@ object HubMotion {
     const val PressedScale = 0.98f
 
     val StandardEasing: Easing = FastOutSlowInEasing
+
+    /**
+     * The pair used when one block hands the screen over to another.
+     *
+     * [StandardEasing] is symmetric, and symmetry is exactly wrong for a
+     * handover: it gives the departing block the same slow start it gives the
+     * arriving one, so the screen spends its first frames barely moving and
+     * the whole thing reads as long even when it is not. These are Material
+     * 3's emphasized curves — the outgoing half leaves fast and the incoming
+     * half arrives slow — which is what lets a handover be short and still
+     * land softly.
+     */
+    val EmphasizedAccelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+    val EmphasizedDecelerate: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
 }
 
 object HubShapes {

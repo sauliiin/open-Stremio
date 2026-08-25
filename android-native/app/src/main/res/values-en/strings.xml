@@ -167,6 +167,8 @@
     <string name="home_type_show">Series</string>
     <string name="home_type_movie">Movie</string>
     <string name="home_minutes">%1$d min</string>
+    <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
+    <string name="home_episode_code">S%1$02dE%2$02d</string>
     <string name="home_exit_question">Sign out?</string>
     <string name="home_no_visible_rows">No rows are visible</string>
     <string name="home_no_lists">No lists available</string>
@@ -303,10 +305,13 @@
     <string name="trakt_link_cancel">Cancel</string>
     <string name="trakt_link_close">Close</string>
     <string name="trakt_link_retry">Try again</string>
-    <string name="trakt_link_error_expired">The code expired before it was approved. Ask for a new one.</string>
+    <string name="trakt_link_error_expired">The code expired before it was approved on Trakt.</string>
     <string name="trakt_link_error_denied">Access was denied on Trakt.</string>
-    <string name="trakt_link_error_unavailable">Could not reach Trakt. Try again.</string>
+    <string name="trakt_link_error_unavailable">Could not reach Trakt.</string>
     <string name="trakt_link_error_credentials">This build ships no Trakt credentials.</string>
+    <string name="trakt_link_success">Authentication complete</string>
+    <string name="trakt_link_failed_title">Could not complete authentication</string>
+    <string name="trakt_link_try_again">Please try again.</string>
     <string name="trakt_link_vip_limit_warning">Free Trakt accounts connect only one third-party app at a time.</string>
 
     <!-- Automatic update through GitHub Releases -->
