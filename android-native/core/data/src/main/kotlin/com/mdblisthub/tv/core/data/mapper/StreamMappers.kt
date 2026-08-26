@@ -269,7 +269,11 @@ object Languages {
 
     /** Only reached for a blank code, where there is no tag to fall back to. */
     private fun unknownLabel(locale: Locale): String =
-        if (locale.language == "pt") "Desconhecido" else "Unknown"
+        when (locale.language) {
+            "pt" -> "Desconhecido"
+            "fr" -> "Inconnu"
+            else -> "Unknown"
+        }
 
     /** Matches two- and three-letter spellings of the same language. */
     fun matches(code: String?, preferred: String?): Boolean {

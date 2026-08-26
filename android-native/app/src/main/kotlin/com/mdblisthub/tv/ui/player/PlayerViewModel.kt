@@ -9,6 +9,7 @@ import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
+import com.mdblisthub.tv.core.model.ClockPosition
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.ScrobbleTarget
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -153,6 +155,17 @@ class PlayerViewModel(
     val castPreview: StateFlow<PlayerCastPreviewState> = _castPreview.asStateFlow()
     private val castSummaryCache = mutableMapOf<Int, PersonSummary?>()
     private var castPreviewJob: Job? = null
+
+    /**
+     * The clock overlay. No auto-hide setting here: in the player the clock
+     * rides the OSD's own timeout rather than running a timer against it.
+     */
+    val clockEnabled: StateFlow<Boolean> = graph.uiPreferences.clockScope
+        .map { it.onPlayer }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val clockPosition: StateFlow<ClockPosition> = graph.uiPreferences.clockPosition
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClockPosition.RIGHT)
 
     val subtitleColor: StateFlow<String> = graph.uiPreferences.subtitleColor
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "white")

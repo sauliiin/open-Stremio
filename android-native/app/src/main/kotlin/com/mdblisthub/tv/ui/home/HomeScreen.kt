@@ -6,6 +6,9 @@ import kotlinx.coroutines.isActive
 import androidx.compose.foundation.verticalScroll
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -89,6 +92,10 @@ import com.mdblisthub.tv.core.ui.component.MediaRow
 import com.mdblisthub.tv.core.ui.component.RailItem
 import com.mdblisthub.tv.core.ui.component.SideRail
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.core.model.AddonCatalogItem
+import com.mdblisthub.tv.core.model.ClockPosition
+import com.mdblisthub.tv.ui.component.AppClock
+import com.mdblisthub.tv.ui.component.alignment
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.core.model.MediaDetail
@@ -347,6 +354,9 @@ fun HomeScreen(
     val spotlightEnabled by viewModel.spotlightEnabled.collectAsStateWithLifecycle()
     val posterLandscapeTransformation by
         viewModel.posterLandscapeTransformation.collectAsStateWithLifecycle()
+    val clockEnabled by viewModel.clockEnabled.collectAsStateWithLifecycle()
+    val clockPosition by viewModel.clockPosition.collectAsStateWithLifecycle()
+    val clockHomeAutoHide by viewModel.clockHomeAutoHide.collectAsStateWithLifecycle()
     // Keep the State object unwrapped here: only visible PosterCards read its
     // value, so a trailer frame does not invalidate this entire screen.
     val trailerPlayingItemKey = viewModel.trailerPlayingItemKey.collectAsStateWithLifecycle()
@@ -970,6 +980,27 @@ fun HomeScreen(
      * focus lands, the rail pins itself open (see its `onFocusChanged`), which
      * is why the override is dropped again straight after.
      */
+    /**
+     * Whether the home's clock is on screen, which is a different question
+     * from whether the viewer turned a clock on at all.
+     *
+     * With the auto-hide setting off it simply stays. With it on it is shown
+     * on arrival, fades after [HOME_CLOCK_VISIBLE_MS], and comes back the
+     * next time this screen takes focus — returning from a title, the player
+     * or settings re-runs this effect, which is what makes "hidden" a resting
+     * state rather than a one-way door.
+     *
+     * `screenHasFocus` is read from the *outer* box, which contains the rail,
+     * so walking into the menu and back out is deliberately not an arrival.
+     */
+    var clockVisible by remember { mutableStateOf(true) }
+    LaunchedEffect(clockEnabled, clockHomeAutoHide, screenHasFocus) {
+        clockVisible = true
+        if (!clockEnabled || !clockHomeAutoHide || !screenHasFocus) return@LaunchedEffect
+        delay(HOME_CLOCK_VISIBLE_MS)
+        clockVisible = false
+    }
+
     BackHandler {
         if (railFocused) {
             hostActivity?.finish()
@@ -1029,6 +1060,27 @@ fun HomeScreen(
         // trip to the menu. Keeping the content full-width makes both focus
         // states the same Hero; the rail merely covers its left edge.
         Box(Modifier.fillMaxSize()) content@{
+            // Composed before the rail and lifted above it, so it survives
+            // each of the early returns below — the empty states are exactly
+            // the screens someone is most likely to be sitting in front of.
+            if (clockEnabled) {
+                AnimatedVisibility(
+                    visible = clockVisible,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(clockPosition.alignment)
+                        .zIndex(2f)
+                        .padding(
+                            top = HubDimens.ScreenPaddingVertical,
+                            start = HubDimens.ScreenPaddingHorizontal,
+                            end = HubDimens.ScreenPaddingHorizontal,
+                        ),
+                ) {
+                    AppClock(position = clockPosition)
+                }
+            }
+
             SideRail(
                 items = rail,
                 selectedKey = "home",
@@ -1511,9 +1563,27 @@ fun HomeScreen(
                                 },
                                 onEnsure = { viewModel.ensureCatalog(catalog) },
                                 onItemClick = openCatalogItem,
-                                onItemLongClick = { optionTarget = HomeOptionTarget(it) },
+                                // A card that names an episode opens the same
+                                // options sheet "A Seguir" does, so playing
+                                // what a channel has scheduled is one press
+                                // rather than a trip through the season list.
+                                onOpenEpisode = { item, season, episode ->
+                                    optionTarget = HomeOptionTarget(
+                                        item = item,
+                                        season = season,
+                                        episode = episode,
+                                    )
+                                },
+                                onItemLongClick = { item, season, episode ->
+                                    optionTarget = HomeOptionTarget(
+                                        item = item,
+                                        season = season,
+                                        episode = episode,
+                                    )
+                                },
                                 onItemFocused = trackFocus,
-                                isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
+                                watchedIds = watchedIds,
+                                watchedEpisodes = watchedEpisodes,
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
@@ -1662,7 +1732,7 @@ fun HomeScreen(
 private fun AddonCatalogRow(
     modifier: Modifier = Modifier,
     catalog: AddonCatalog,
-    itemFlow: StateFlow<List<MediaItem>>,
+    itemFlow: StateFlow<List<AddonCatalogItem>>,
     isEditMode: Boolean,
     onToggleVisibility: () -> Unit,
     canMoveUp: Boolean,
@@ -1673,9 +1743,11 @@ private fun AddonCatalogRow(
     onDelete: () -> Unit,
     onEnsure: () -> Unit,
     onItemClick: (MediaItem) -> Unit,
-    onItemLongClick: (MediaItem) -> Unit,
+    onOpenEpisode: (MediaItem, Int, Int) -> Unit,
+    onItemLongClick: (MediaItem, Int?, Int?) -> Unit,
     onItemFocused: (MediaItem) -> Unit,
-    isWatched: ((Int, MediaItem) -> Boolean)? = null,
+    watchedIds: Set<Int>,
+    watchedEpisodes: Set<String>,
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
@@ -1684,11 +1756,15 @@ private fun AddonCatalogRow(
     synchronizeCardExpansion: Boolean = false,
 ) {
     val items by itemFlow.collectAsStateWithLifecycle()
+    // Remembered for the same reason the feed rows remember theirs: a fresh
+    // `List` instance on every pass is a changed parameter as far as skipping
+    // is concerned, and `MediaRow` takes the list unstably.
+    val cards = remember(items) { items.map { it.media } }
     LaunchedEffect(catalog.addonBase, catalog.key) { onEnsure() }
     MediaRow(
         modifier = modifier,
         title = catalog.name,
-        items = items,
+        items = cards,
         isEditMode = isEditMode,
         hidden = catalog.hidden,
         onToggleVisibility = onToggleVisibility,
@@ -1698,10 +1774,36 @@ private fun AddonCatalogRow(
         onMoveDown = onMoveDown,
         onRename = onRename,
         onDelete = onDelete,
-        onItemClick = onItemClick,
-        onItemLongClickIndexed = { _, item -> onItemLongClick(item) },
+        // Season and episode belong in the key: a channel's running order can
+        // schedule two episodes of the same show, and without them the second
+        // card carries the first one's key.
+        key = { itemIndex, item ->
+            val entry = items.getOrNull(itemIndex)
+            "${item.key}:${entry?.season ?: 0}:${entry?.episode ?: 0}"
+        },
+        onItemClickIndexed = { itemIndex, item ->
+            val entry = items.getOrNull(itemIndex)
+            val season = entry?.season
+            val episode = entry?.episode
+            if (season != null && episode != null) {
+                onOpenEpisode(item, season, episode)
+            } else {
+                onItemClick(item)
+            }
+        },
+        onItemLongClickIndexed = { itemIndex, item ->
+            val entry = items.getOrNull(itemIndex)
+            onItemLongClick(item, entry?.season, entry?.episode)
+        },
         onItemFocused = onItemFocused,
-        isWatched = isWatched,
+        isWatched = { itemIndex, item ->
+            val entry = items.getOrNull(itemIndex)
+            if (entry?.season != null && entry.episode != null) {
+                watchedEpisodes.contains("${item.tmdbId}:${entry.season}:${entry.episode}")
+            } else {
+                watchedIds.contains(item.tmdbId)
+            }
+        },
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         rowFocusRequester = rowFocusRequester,
@@ -2117,6 +2219,9 @@ private fun HeroMetadataRow(
 private const val FOCUS_FALLBACK_MS = 15_000L
 
 /** Long enough for the rail's width animation to give focus something to land on. */
+/** How long the home's clock stays up before auto-hide fades it out. */
+private const val HOME_CLOCK_VISIBLE_MS = 5_000L
+
 private const val RAIL_EXPAND_MS = 250L
 
 /** Steady-state cadence once real content holds focus — cheap, two boolean reads. */

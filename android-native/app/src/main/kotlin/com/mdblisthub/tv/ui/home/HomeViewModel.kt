@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.AddonCatalog
+import com.mdblisthub.tv.core.model.AddonCatalogItem
+import com.mdblisthub.tv.core.model.ClockPosition
 import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.MediaList
 import com.mdblisthub.tv.core.model.MediaType
@@ -69,7 +71,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
      * reappearing as an empty, zero-height item during focus search.
      */
     private val itemFlows = mutableMapOf<Long, StateFlow<List<MediaItem>>>()
-    private val catalogItemFlows = mutableMapOf<String, MutableStateFlow<List<MediaItem>>>()
+    private val catalogItemFlows = mutableMapOf<String, MutableStateFlow<List<AddonCatalogItem>>>()
     private val catalogLoadJobs = mutableMapOf<String, Job>()
     private val loadedCatalogs = mutableSetOf<String>()
     private val loadingMoreLists = mutableSetOf<Long>()
@@ -148,6 +150,21 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     val posterLandscapeTransformation: StateFlow<Boolean> =
         graph.uiPreferences.posterLandscapeTransformation
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
+    /**
+     * The clock overlay's three settings, read here rather than inside the
+     * clock itself so the home can decide whether to compose it at all —
+     * turned off, it costs nothing but a `false`.
+     */
+    val clockEnabled: StateFlow<Boolean> = graph.uiPreferences.clockScope
+        .map { it.onHome }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    val clockPosition: StateFlow<ClockPosition> = graph.uiPreferences.clockPosition
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ClockPosition.RIGHT)
+
+    val clockHomeAutoHide: StateFlow<Boolean> = graph.uiPreferences.clockHomeAutoHide
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
      * Non-null only after the focused title's trailer has rendered its first
@@ -703,7 +720,7 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         }
     }
 
-    fun itemsForCatalog(catalog: AddonCatalog): StateFlow<List<MediaItem>> =
+    fun itemsForCatalog(catalog: AddonCatalog): StateFlow<List<AddonCatalogItem>> =
         catalogItemFlows.getOrPut(catalogCacheKey(catalog)) {
             MutableStateFlow(emptyList())
         }.asStateFlow()

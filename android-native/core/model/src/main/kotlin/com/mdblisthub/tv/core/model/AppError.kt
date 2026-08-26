@@ -58,6 +58,15 @@ sealed interface AppError {
     /** Answered, but the JSON is not a Stremio addon manifest (no id/name). */
     data object AddonManifestInvalid : AppError
 
+    /**
+     * A real manifest, but the addon's own placeholder one: it says
+     * `configurationRequired`, which means the URL installed was the
+     * unconfigured address rather than the one its configuration page hands
+     * back. Nothing about it works — no catalogs, no streams — so it is
+     * refused rather than added as a name with nothing behind it.
+     */
+    data object AddonNotConfigured : AppError
+
     // ------------------------------------------------------------ mdblist
 
     data object MdblistNotLinked : AppError

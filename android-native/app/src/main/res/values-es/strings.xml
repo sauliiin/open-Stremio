@@ -35,6 +35,19 @@
     <string name="settings_poster_landscape_transformation">Expandir pósteres a formato horizontal</string>
     <string name="settings_intro">Reproducir introducción al abrir la app</string>
     <string name="settings_spotlight_hero">Hero de destacados</string>
+    <string name="settings_clock">Reloj</string>
+    <string name="settings_clock_show">Mostrar el reloj en</string>
+    <string name="settings_clock_scope_home">Inicio</string>
+    <string name="settings_clock_scope_player">Reproductor</string>
+    <string name="settings_clock_scope_both">Ambos</string>
+    <string name="settings_clock_scope_none">Ninguno</string>
+    <string name="settings_interface_appearance">Apariencia</string>
+    <string name="settings_clock_position">Posición</string>
+    <string name="settings_clock_position_left">Izquierda</string>
+    <string name="settings_clock_position_center">Centro</string>
+    <string name="settings_clock_position_right">Derecha</string>
+    <string name="settings_clock_home_auto_hide">Ocultar en el inicio tras 5 s</string>
+    <string name="player_ends_at">Termina a las %1$s</string>
     <string name="settings_section_subtitles">Subtítulos</string>
     <string name="settings_subtitle_auto_download">Descargar subtítulos automáticamente</string>
     <string name="settings_subtitle_default_lang">Idioma predeterminado de los subtítulos</string>
@@ -52,6 +65,7 @@
     <string name="lang_pt">Portugués</string>
     <string name="lang_en">Inglés</string>
     <string name="lang_es">Español</string>
+    <string name="lang_fr">Francés</string>
     <string name="detail_watch">Ver</string>
     <string name="detail_watch_episode">Ver T%1$dE%2$d</string>
     <string name="detail_select_source">Seleccionar fuente</string>
@@ -356,6 +370,7 @@
     <string name="error_addon_install_timed_out">El addon tardó demasiado en responder. Algunos tardan casi un minuto la primera vez, mientras validan la clave de debrid — inténtalo de nuevo, el segundo intento suele ser instantáneo.</string>
     <string name="error_addon_manifest_unreadable">No se pudo leer el manifest. Revisa la URL — muchos addons generan una dirección propia por usuario en su página de configuración; es esa la que debes pegar aquí, no la dirección del sitio.</string>
     <string name="error_addon_manifest_invalid">La dirección respondió, pero no es un manifest de addon de Stremio.</string>
+    <string name="error_addon_not_configured">El addon respondió, pero aún no está configurado: esta dirección no trae ningún catálogo. Abre su página de configuración, revisa carácter por carácter la dirección generada (es fácil confundir O con 0) y pega esa aquí.</string>
     <string name="error_mdblist_not_linked">Vincula primero tu cuenta de MDBList.</string>
     <string name="error_mdblist_no_lists">Tu cuenta de MDBList no devolvió listas.</string>
     <string name="error_mdblist_no_valid_manifests">MDBList no generó ningún manifest de addon válido.</string>

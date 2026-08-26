@@ -18,6 +18,12 @@ class WikipediaRepositoryTest {
     }
 
     @Test
+    fun `french interface falls back to english wikipedia`() {
+        assertEquals(listOf("fr", "en"), wikipediaEditionsFor("fr"))
+        assertEquals(listOf("fr", "en"), wikipediaEditionsFor("fr-FR"))
+    }
+
+    @Test
     fun `age sentence uses present tense for someone alive, in portuguese`() {
         // The exact age depends on today's date, so this only checks the
         // shape of the sentence — [ageAsOf] (private, exercised indirectly
@@ -35,10 +41,18 @@ class WikipediaRepositoryTest {
     }
 
     @Test
+    fun `age sentence uses present tense for someone alive, in french`() {
+        val sentence = ageSentence("Carlos", "2000-01-01", null, "fr-FR")
+        assertEquals(true, sentence != null && sentence.startsWith("Carlos a "))
+        assertEquals(true, sentence!!.endsWith(" ans."))
+    }
+
+    @Test
     fun `age sentence uses past tense for someone with a death date`() {
         assertEquals("Carlos morreu aos 20 anos.", ageSentence("Carlos", "2000-06-15", "2020-06-15", "pt-BR"))
         assertEquals("Carlos morreu aos 19 anos.", ageSentence("Carlos", "2000-06-15", "2020-06-14", "pt-BR"))
         assertEquals("Carlos died at 20.", ageSentence("Carlos", "2000-06-15", "2020-06-15", "en-US"))
+        assertEquals("Carlos est décédé à l’âge de 20 ans.", ageSentence("Carlos", "2000-06-15", "2020-06-15", "fr-FR"))
     }
 
     @Test

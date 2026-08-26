@@ -133,7 +133,7 @@ class ArtworkWorker(
                 .forEach { catalog ->
                     val urls = addons.catalogItems(catalog).getOrDefault(emptyList())
                         .asSequence()
-                        .mapNotNull { it.posterUrl }
+                        .mapNotNull { it.media.posterUrl }
                         .take(VISIBLE_PER_ROW)
                         .toList()
                     if (urls.isNotEmpty()) warmer.warm(urls)

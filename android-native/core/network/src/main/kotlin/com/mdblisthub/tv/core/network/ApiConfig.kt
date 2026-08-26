@@ -138,6 +138,7 @@ object ApiConfig {
         "pt-pt" -> "pt-PT"
         "en" -> "en-US"
         "es" -> "es-419"
+        "fr" -> "fr-FR"
         else -> tag
     }
 

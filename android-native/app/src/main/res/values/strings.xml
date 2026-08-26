@@ -35,6 +35,19 @@
     <string name="settings_poster_landscape_transformation">Expandir poster para formato paisagem</string>
     <string name="settings_intro">Reproduzir introdução ao abrir o app</string>
     <string name="settings_spotlight_hero">Hero de destaques</string>
+    <string name="settings_clock">Relógio</string>
+    <string name="settings_clock_show">Mostrar o relógio em</string>
+    <string name="settings_clock_scope_home">Home</string>
+    <string name="settings_clock_scope_player">Player</string>
+    <string name="settings_clock_scope_both">Ambos</string>
+    <string name="settings_clock_scope_none">Nenhum</string>
+    <string name="settings_interface_appearance">Aparência</string>
+    <string name="settings_clock_position">Posição</string>
+    <string name="settings_clock_position_left">Esquerda</string>
+    <string name="settings_clock_position_center">Centro</string>
+    <string name="settings_clock_position_right">Direita</string>
+    <string name="settings_clock_home_auto_hide">Ocultar na home após 5s</string>
+    <string name="player_ends_at">Termina às %1$s</string>
     <string name="settings_section_subtitles">Legendas</string>
     <string name="settings_subtitle_auto_download">Download Automático de Legendas</string>
     <string name="settings_subtitle_default_lang">Idioma Predefinido da Legenda</string>
@@ -52,6 +65,7 @@
     <string name="lang_pt">Português</string>
     <string name="lang_en">English</string>
     <string name="lang_es">Espanhol</string>
+    <string name="lang_fr">Francês</string>
     <string name="detail_watch">Assistir</string>
     <string name="detail_watch_episode">Assistir T%1$dE%2$d</string>
     <string name="detail_select_source">Selecionar Fonte</string>
@@ -349,6 +363,7 @@
     <string name="error_addon_install_timed_out">O addon demorou demais para responder. Alguns levam quase um minuto na primeira vez, enquanto validam a chave do debrid — tente de novo, que a segunda costuma ser instantânea.</string>
     <string name="error_addon_manifest_unreadable">Não consegui ler o manifest. Confira a URL — e note que muitos addons geram um endereço próprio para cada usuário na página de configuração; é esse que precisa ser colado aqui, não o endereço do site.</string>
     <string name="error_addon_manifest_invalid">O endereço respondeu, mas não é um manifest de addon do Stremio.</string>
+    <string name="error_addon_not_configured">O addon respondeu, mas ainda não está configurado: esse endereço não tem nenhum catálogo. Abra a página de configuração dele, confira cada caractere do endereço gerado (é fácil trocar O por 0) e cole esse aqui.</string>
     <string name="error_mdblist_not_linked">Vincule sua conta MDBList primeiro.</string>
     <string name="error_mdblist_no_lists">Sua conta MDBList não devolveu listas.</string>
     <string name="error_mdblist_no_valid_manifests">A MDBList não gerou nenhum manifest de addon válido.</string>

@@ -8,6 +8,7 @@ import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.database.entity.AddonEntity
 import com.mdblisthub.tv.core.model.Addon
 import com.mdblisthub.tv.core.model.AddonCatalog
+import com.mdblisthub.tv.core.model.AddonCatalogItem
 import com.mdblisthub.tv.core.model.AddonImportSkipReason
 import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.CoreText
@@ -19,6 +20,7 @@ import com.mdblisthub.tv.core.network.HttpClients
 import com.mdblisthub.tv.core.network.StremioApi
 import com.mdblisthub.tv.core.network.dto.StremioCollectionEntryDto
 import com.mdblisthub.tv.core.network.dto.StremioManifestDto
+import com.mdblisthub.tv.core.network.dto.StremioMetaDto
 import com.mdblisthub.tv.core.network.dto.FirebaseCatalogPreferenceDto
 import com.mdblisthub.tv.core.model.StremioImportFailure
 import com.mdblisthub.tv.core.model.StremioImportReport
@@ -128,20 +130,46 @@ class AddonsRepository(
 
     suspend fun addons(): List<Addon> = dao.addons().map { it.toDomain() }
 
-    suspend fun catalogItems(catalog: AddonCatalog): Result<List<MediaItem>> = runCatching {
+    suspend fun catalogItems(catalog: AddonCatalog): Result<List<AddonCatalogItem>> = runCatching {
         val url = "${catalog.addonBase.trimEnd('/')}/catalog/" +
             "${encodeSegment(catalog.type)}/${encodeSegment(catalog.id)}.json"
-        api.catalog(url).metas.mapNotNull { meta ->
-            if (meta.id.isBlank() || meta.name.isBlank()) return@mapNotNull null
-            val tmdbId = meta.id
-                .removePrefix("tmdb:")
-                .substringAfterLast(':')
-                .toIntOrNull()
-                ?: 0
-            val imdbId = meta.id.takeIf { it.startsWith("tt", ignoreCase = true) }
-            if (tmdbId <= 0 && imdbId == null) return@mapNotNull null
 
-            MediaItem(
+        // Two passes rather than one, because a catalog entry is not always a
+        // title. An addon may answer with a *container* — a channel whose
+        // contents are episodes of several different shows — and the whole
+        // row is then behind a `meta` call the catalog itself does not carry.
+        // Containers are expanded concurrently and titles cost nothing extra,
+        // so a catalog with none of them behaves exactly as it did before.
+        val metas = api.catalog(url).metas
+        val gate = Semaphore(CONTAINER_CONCURRENCY)
+        val expanded = coroutineScope {
+            metas.map { meta ->
+                async {
+                    if (isContainerId(meta.id)) {
+                        gate.withPermit { containerItems(catalog, meta.id, meta.type) }
+                    } else {
+                        listOfNotNull(titleItem(meta))
+                    }
+                }
+            }.awaitAll()
+        }.flatten()
+
+        expanded.distinctBy { "${it.media.key}:${it.season ?: 0}:${it.episode ?: 0}" }
+    }
+
+    /** A catalog entry that is a title in its own right — the ordinary case. */
+    private fun titleItem(meta: StremioMetaDto): AddonCatalogItem? {
+        if (meta.id.isBlank() || meta.name.isBlank()) return null
+        val tmdbId = meta.id
+            .removePrefix("tmdb:")
+            .substringAfterLast(':')
+            .toIntOrNull()
+            ?: 0
+        val imdbId = meta.id.takeIf { it.startsWith("tt", ignoreCase = true) }
+        if (tmdbId <= 0 && imdbId == null) return null
+
+        return AddonCatalogItem(
+            media = MediaItem(
                 tmdbId = tmdbId,
                 imdbId = imdbId,
                 type = MediaType.fromStremio(meta.type),
@@ -150,8 +178,52 @@ class AddonsRepository(
                 posterUrl = meta.poster,
                 backdropUrl = meta.background,
                 score = meta.imdbRating?.toDoubleOrNull()?.times(10)?.roundToInt(),
+            ),
+        )
+    }
+
+    /**
+     * The line-up behind a container entry, as one card per scheduled episode.
+     *
+     * A failure here is an empty list, not an exception: one unreachable
+     * channel must not empty the whole row alongside the channels that
+     * answered.
+     */
+    private suspend fun containerItems(
+        catalog: AddonCatalog,
+        containerId: String,
+        metaType: String,
+    ): List<AddonCatalogItem> {
+        val type = metaType.ifBlank { catalog.type }
+        val url = "${catalog.addonBase.trimEnd('/')}/meta/" +
+            "${encodeSegment(type)}/${encodeSegment(containerId)}.json"
+        val detail = runCatching { api.meta(url).meta }.getOrNull() ?: return emptyList()
+
+        return detail.videos.mapNotNull { video ->
+            val episodeId = parseEpisodeId(video.id) ?: return@mapNotNull null
+            val title = video.title?.takeIf { it.isNotBlank() }
+                ?: video.name?.takeIf { it.isNotBlank() }
+                ?: detail.name
+            if (title.isBlank()) return@mapNotNull null
+
+            AddonCatalogItem(
+                media = MediaItem(
+                    tmdbId = 0,
+                    imdbId = episodeId.imdbId,
+                    type = MediaType.fromStremio(type),
+                    title = title,
+                    // The episode still is the only artwork the line-up
+                    // carries. The show's own poster would mean resolving
+                    // every IMDb id to TMDB before the row could paint, which
+                    // is a request per card for artwork the addon already
+                    // supplied one of.
+                    posterUrl = video.thumbnail,
+                    backdropUrl = video.thumbnail,
+                ),
+                season = episodeId.season,
+                episode = episodeId.episode,
             )
-        }.distinctBy { it.key }
+        }
     }
 
     /** Raw rows, manifest included — what the Firebase push needs to write. */
@@ -172,6 +244,18 @@ class AddonsRepository(
         // generated for them.
         if (manifest.id.isBlank() || manifest.name.isBlank()) {
             fail(AppError.AddonManifestInvalid)
+        }
+
+        // A configurable addon commonly answers on its *unconfigured* address
+        // too, with a complete-looking manifest whose catalog list is empty
+        // and whose `configurationRequired` is set. Installing that puts a
+        // name in the addon list and nothing anywhere else, which reads as
+        // "the app does not support this addon" — so it is refused here
+        // instead. One mistyped character in a per-user URL lands exactly on
+        // this path, because the host answers the wrong token with the
+        // placeholder rather than a 404.
+        if (manifest.behaviorHints?.configurationRequired == true) {
+            fail(AppError.AddonNotConfigured)
         }
 
         val entity = manifest.toEntity(base, System.currentTimeMillis())
@@ -352,6 +436,32 @@ private fun rawCatalogs(rows: List<AddonEntity>): List<AddonCatalog> = rows.flat
         )
     }
 }
+
+/**
+ * Whether a catalog entry is a container rather than a title.
+ *
+ * `channel_` is the prefix the Stremio protocol reserves for this, and the
+ * addons that serve one declare it in their manifest's `idPrefixes` beside
+ * `tt`. Anything else is read as a title and either resolves to an id this
+ * app can use or is dropped, exactly as before.
+ */
+private fun isContainerId(id: String): Boolean =
+    id.startsWith("channel_", ignoreCase = true)
+
+private data class EpisodeId(val imdbId: String, val season: Int, val episode: Int)
+
+/** `tt0412142:1:11` — the only place a scheduled episode is actually named. */
+private fun parseEpisodeId(raw: String): EpisodeId? {
+    val parts = raw.split(':')
+    if (parts.size < 3) return null
+    val imdbId = parts[0].takeIf { it.startsWith("tt", ignoreCase = true) } ?: return null
+    val season = parts[1].toIntOrNull() ?: return null
+    val episode = parts[2].toIntOrNull() ?: return null
+    return EpisodeId(imdbId, season, episode)
+}
+
+/** Bounded like every other fan-out here: a catalog may list many channels. */
+private const val CONTAINER_CONCURRENCY = 4
 
 private fun encodeSegment(value: String): String =
     java.net.URLEncoder.encode(value, Charsets.UTF_8.name()).replace("+", "%20")

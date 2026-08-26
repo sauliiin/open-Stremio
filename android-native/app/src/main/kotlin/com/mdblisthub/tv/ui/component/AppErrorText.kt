@@ -26,6 +26,7 @@ fun AppError.text(): String = when (this) {
     AppError.AddonInstallTimedOut -> stringResource(R.string.error_addon_install_timed_out)
     AppError.AddonManifestUnreadable -> stringResource(R.string.error_addon_manifest_unreadable)
     AppError.AddonManifestInvalid -> stringResource(R.string.error_addon_manifest_invalid)
+    AppError.AddonNotConfigured -> stringResource(R.string.error_addon_not_configured)
 
     AppError.MdblistNotLinked -> stringResource(R.string.error_mdblist_not_linked)
     AppError.MdblistNoLists -> stringResource(R.string.error_mdblist_no_lists)

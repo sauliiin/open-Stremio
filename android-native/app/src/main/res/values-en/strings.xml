@@ -35,6 +35,19 @@
     <string name="settings_poster_landscape_transformation">Expand posters to landscape</string>
     <string name="settings_intro">Play intro when opening the app</string>
     <string name="settings_spotlight_hero">Spotlight hero</string>
+    <string name="settings_clock">Clock</string>
+    <string name="settings_clock_show">Show the clock on</string>
+    <string name="settings_clock_scope_home">Home</string>
+    <string name="settings_clock_scope_player">Player</string>
+    <string name="settings_clock_scope_both">Both</string>
+    <string name="settings_clock_scope_none">None</string>
+    <string name="settings_interface_appearance">Appearance</string>
+    <string name="settings_clock_position">Position</string>
+    <string name="settings_clock_position_left">Left</string>
+    <string name="settings_clock_position_center">Center</string>
+    <string name="settings_clock_position_right">Right</string>
+    <string name="settings_clock_home_auto_hide">Hide on home after 5s</string>
+    <string name="player_ends_at">Ends at %1$s</string>
     <string name="settings_section_subtitles">Subtitles</string>
     <string name="settings_subtitle_auto_download">Auto-download Subtitles</string>
     <string name="settings_subtitle_default_lang">Default Subtitle Language</string>
@@ -52,6 +65,7 @@
     <string name="lang_pt">Portuguese</string>
     <string name="lang_en">English</string>
     <string name="lang_es">Spanish</string>
+    <string name="lang_fr">French</string>
     <string name="detail_watch">Watch</string>
     <string name="detail_watch_episode">Watch S%1$dE%2$d</string>
     <string name="detail_select_source">Select Source</string>
@@ -349,6 +363,7 @@
     <string name="error_addon_install_timed_out">The addon took too long to respond. Some take almost a minute the first time, while they validate the debrid key — try again, the second attempt is usually instant.</string>
     <string name="error_addon_manifest_unreadable">Could not read the manifest. Check the URL — many addons generate a per-user address on their configuration page; that is the one to paste here, not the site’s address.</string>
     <string name="error_addon_manifest_invalid">The address answered, but it is not a Stremio addon manifest.</string>
+    <string name="error_addon_not_configured">The addon answered, but it is not configured yet: this address carries no catalogs. Open its configuration page, check the generated address character by character (O and 0 are easy to swap) and paste that one here.</string>
     <string name="error_mdblist_not_linked">Link your MDBList account first.</string>
     <string name="error_mdblist_no_lists">Your MDBList account returned no lists.</string>
     <string name="error_mdblist_no_valid_manifests">MDBList did not generate any valid addon manifest.</string>

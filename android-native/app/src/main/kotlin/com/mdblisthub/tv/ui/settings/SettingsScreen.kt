@@ -85,6 +85,8 @@ import androidx.tv.material3.Text
 import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.repository.SimklLinkState
+import com.mdblisthub.tv.core.model.ClockPosition
+import com.mdblisthub.tv.core.model.ClockScope
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.model.TraktAccount
@@ -142,6 +144,10 @@ data class SettingsUiState(
     val audioLanguage: String = "en",
     val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
     val dimUnwatchedEpisodes: Boolean = false,
+    /** No overlay by default, matching `UiPreferencesStore.clockScope`. */
+    val clockScope: ClockScope = ClockScope.NONE,
+    val clockPosition: ClockPosition = ClockPosition.RIGHT,
+    val clockHomeAutoHide: Boolean = false,
     val theme: HubThemeVariant = HubThemeVariant.NORMAL,
     val traktAccount: TraktAccount? = null,
     /** False when the build ships no Trakt client id — see `ApiConfig`. */
@@ -197,6 +203,15 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.dimUnwatchedEpisodes) { partial, dim ->
                     partial.copy(dimUnwatchedEpisodes = dim)
+                }
+                .combine(graph.uiPreferences.clockScope) { partial, scope ->
+                    partial.copy(clockScope = scope)
+                }
+                .combine(graph.uiPreferences.clockPosition) { partial, position ->
+                    partial.copy(clockPosition = position)
+                }
+                .combine(graph.uiPreferences.clockHomeAutoHide) { partial, autoHide ->
+                    partial.copy(clockHomeAutoHide = autoHide)
                 }
                 .combine(graph.uiPreferences.introEnabled) { partial, enabled ->
                     partial.copy(introEnabled = enabled)
@@ -362,6 +377,18 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
     fun setTheme(theme: HubThemeVariant) = viewModelScope.launch { graph.uiPreferences.saveTheme(theme) }
     fun toggleDimUnwatchedEpisodes() = viewModelScope.launch { graph.uiPreferences.saveDimUnwatchedEpisodes(!_state.value.dimUnwatchedEpisodes) }
+
+    fun setClockScope(scope: ClockScope) = viewModelScope.launch {
+        graph.uiPreferences.saveClockScope(scope)
+    }
+
+    fun setClockPosition(position: ClockPosition) = viewModelScope.launch {
+        graph.uiPreferences.saveClockPosition(position)
+    }
+
+    fun toggleClockHomeAutoHide() = viewModelScope.launch {
+        graph.uiPreferences.saveClockHomeAutoHide(!_state.value.clockHomeAutoHide)
+    }
 
     private companion object {
         /** Long enough to read "connected as @you" before the overlay closes. */
@@ -723,21 +750,181 @@ private fun InterfaceSettingsContent(state: SettingsUiState, viewModel: Settings
                 subtitle = stringResource(R.string.settings_category_interface_desc),
             ) {
                 SettingsRow(label = stringResource(R.string.settings_language)) {
-                    listOf(
-                        "pt" to stringResource(R.string.lang_pt),
-                        "en" to stringResource(R.string.lang_en),
-                        "es" to stringResource(R.string.lang_es),
-                    ).forEach { (code, name) ->
-                        HubButton(text = name, primary = state.language == code, onClick = { viewModel.setLanguage(code) })
+                    InterfaceLanguageDropdown(
+                        selectedCode = state.language,
+                        languages = listOf(
+                            "pt" to stringResource(R.string.lang_pt),
+                            "en" to stringResource(R.string.lang_en),
+                            "es" to stringResource(R.string.lang_es),
+                            "fr" to stringResource(R.string.lang_fr),
+                        ),
+                        onSelect = viewModel::setLanguage,
+                    )
+                }
+
+                // One panel for the three switches that decide how the app
+                // looks rather than what it does. Individually they are one
+                // line each, and a stack of one-line panels reads as a longer
+                // list of unrelated things than it actually is.
+                SettingsGroup(label = stringResource(R.string.settings_interface_appearance)) {
+                    SettingsGroupLine(
+                        stringResource(R.string.settings_poster_landscape_transformation),
+                    ) {
+                        OnOffButton(
+                            state.posterLandscapeTransformation,
+                            viewModel::togglePosterLandscapeTransformation,
+                        )
+                    }
+                    SettingsGroupLine(stringResource(R.string.settings_spotlight_hero)) {
+                        OnOffButton(state.spotlightHero, viewModel::toggleSpotlightHero)
+                    }
+                    SettingsGroupLine(stringResource(R.string.settings_intro)) {
+                        OnOffButton(state.introEnabled, viewModel::toggleIntro)
                     }
                 }
-                ToggleSettingsRow(
-                    stringResource(R.string.settings_poster_landscape_transformation),
-                    state.posterLandscapeTransformation,
-                    viewModel::togglePosterLandscapeTransformation,
-                )
-                ToggleSettingsRow(stringResource(R.string.settings_intro), state.introEnabled, viewModel::toggleIntro)
-                ToggleSettingsRow(stringResource(R.string.settings_spotlight_hero), state.spotlightHero, viewModel::toggleSpotlightHero)
+
+                SettingsGroup(label = stringResource(R.string.settings_clock)) {
+                    SettingsGroupLine(stringResource(R.string.settings_clock_show)) {
+                        listOf(
+                            ClockScope.HOME to R.string.settings_clock_scope_home,
+                            ClockScope.PLAYER to R.string.settings_clock_scope_player,
+                            ClockScope.BOTH to R.string.settings_clock_scope_both,
+                            ClockScope.NONE to R.string.settings_clock_scope_none,
+                        ).forEach { (scope, label) ->
+                            HubButton(
+                                text = stringResource(label),
+                                primary = state.clockScope == scope,
+                                onClick = { viewModel.setClockScope(scope) },
+                            )
+                        }
+                    }
+                    // Placement and auto-hide only mean anything once there is
+                    // a clock somewhere, so they appear with it rather than
+                    // sitting inert under a row set to "Nenhum".
+                    if (state.clockScope != ClockScope.NONE) {
+                        SettingsGroupLine(stringResource(R.string.settings_clock_position)) {
+                            listOf(
+                                ClockPosition.LEFT to R.string.settings_clock_position_left,
+                                ClockPosition.CENTER to R.string.settings_clock_position_center,
+                                ClockPosition.RIGHT to R.string.settings_clock_position_right,
+                            ).forEach { (position, label) ->
+                                HubButton(
+                                    text = stringResource(label),
+                                    primary = state.clockPosition == position,
+                                    onClick = { viewModel.setClockPosition(position) },
+                                )
+                            }
+                        }
+                        // The player's clock already has a rule for when it
+                        // belongs on screen — it rides the OSD — so this only
+                        // has anything to say while the home is included.
+                        if (state.clockScope.onHome) {
+                            SettingsGroupLine(
+                                stringResource(R.string.settings_clock_home_auto_hide),
+                            ) {
+                                OnOffButton(
+                                    state.clockHomeAutoHide,
+                                    viewModel::toggleClockHomeAutoHide,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Compact language selector anchored to the settings row.
+ *
+ * A focusable [androidx.compose.ui.window.Popup] keeps the menu in the same
+ * visual context as its trigger while still letting Back and an outside click
+ * dismiss it. Focus moves to the selected option when it opens and returns to
+ * the trigger when it closes, which is essential when navigating with a TV
+ * remote rather than touch.
+ */
+@Composable
+private fun InterfaceLanguageDropdown(
+    selectedCode: String,
+    languages: List<Pair<String, String>>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var hasOpened by remember { mutableStateOf(false) }
+    val triggerFocus = remember { FocusRequester() }
+    val selectedOptionFocus = remember { FocusRequester() }
+    val selectedName = languages.firstOrNull { it.first == selectedCode }?.second ?: selectedCode
+    val popupOffset = with(LocalDensity.current) {
+        androidx.compose.ui.unit.IntOffset(0, 62.dp.roundToPx())
+    }
+
+    androidx.compose.runtime.LaunchedEffect(expanded) {
+        if (expanded) {
+            repeat(3) {
+                androidx.compose.runtime.withFrameNanos { }
+                if (selectedOptionFocus.requestFocus()) return@LaunchedEffect
+            }
+        } else if (hasOpened) {
+            androidx.compose.runtime.withFrameNanos { }
+            triggerFocus.requestFocus()
+        }
+    }
+
+    Box {
+        HubButton(
+            text = "$selectedName  ▾",
+            primary = true,
+            onClick = {
+                hasOpened = true
+                expanded = true
+            },
+            modifier = Modifier
+                .width(280.dp)
+                .focusRequester(triggerFocus),
+        )
+
+        if (expanded) {
+            androidx.compose.ui.window.Popup(
+                alignment = Alignment.TopStart,
+                offset = popupOffset,
+                onDismissRequest = { expanded = false },
+                properties = androidx.compose.ui.window.PopupProperties(
+                    focusable = true,
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = true,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .width(280.dp)
+                        .clip(RoundedCornerShape(HubShapes.Control))
+                        .background(HubColors.SurfaceStrong)
+                        .border(
+                            HubStrokes.Focus,
+                            HubColors.Accent.copy(alpha = 0.72f),
+                            RoundedCornerShape(HubShapes.Control),
+                        )
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    languages.forEach { (code, name) ->
+                        HubButton(
+                            text = if (code == selectedCode) "✓  $name" else name,
+                            primary = code == selectedCode,
+                            onClick = {
+                                expanded = false
+                                if (code != selectedCode) onSelect(code)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (code == selectedCode) Modifier.focusRequester(selectedOptionFocus)
+                                    else Modifier,
+                                ),
+                        )
+                    }
+                }
             }
         }
     }
@@ -1008,13 +1195,7 @@ private fun PlayerSettingsContent(state: SettingsUiState, onOpenLanguage: () -> 
 
 @Composable
 private fun ToggleSettingsRow(label: String, enabled: Boolean, onToggle: () -> Unit) {
-    SettingsRow(label = label) {
-        HubButton(
-            text = stringResource(if (enabled) R.string.settings_on else R.string.settings_off),
-            primary = enabled,
-            onClick = onToggle,
-        )
-    }
+    SettingsRow(label = label) { OnOffButton(enabled, onToggle) }
 }
 
 @Composable
@@ -1045,6 +1226,63 @@ private fun SettingsCard(
         }
         content()
     }
+}
+
+/**
+ * Several related controls sharing one panel.
+ *
+ * This screen's default is [SettingsRow] — one framed panel per setting —
+ * which is right while the settings are unrelated to each other. The clock is
+ * not: it is a single feature with three knobs, and three stacked panels read
+ * as three separate features rather than one. Grouping names the feature once
+ * at the top and keeps its own settings inside its own frame.
+ */
+@Composable
+private fun SettingsGroup(
+    label: String,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    val shape = RoundedCornerShape(HubShapes.Field)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(HubColors.SurfaceStrong.copy(alpha = HubEffects.MutedSurfaceAlpha))
+            .border(HubStrokes.Hairline, HubColors.Border.copy(alpha = 0.45f), shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = HubColors.Text)
+        content()
+    }
+}
+
+/**
+ * One setting inside a [SettingsGroup]: its own caption, then its controls.
+ * Dimmer than the group's own title, so the panel reads as one heading over
+ * several entries instead of four labels of equal weight.
+ */
+@Composable
+private fun SettingsGroupLine(label: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = HubColors.TextDim)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            content()
+        }
+    }
+}
+
+/** The Ligado/Desligado pair, shared by [ToggleSettingsRow] and the groups. */
+@Composable
+private fun OnOffButton(enabled: Boolean, onToggle: () -> Unit) {
+    HubButton(
+        text = stringResource(if (enabled) R.string.settings_on else R.string.settings_off),
+        primary = enabled,
+        onClick = onToggle,
+    )
 }
 
 @Composable

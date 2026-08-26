@@ -9,6 +9,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.core.content.edit
+import com.mdblisthub.tv.core.model.ClockPosition
+import com.mdblisthub.tv.core.model.ClockScope
 import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.model.LibraryProvider
 import kotlinx.coroutines.flow.Flow
@@ -266,6 +268,59 @@ class UiPreferencesStore(context: Context) {
     }
 
     /**
+     * Which screens the clock overlay is drawn on.
+     *
+     * [ClockScope.NONE] by default, and deliberately so: it is an overlay
+     * painted on top of artwork on every screen it reaches, and most
+     * televisions already show a clock of their own somewhere. Installing
+     * this app should not silently put a second one on the glass.
+     *
+     * The old boolean is still honoured when no scope has been written yet,
+     * so a box that had the clock switched on before this became a choice
+     * keeps it — on both screens, which is what that switch meant.
+     */
+    val clockScope: Flow<ClockScope> = store.data.map { prefs ->
+        prefs[KEY_CLOCK_SCOPE]
+            ?.let { name -> runCatching { ClockScope.valueOf(name) }.getOrNull() }
+            ?: if (prefs[KEY_CLOCK_ENABLED] == true) ClockScope.BOTH else ClockScope.NONE
+    }
+
+    suspend fun saveClockScope(scope: ClockScope) {
+        store.edit { it[KEY_CLOCK_SCOPE] = scope.name }
+    }
+
+    /**
+     * Which top-edge anchor the clock uses. Same tolerance for a value this
+     * build no longer recognises as [theme] and [libraryProvider]: it falls
+     * back to the default rather than failing the read.
+     */
+    val clockPosition: Flow<ClockPosition> = store.data.map { prefs ->
+        prefs[KEY_CLOCK_POSITION]
+            ?.let { name -> runCatching { ClockPosition.valueOf(name) }.getOrNull() }
+            ?: ClockPosition.RIGHT
+    }
+
+    suspend fun saveClockPosition(position: ClockPosition) {
+        store.edit { it[KEY_CLOCK_POSITION] = position.name }
+    }
+
+    /**
+     * Whether the home's clock fades out once the screen has been sat on for
+     * a few seconds.
+     *
+     * Only the home has this. The player already has a rule for when its
+     * overlays belong on screen — the OSD's own timeout — and the clock rides
+     * that rather than running a second, competing timer against it.
+     */
+    val clockHomeAutoHide: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_CLOCK_HOME_AUTO_HIDE] ?: false
+    }
+
+    suspend fun saveClockHomeAutoHide(enabled: Boolean) {
+        store.edit { it[KEY_CLOCK_HOME_AUTO_HIDE] = enabled }
+    }
+
+    /**
      * Who answers for watchlist, collection, watched, up next and continue
      * watching. mdblist unless the user deliberately switched, and mdblist
      * again if the stored value is one this build no longer recognises — a
@@ -286,7 +341,7 @@ class UiPreferencesStore(context: Context) {
     private companion object {
         const val STARTUP_MIRROR = "ui-preferences-startup"
         const val DEFAULT_LANGUAGE = "en"
-        val SUPPORTED_LANGUAGES = setOf("pt", "en", "es")
+        val SUPPORTED_LANGUAGES = setOf("pt", "en", "es", "fr")
         val KEY_THEME = stringPreferencesKey("theme")
         val KEY_SETUP_COMPLETED = booleanPreferencesKey("setup_completed")
         val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")
@@ -295,6 +350,11 @@ class UiPreferencesStore(context: Context) {
         val KEY_INTRO_ENABLED = booleanPreferencesKey("intro_enabled")
         val KEY_SPOTLIGHT_HERO = booleanPreferencesKey("spotlight_hero")
         val KEY_LIBRARY_PROVIDER = stringPreferencesKey("library_provider")
+        /** Superseded by [KEY_CLOCK_SCOPE]; still read to migrate an existing box. */
+        val KEY_CLOCK_ENABLED = booleanPreferencesKey("clock_enabled")
+        val KEY_CLOCK_SCOPE = stringPreferencesKey("clock_scope")
+        val KEY_CLOCK_POSITION = stringPreferencesKey("clock_position")
+        val KEY_CLOCK_HOME_AUTO_HIDE = booleanPreferencesKey("clock_home_auto_hide")
         val KEY_LANGUAGE = stringPreferencesKey("language")
         val KEY_SUBTITLE_AUTO_DOWNLOAD = booleanPreferencesKey("subtitle_auto_download")
         val KEY_SUBTITLE_LANGUAGE = stringPreferencesKey("subtitle_language")

@@ -4,6 +4,7 @@ import com.mdblisthub.tv.core.network.dto.StremioManifestDto
 import com.mdblisthub.tv.core.network.dto.StremioStreamsDto
 import com.mdblisthub.tv.core.network.dto.StremioSubtitlesDto
 import com.mdblisthub.tv.core.network.dto.StremioCatalogResponseDto
+import com.mdblisthub.tv.core.network.dto.StremioMetaResponseDto
 import retrofit2.http.GET
 import retrofit2.http.Url
 import kotlinx.serialization.json.JsonObject
@@ -29,4 +30,8 @@ interface StremioApi {
 
     @GET
     suspend fun catalog(@Url url: String): StremioCatalogResponseDto
+
+    /** Only called for catalog entries that turn out to be containers. */
+    @GET
+    suspend fun meta(@Url url: String): StremioMetaResponseDto
 }

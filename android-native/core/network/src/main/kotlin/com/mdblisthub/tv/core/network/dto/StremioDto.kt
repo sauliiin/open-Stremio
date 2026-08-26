@@ -23,7 +23,16 @@ data class StremioManifestDto(
 )
 
 @Serializable
-data class StremioAddonHintsDto(val configurable: Boolean = false)
+data class StremioAddonHintsDto(
+    val configurable: Boolean = false,
+    /**
+     * Set by an addon that answers on its unconfigured URL as well, to say
+     * that this particular answer is the placeholder one — no catalogs, no
+     * streams — and that the address the configuration page hands back is
+     * what should have been installed.
+     */
+    val configurationRequired: Boolean = false,
+)
 
 @Serializable
 data class StremioCatalogDescriptorDto(
@@ -45,6 +54,43 @@ data class StremioMetaDto(
     val description: String? = null,
     val releaseInfo: String? = null,
     val imdbRating: String? = null,
+)
+
+/**
+ * A `meta` answer. Only the folder case is modelled: the app reads its own
+ * metadata from TMDB, so the one thing an addon's meta is needed for is the
+ * [StremioMetaDetailDto.videos] list behind an entry that is a container
+ * rather than a title — a channel's line-up, most of all.
+ */
+@Serializable
+data class StremioMetaResponseDto(val meta: StremioMetaDetailDto? = null)
+
+@Serializable
+data class StremioMetaDetailDto(
+    val id: String = "",
+    val type: String = "",
+    val name: String = "",
+    val poster: String? = null,
+    val background: String? = null,
+    val videos: List<StremioVideoDto> = emptyList(),
+)
+
+/**
+ * One entry of a container's [StremioMetaDetailDto.videos].
+ *
+ * `season` and `episode` are deliberately **not** read here, and that is the
+ * whole trap in this shape: on a channel they number the slot in that
+ * channel's own running order — 1, 2, 3 — while the episode being scheduled
+ * is named only inside [id], as `tt0412142:1:11`. Trusting the fields would
+ * have every channel playing episode 1 of season 1 twelve times over.
+ */
+@Serializable
+data class StremioVideoDto(
+    val id: String = "",
+    val title: String? = null,
+    val name: String? = null,
+    val released: String? = null,
+    val thumbnail: String? = null,
 )
 
 @Serializable(with = StremioResourceSerializer::class)

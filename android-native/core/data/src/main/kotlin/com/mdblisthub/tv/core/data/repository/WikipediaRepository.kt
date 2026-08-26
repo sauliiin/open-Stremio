@@ -113,12 +113,19 @@ class WikipediaRepository(
     }
 }
 
-/** Same "pt" / "pt-*" check the interface language setting itself uses. */
+/** Same language-tag checks the interface language setting itself uses. */
 internal fun isPortuguese(languageTag: String): Boolean =
     languageTag.equals("pt", ignoreCase = true) || languageTag.startsWith("pt-", ignoreCase = true)
 
+internal fun isFrench(languageTag: String): Boolean =
+    languageTag.equals("fr", ignoreCase = true) || languageTag.startsWith("fr-", ignoreCase = true)
+
 internal fun wikipediaEditionsFor(languageTag: String): List<String> =
-    if (isPortuguese(languageTag)) listOf("pt", "en") else listOf("en")
+    when {
+        isPortuguese(languageTag) -> listOf("pt", "en")
+        isFrench(languageTag) -> listOf("fr", "en")
+        else -> listOf("en")
+    }
 
 /**
  * "<Nome> tem <N> anos." for the common case, "<Nome> morreu aos <N> anos."
@@ -135,13 +142,22 @@ internal fun wikipediaEditionsFor(languageTag: String): List<String> =
 internal fun ageSentence(name: String, birthday: String?, deathday: String?, languageTag: String): String? {
     if (birthday.isNullOrBlank()) return null
     val portuguese = isPortuguese(languageTag)
+    val french = isFrench(languageTag)
     return if (!deathday.isNullOrBlank()) {
         ageAtDate(birthday, deathday)?.let {
-            if (portuguese) "$name morreu aos $it anos." else "$name died at $it."
+            when {
+                portuguese -> "$name morreu aos $it anos."
+                french -> "$name est décédé à l’âge de $it ans."
+                else -> "$name died at $it."
+            }
         }
     } else {
         ageToday(birthday)?.let {
-            if (portuguese) "$name tem $it anos." else "$name is $it years old."
+            when {
+                portuguese -> "$name tem $it anos."
+                french -> "$name a $it ans."
+                else -> "$name is $it years old."
+            }
         }
     }
 }

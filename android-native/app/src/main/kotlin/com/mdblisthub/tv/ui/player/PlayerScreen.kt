@@ -123,7 +123,10 @@ import com.mdblisthub.tv.player.PlaybackPhase
 import com.mdblisthub.tv.player.PlaybackPosition
 import com.mdblisthub.tv.player.TrackInfo
 import com.mdblisthub.tv.player.VideoScaleType
+import com.mdblisthub.tv.ui.component.AppClock
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.alignment
+import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -217,6 +220,9 @@ fun PlayerScreen(
     val playback by viewModel.controller.state.collectAsStateWithLifecycle()
     val position by viewModel.controller.position.collectAsStateWithLifecycle()
     
+    val clockEnabled by viewModel.clockEnabled.collectAsStateWithLifecycle()
+    val clockPosition by viewModel.clockPosition.collectAsStateWithLifecycle()
+
     val subtitleColorString by viewModel.subtitleColor.collectAsStateWithLifecycle()
     val subtitleTextOpacity by viewModel.subtitleTextOpacity.collectAsStateWithLifecycle()
     val subtitleBackgroundEnabled by viewModel.subtitleBackgroundEnabled.collectAsStateWithLifecycle()
@@ -612,6 +618,24 @@ fun PlayerScreen(
         }
 
         if (osdOnScreen) {
+            // Inside the OSD's own `if`, which is the whole rule for the
+            // clock in here: it arrives and leaves with the controls rather
+            // than keeping a timer of its own, so there is never a moment
+            // where half the overlay is on screen.
+            if (clockEnabled) {
+                AppClock(
+                    position = clockPosition,
+                    remainingMs = (position.durationMs - position.positionMs)
+                        .takeIf { position.durationMs > 0 && it > 0 },
+                    modifier = Modifier
+                        .align(clockPosition.alignment)
+                        .padding(
+                            top = HubDimens.ScreenPaddingVertical,
+                            start = HubDimens.ScreenPaddingHorizontal,
+                            end = HubDimens.ScreenPaddingHorizontal,
+                        ),
+                )
+            }
             PlayerTitlePlate(
                 title = ui.title,
                 date = ui.episodeLabel,

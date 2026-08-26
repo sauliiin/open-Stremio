@@ -26,40 +26,69 @@ object CoreText {
     private val isPortuguese: Boolean
         get() = Locale.getDefault().language.equals("pt", ignoreCase = true)
 
+    private val isFrench: Boolean
+        get() = Locale.getDefault().language.equals("fr", ignoreCase = true)
+
     /** Stands in for a title the catalogue never supplied. */
     val untitled: String
-        get() = if (isPortuguese) "Sem título" else "Untitled"
+        get() = when {
+            isPortuguese -> "Sem título"
+            isFrench -> "Sans titre"
+            else -> "Untitled"
+        }
 
     /** Stands in for a review whose author field came back blank. */
     val anonymous: String
-        get() = if (isPortuguese) "Anônimo" else "Anonymous"
+        get() = when {
+            isPortuguese -> "Anônimo"
+            isFrench -> "Anonyme"
+            else -> "Anonymous"
+        }
 
     /** Rotten Tomatoes' audience score, as opposed to the critics' one. */
     val audienceScore: String
-        get() = if (isPortuguese) "RT Público" else "RT Audience"
+        get() = when {
+            isPortuguese -> "RT Público"
+            isFrench -> "Public RT"
+            else -> "RT Audience"
+        }
 
     /** Stands in for a Stremio collection entry with neither a name nor a manifest to read one from. */
     val unnamedAddon: String
-        get() = if (isPortuguese) "addon sem nome" else "unnamed addon"
+        get() = when {
+            isPortuguese -> "addon sem nome"
+            isFrench -> "addon sans nom"
+            else -> "unnamed addon"
+        }
 
     /**
      * The four account-native home rows' default titles, before a user ever
      * renames one — see `HomeFeedsRepository.defaults()`.
      *
-     * "Watchlist" is deliberately identical in both branches: the app's own
-     * Portuguese copy already borrows the English word rather than
-     * translating it (see `detail_add_watchlist`, `settings_library_provider`
-     * in `strings.xml`), so translating it here would be the one place that
-     * disagreed with the rest of the interface.
+     * Portuguese deliberately borrows the English word "Watchlist", matching
+     * the rest of that catalogue. French uses "Liste de suivi", matching its
+     * translated detail and settings resources.
      */
     val upNext: String
-        get() = if (isPortuguese) "A Seguir" else "Up Next"
+        get() = when {
+            isPortuguese -> "A Seguir"
+            isFrench -> "À suivre"
+            else -> "Up Next"
+        }
 
     val recentlyAdded: String
-        get() = if (isPortuguese) "Adicionados Recentemente" else "Recently Added"
+        get() = when {
+            isPortuguese -> "Adicionados Recentemente"
+            isFrench -> "Ajoutés récemment"
+            else -> "Recently Added"
+        }
 
-    val watchlist: String get() = "Watchlist"
+    val watchlist: String get() = if (isFrench) "Liste de suivi" else "Watchlist"
 
     val recentlyWatched: String
-        get() = if (isPortuguese) "Assistidos Recentemente" else "Recently Watched"
+        get() = when {
+            isPortuguese -> "Assistidos Recentemente"
+            isFrench -> "Vus récemment"
+            else -> "Recently Watched"
+        }
 }

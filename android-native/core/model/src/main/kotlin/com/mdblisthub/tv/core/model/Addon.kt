@@ -87,6 +87,23 @@ data class AddonCatalog(
         get() = "$legacyKey@${addonBase.trimEnd('/').lowercase().hashCode().toUInt().toString(36)}"
 }
 
+/**
+ * One card in an addon catalog row, which may point at a whole title or at a
+ * single episode of one.
+ *
+ * The episode case exists because a catalog entry is not always a title: an
+ * addon may serve a container — a television channel's running order, say —
+ * whose contents are individual episodes of several different shows. Season
+ * and episode live beside the [MediaItem] rather than inside it for the same
+ * reason they do on `MdblistHomeFeedItem`: a `MediaItem` is a title, a row
+ * holds hundreds of them, and only these rows have an episode to name.
+ */
+data class AddonCatalogItem(
+    val media: MediaItem,
+    val season: Int? = null,
+    val episode: Int? = null,
+)
+
 @Serializable
 data class StremioAccount(
     val authKey: String,

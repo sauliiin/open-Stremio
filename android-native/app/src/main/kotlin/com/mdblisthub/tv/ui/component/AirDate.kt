@@ -7,8 +7,9 @@ import java.util.Locale
  * A TMDB air date, written the way each of this app's languages writes one.
  *
  * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"   es: "vie., 18 dic 2026"
+ * fr: "ven. 18 déc. 2026"
  *
- * Takes the raw "pt"/"en"/"es" code rather than a `Locale` — `Locale.forLanguageTag`
+ * Takes the raw "pt"/"en"/"es"/"fr" code rather than a `Locale` — `Locale.forLanguageTag`
  * on a bare "pt" resolves to European Portuguese, whose CLDR weekday
  * abbreviations don't reliably match Brazil's; building the locale explicitly
  * for each branch pins the exact one this format was written against.
@@ -29,6 +30,7 @@ internal fun formatAirDate(airDate: String, language: String): String? {
     return when (language) {
         "pt" -> SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
         "es" -> SimpleDateFormat("EEE, d MMM yyyy", Locale.forLanguageTag("es")).format(parsed)
+        "fr" -> SimpleDateFormat("EEE d MMM yyyy", Locale.FRENCH).format(parsed)
         else -> SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
     }
 }
