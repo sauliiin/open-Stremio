@@ -26,12 +26,19 @@ object TmdbImages {
         path?.takeIf { it.isNotBlank() }?.let { "$BASE/$size${if (it.startsWith("/")) it else "/$it"}" }
 
     /**
+     * Hoisted: [upscale] runs once per item mapped out of the database, so a
+     * home screen's worth of rows compiled this pattern several hundred times
+     * on every refresh. The pattern has never varied.
+     */
+    private val SIZE_SEGMENT = Regex("/t/p/w\\d+/")
+
+    /**
      * mdblist hands out posters already sized at `w200`, which is visibly soft
      * on a 10-foot card. Rewriting the size segment buys a sharper file for
      * free, since the CDN serves every size off the same path.
      */
     fun upscale(url: String?, size: String = POSTER_CARD): String? {
         if (url.isNullOrBlank()) return null
-        return Regex("/t/p/w\\d+/").replace(url, "/t/p/$size/")
+        return SIZE_SEGMENT.replace(url, "/t/p/$size/")
     }
 }

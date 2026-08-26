@@ -9,9 +9,12 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.ui.util.lerp
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -168,15 +171,21 @@ private data class HomeOptionTarget(
  * `PivotBringIntoViewSpec`, in its Android source set because it exists for
  * televisions — but it is `internal`, so the geometry is restated here.
  *
- * There used to be a `scrollAnimationSpec` override here — a stiff, non-bouncy
- * spring, chosen because the pivot makes *every* press scroll and a held
- * direction key needs an animation that retargets from wherever it is rather
- * than restarting. Compose has since deprecated that member outright
- * ("Animation spec customization is no longer supported") and no longer reads
- * it anywhere, so the override was doing nothing but emitting a warning. The
- * scroll it now uses is the framework's own, which is already a spring with
- * exactly that retargeting behaviour; only the landing point below was ever
- * the part Compose could not supply.
+ * A `scrollAnimationSpec` override here softening this had been added, then
+ * reverted, on the mistaken assumption that Compose's
+ * `@Deprecated("Animation spec customization is no longer supported")` meant
+ * the getter had gone dead. It has not — `ContentInViewNode` still reads it
+ * to build the `UpdatableAnimationState` that drives `bringChildIntoView`, at
+ * least as of the foundation build this project pins, which is exactly why
+ * NuvioTV's own `NuvioScrollDefaults.smoothScrollSpec` overrides the same
+ * property the same way. The values below match its spring
+ * (`dampingRatio = 0.95f`, `stiffness = 180f`) rather than this project's
+ * earlier, non-bouncy attempt: barely underdamped, so the row settles with a
+ * whisper of overshoot instead of stopping dead, and softer than
+ * `Spring.StiffnessLow` (200f). Only the landing point below stayed this
+ * project's own — Nuvio parks a row's *centre* at a fixed fraction of the
+ * viewport (`itemCenter - containerSize * 0.42f`), one pivot for every
+ * screen, where this one is a fixed pixel offset tuned per theme.
  */
 @OptIn(ExperimentalFoundationApi::class)
 private class RowPivotScroll(
@@ -209,6 +218,12 @@ private class RowPivotScroll(
      */
     private val heroScrollDistance: (offset: Float, size: Float) -> Float?,
 ) : BringIntoViewSpec {
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override val scrollAnimationSpec: AnimationSpec<Float> = spring(
+        dampingRatio = 0.95f,
+        stiffness = 180f,
+    )
+
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         // Returning to the rows must not move them. The list did not scroll
         // while the rail held focus, so the row focus is being restored to is
@@ -317,6 +332,15 @@ private class RowPivotScroll(
         return offset - target
     }
 }
+
+// A row-level parallax was tried here and removed. It translated each shelf
+// toward the viewport's centre by a fraction of its distance from it, which
+// looks right in isolation and is wrong the moment two shelves are on screen:
+// neighbours converge, and the shelves are laid out only 6–14 dp apart, so a
+// row's card labels landed on top of the next row's heading. Sizing the effect
+// to fit inside that gap would have meant a couple of pixels of travel — not a
+// depth cue, just noise. Any future attempt has to move something *within* a
+// fixed-height row, not the row itself.
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -1249,6 +1273,8 @@ fun HomeScreen(
                                 alpha = focusedShelfHeroAlpha
                                 translationY =
                                     (1f - focusedShelfHeroAlpha) * heroAxisShiftPx
+                                scaleX = lerp(HERO_SCALE_FROM, 1f, focusedShelfHeroAlpha)
+                                scaleY = lerp(HERO_SCALE_FROM, 1f, focusedShelfHeroAlpha)
                             },
                     ) {
                         // Under the panel, not over it: the title, metadata and
@@ -1370,6 +1396,8 @@ fun HomeScreen(
                                             alpha = spotlightHeroAlpha
                                             translationY =
                                                 -(1f - spotlightHeroAlpha) * heroAxisShiftPx
+                                            scaleX = lerp(HERO_SCALE_FROM, 1f, spotlightHeroAlpha)
+                                            scaleY = lerp(HERO_SCALE_FROM, 1f, spotlightHeroAlpha)
                                         }
                                         .onFocusChanged { focus ->
                                             if (focus.hasFocus) {
@@ -2246,8 +2274,8 @@ private const val POLL_MS = 1_000L
  * the viewer just pressed, so the eye follows a movement through the swap and
  * never waits on an empty screen.
  */
-private const val HERO_EXIT_MS = 110
-private const val HERO_ENTER_MS = 240
+private const val HERO_EXIT_MS = 220
+private const val HERO_ENTER_MS = 420
 
 /**
  * How far each half of the handover travels.
@@ -2258,6 +2286,19 @@ private const val HERO_ENTER_MS = 240
  * stops reading as the page settling and starts reading as a slide.
  */
 private val HERO_AXIS_SHIFT = 28.dp
+
+/**
+ * How small each half of the handover starts/ends, as a fraction of full size.
+ *
+ * Paired with the existing fade and axis shift, riding the same
+ * [focusedShelfHeroAlpha] / [spotlightHeroAlpha] progress rather than a
+ * separate animation: the shelf hero grows into place as it fades in, and the
+ * spotlight settles inward as it fades out. A pure crossfade reads as static
+ * artwork switching itself off; adding this scale is what makes the handover
+ * read as one continuous piece of motion instead. Kept subtle — this is a
+ * settle, not a zoom — so it never fights the axis shift for attention.
+ */
+private const val HERO_SCALE_FROM = 0.94f
 
 /**
  * Share of the hero's width CyberFlix gives the artwork block.

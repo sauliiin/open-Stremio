@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
-import androidx.core.content.edit
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import java.io.File
@@ -69,7 +68,6 @@ class AppUpdateManager(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val json = Json { ignoreUnknownKeys = true }
     private val updateDirectory = File(activity.cacheDir, "updates")
-    private val preferences = activity.getSharedPreferences(UPDATE_PREFERENCES, Activity.MODE_PRIVATE)
 
     private val _state = MutableStateFlow<UpdateUiState>(UpdateUiState.Hidden)
     val state: StateFlow<UpdateUiState> = _state.asStateFlow()
@@ -79,15 +77,20 @@ class AppUpdateManager(
     private var pendingRelease: ReleaseInfo? = null
     private var waitingForInstallPermission = false
 
-    fun checkForUpdate(force: Boolean = false) {
-        val now = System.currentTimeMillis()
-        if (!force && now - preferences.getLong(LAST_CHECK_AT, 0L) < CHECK_INTERVAL_MS) return
-
+    /**
+     * Runs on every cold start, with no cooldown.
+     *
+     * A GitHub release *is* the delivery channel for this app, so the check
+     * being a beat behind reads as the updater being broken. It costs one
+     * small JSON GET against a launch the viewer performed themselves, which
+     * is a cheaper thing than any window in which a shipped release stays
+     * invisible.
+     */
+    fun checkForUpdate() {
         scope.launch {
             val release = runCatching { withContext(Dispatchers.IO) { fetchLatestRelease() } }
                 .getOrNull()
                 ?: return@launch // Startup checks stay quiet when the device is offline.
-            preferences.edit { putLong(LAST_CHECK_AT, System.currentTimeMillis()) }
 
             val installedVersion = runCatching {
                 activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
@@ -162,7 +165,7 @@ class AppUpdateManager(
     fun retry() {
         val failure = _state.value as? UpdateUiState.Failed
         val release = failure?.release
-        if (release == null) checkForUpdate(force = true) else downloadAndInstall(release)
+        if (release == null) checkForUpdate() else downloadAndInstall(release)
     }
 
     fun openInstallPermissionSettings() {
@@ -328,20 +331,6 @@ class AppUpdateManager(
         const val APK_MIME_TYPE = "application/vnd.android.package-archive"
         const val NETWORK_TIMEOUT_MS = 20_000
         const val PROGRESS_STEP_BYTES = 128L * 1024L
-        const val UPDATE_PREFERENCES = "app-update-checks"
-        const val LAST_CHECK_AT = "last-successful-check-at"
-        /**
-         * How long a successful check suppresses the next one.
-         *
-         * A day was chosen against hammering GitHub, but it is the wrong
-         * trade for this app: a release *is* the delivery channel here, and
-         * the check is one small JSON GET on a screen the viewer opened
-         * themselves. At 24 h a release published an hour after the day's
-         * first launch stays invisible until the following day, which reads
-         * as the updater being broken. Three hours keeps the request rare and
-         * puts a release in front of the viewer the same evening it ships.
-         */
-        const val CHECK_INTERVAL_MS = 3L * 60L * 60L * 1_000L
     }
 }
 

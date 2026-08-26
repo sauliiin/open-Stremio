@@ -24,13 +24,33 @@ import java.util.Locale
  * date looks like.
  */
 internal fun formatAirDate(airDate: String, language: String): String? {
-    val parsed = runCatching {
-        SimpleDateFormat("yyyy-MM-dd", Locale.US).parse(airDate)
-    }.getOrNull() ?: return null
-    return when (language) {
-        "pt" -> SimpleDateFormat("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")).format(parsed)
-        "es" -> SimpleDateFormat("EEE, d MMM yyyy", Locale.forLanguageTag("es")).format(parsed)
-        "fr" -> SimpleDateFormat("EEE d MMM yyyy", Locale.FRENCH).format(parsed)
-        else -> SimpleDateFormat("EEE, MMM d, yyyy", Locale.US).format(parsed)
-    }
+    val parsed = runCatching { parser.get()!!.parse(airDate) }.getOrNull() ?: return null
+    return formatters.getValue(language.takeIf(formatters::containsKey) ?: "en").get()!!.format(parsed)
 }
+
+/**
+ * One [SimpleDateFormat] per thread per pattern, built on first use.
+ *
+ * Constructing one is not cheap — it compiles the pattern and pulls the
+ * locale's CLDR symbols — and the season list calls this once per episode, so
+ * opening a 24-episode season built 48 of them. They cannot simply be shared
+ * `val`s because `SimpleDateFormat` is famously not thread-safe; a
+ * [ThreadLocal] is the standard way to keep both facts true at once.
+ */
+private fun formatter(pattern: String, locale: Locale) =
+    // `object :` rather than `ThreadLocal.withInitial`, which needs
+    // `java.util.function.Supplier` and so is only guaranteed from API 24 —
+    // exactly this app's floor, with no margin. This form has existed since
+    // API 1 and needs no desugaring.
+    object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue() = SimpleDateFormat(pattern, locale)
+    }
+
+private val parser = formatter("yyyy-MM-dd", Locale.US)
+
+private val formatters = mapOf(
+    "pt" to formatter("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")),
+    "es" to formatter("EEE, d MMM yyyy", Locale.forLanguageTag("es")),
+    "fr" to formatter("EEE d MMM yyyy", Locale.FRENCH),
+    "en" to formatter("EEE, MMM d, yyyy", Locale.US),
+)
