@@ -55,6 +55,18 @@ fun ExoVideoSurface(
                 // drawn beneath in the Compose z-order — `PlayerScreen`'s
                 // root Box, tinted with `HubColors.Background`.
                 setBackgroundColor(Color.BLACK)
+                // Keeps the last frame on screen when the player is reset,
+                // instead of dropping the shutter over it.
+                //
+                // A reset mid-film is never a new film here — it is
+                // `PlaybackController` re-preparing the *same* link after a
+                // stall, and the frame already on the surface is the correct
+                // one to be showing while it does. Left at the default, that
+                // moment went black, which reads as the app having thrown the
+                // stream away and gone hunting for another. Starting a genuinely
+                // new title is unaffected: the resolving veil is over the
+                // surface for the whole of it.
+                setKeepContentOnPlayerReset(true)
                 // SurfaceView, not TextureView: a set-top box gets a hardware
                 // overlay out of it, which is both cheaper and the only path
                 // to HDR passthrough on most of them.

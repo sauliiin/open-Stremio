@@ -44,9 +44,10 @@ class RecommendationsRepository(
 
         val alreadyWatched = watched.mapTo(HashSet()) { it.key() }
         val seeds = watched.take(SEED_ROWS)
+        val pool = candidates(seeds)
 
         seeds
-            .map { (type, tmdbId) -> async { rowFor(type, tmdbId, alreadyWatched) } }
+            .map { seed -> async { rowFor(seed, pool[seed].orEmpty(), alreadyWatched) } }
             .mapNotNull { it.await() }
             .filter { it.items.size >= MIN_ROW_SIZE }
     }
@@ -60,12 +61,20 @@ class RecommendationsRepository(
      * has anywhere to put, and grouping by it would only make the rotation
      * lopsided towards whichever seed happened to return the most results.
      *
-     * Three filters, in the order they cost: films only, unwatched, and worth
-     * featuring. The last one is the reason [TmdbSearchResultDto.voteCount]
-     * exists: [MIN_SPOTLIGHT_SCORE] is a threshold on an *average*, and an
-     * average of three votes is not one. Without a floor under it a 9.0 that
-     * four people agreed on is indistinguishable here from a 9.0 that four
-     * thousand did, and the hero would present the first as a destaque.
+     * Two filters, in the order they cost: unwatched, and worth featuring.
+     * The second is the reason [TmdbSearchResultDto.voteCount] exists:
+     * [MIN_SPOTLIGHT_SCORE] is a threshold on an *average*, and an average of
+     * three votes is not one. Without a floor under it a 9.0 that four people
+     * agreed on is indistinguishable here from a 9.0 that four thousand did,
+     * and the hero would present the first as a destaque.
+     *
+     * There used to be a third, ahead of both: films only. It cost more than
+     * it looked like it did — every series TMDB suggested was discarded, so a
+     * viewer who mostly watches series was shown a hero built from whatever
+     * films happened to sit further back in their history. The hero has no
+     * trouble presenting a série — it reads its type from the item like every
+     * other screen — so the rule was removing the recommendation rather than
+     * the wrong artwork.
      *
      * A backdrop is required, not preferred. The hero is a full-bleed
      * landscape panel under a Ken Burns pan; a portrait poster stretched to
@@ -83,10 +92,9 @@ class RecommendationsRepository(
         val key = session.currentKey()
         if (key.isNotBlank()) {
             val watched = runCatching { watched(key) }.getOrNull().orEmpty()
+            val pool = candidates(watched.take(SEED_ROWS))
             val personalized = buildSpotlight(watched) { type, tmdbId ->
-                runCatching {
-                    tmdbApi.recommendations(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
-                }.getOrNull().orEmpty()
+                pool[type to tmdbId].orEmpty()
             }
             if (personalized.isNotEmpty()) return personalized
         }
@@ -135,20 +143,21 @@ class RecommendationsRepository(
      * The bucket carries ids only, not a title — borrows the same detail
      * cache the "continuar assistindo" artwork fix reads, rather than a
      * second network call of its own.
+     *
+     * Handed its [candidates] rather than fetching them: the hero is asking
+     * for the same seeds at the same moment, and see [candidates] for why
+     * that has to be one fetch and not two.
      */
     private suspend fun rowFor(
-        type: MediaType,
-        tmdbId: Int,
+        seed: Pair<MediaType, Int>,
+        candidates: List<TmdbSearchResultDto>,
         alreadyWatched: Set<String>,
     ): RecommendationRow? {
+        val (type, tmdbId) = seed
         media.ensureDetail(type, tmdbId)
         val seedTitle = media.observeDetail(type, tmdbId).first()?.title ?: return null
 
-        val results = runCatching {
-            tmdbApi.recommendations(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
-        }.getOrNull() ?: return null
-
-        val items = results
+        val items = candidates
             .filter { !it.posterPath.isNullOrBlank() }
             .map { it.toMediaItem(type) }
             .filter { it.key() !in alreadyWatched }
@@ -156,6 +165,83 @@ class RecommendationsRepository(
 
         if (items.isEmpty()) return null
         return RecommendationRow(seedTitle = seedTitle, items = items)
+    }
+
+    /**
+     * Every seed's neighbours, fetched once per Home and shared.
+     *
+     * Memoised for the same reason [watched] is, and against a bill that got
+     * four times larger the moment both halves of this class grew:
+     * [becauseYouWatched] and [spotlight] run concurrently from `HomeViewModel`'s
+     * `init`, over the same [SEED_ROWS] seeds, and each seed now costs two
+     * TMDB calls rather than one. Left alone that is forty requests on a
+     * launch, twenty of them asking a second time for an answer already on
+     * its way — on a television box, over a connection that is frequently
+     * the worst part of the room.
+     *
+     * The lock is held across the fetch, which is what makes the second
+     * caller wait for the first rather than start its own. That costs it one
+     * round trip and no more: the seeds inside are fetched in parallel, so
+     * what it waits out is the slowest seed, not the sum of them.
+     *
+     * Keyed on nothing but the seed set's own contents, and expiring on the
+     * same clock as the history it came from — a pool outliving the watch
+     * list that chose its seeds would recommend against a history the viewer
+     * has since added to.
+     */
+    private suspend fun candidates(
+        seeds: List<Pair<MediaType, Int>>,
+    ): Map<Pair<MediaType, Int>, List<TmdbSearchResultDto>> = candidatesMutex.withLock {
+        val cached = candidatesCache
+        if (cached != null &&
+            System.currentTimeMillis() - candidatesFetchedAt < WATCHED_TTL_MS &&
+            cached.keys.containsAll(seeds)
+        ) {
+            return@withLock cached
+        }
+
+        val fetched = coroutineScope {
+            seeds
+                .map { seed -> async { seed to neighboursOf(seed) } }
+                .map { it.await() }
+                .toMap()
+        }
+
+        candidatesCache = fetched
+        candidatesFetchedAt = System.currentTimeMillis()
+        fetched
+    }
+
+    private val candidatesMutex = Mutex()
+    private var candidatesCache: Map<Pair<MediaType, Int>, List<TmdbSearchResultDto>>? = null
+    private var candidatesFetchedAt = 0L
+
+    /**
+     * One seed's pool: both TMDB neighbourhoods, merged.
+     *
+     * The two endpoints are asked concurrently and each swallows its own
+     * failure, so `/similar` being down costs its half of one seed's
+     * candidates and nothing else — not the seed, and not the other nine.
+     *
+     * `distinctBy` keeps the first of a duplicate, and the order is not
+     * incidental: a title both endpoints name is kept as the
+     * recommendation, which is the stronger of the two signals.
+     */
+    private suspend fun neighboursOf(
+        seed: Pair<MediaType, Int>,
+    ): List<TmdbSearchResultDto> = coroutineScope {
+        val (type, tmdbId) = seed
+        val recommended = async {
+            runCatching {
+                tmdbApi.recommendations(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
+            }.getOrNull().orEmpty()
+        }
+        val similar = async {
+            runCatching {
+                tmdbApi.similar(type.tmdb, tmdbId, ApiConfig.TMDB_KEY, ApiConfig.LANGUAGE).results
+            }.getOrNull().orEmpty()
+        }
+        (recommended.await() + similar.await()).distinctBy { it.id }
     }
 
 }
@@ -206,19 +292,7 @@ internal suspend fun buildSpotlight(
     if (watched.isEmpty()) return emptyList()
 
     val alreadyWatched = watched.mapTo(HashSet()) { it.key() }
-
-    val fromRecent = spotlightFrom(watched.take(SEED_ROWS), alreadyWatched, recommendationsFor)
-    if (fromRecent.isNotEmpty()) return fromRecent
-
-    // TMDB's recommendation endpoints are same-type: `tv/{id}` answers with
-    // series and nothing else. So a viewer whose last five watches were all
-    // episodes has just had every candidate filtered out by the films-only
-    // rule below, and the hero would sit empty for someone with a watch
-    // history full of films slightly further back. Reaching past the five for
-    // the five most recent *films* is what the request means in that case,
-    // not "show nothing".
-    val movieSeeds = watched.filter { (type, _) -> type == MediaType.MOVIE }.take(SEED_ROWS)
-    return spotlightFrom(movieSeeds, alreadyWatched, recommendationsFor)
+    return spotlightFrom(watched.take(SEED_ROWS), alreadyWatched, recommendationsFor)
 }
 
 /** Quality-filtered global TMDB picks for guests or accounts without usable history. */
@@ -229,6 +303,7 @@ internal fun buildTmdbFallbackSpotlight(results: List<TmdbSearchResultDto>): Lis
         .filter { !it.backdropPath.isNullOrBlank() && !it.posterPath.isNullOrBlank() }
         .map { it.toMediaItem(MediaType.MOVIE) }
         .filter { it.type == MediaType.MOVIE }
+        .filter { it.year.isFeaturableYear() }
         .distinctBy { it.tmdbId }
         .shuffled()
 
@@ -238,15 +313,32 @@ private suspend fun spotlightFrom(
     recommendationsFor: suspend (MediaType, Int) -> List<TmdbSearchResultDto>,
 ): List<MediaItem> = coroutineScope {
     seeds
-        .map { (type, tmdbId) -> async { recommendationsFor(type, tmdbId) } }
-        .flatMap { it.await() }
-        .filter { it.voteAverage > MIN_SPOTLIGHT_SCORE }
-        .filter { it.voteCount >= MIN_SPOTLIGHT_VOTES }
-        .filter { !it.backdropPath.isNullOrBlank() && !it.posterPath.isNullOrBlank() }
-        .map { it.toMediaItem(MediaType.MOVIE) }
-        .filter { it.type == MediaType.MOVIE }
+        // Paired with the seed's own type, and that pairing is the whole
+        // reason this is not a flat `flatMap` any more. TMDB's neighbour
+        // endpoints are same-type but do not always say so — `media_type` is
+        // absent often enough that `toMediaItem` needs a fallback — and the
+        // fallback used to be the constant `MOVIE`, which was harmless only
+        // while everything that survived was a film anyway. With séries
+        // allowed through, that constant would stamp `MOVIE` on a series and
+        // hand the detail screen a tv id to look up as a film.
+        .map { (type, tmdbId) -> async { type to recommendationsFor(type, tmdbId) } }
+        .flatMap { deferred ->
+            val (seedType, results) = deferred.await()
+            results.map { seedType to it }
+        }
+        .filter { (_, result) -> result.voteAverage > MIN_SPOTLIGHT_SCORE }
+        .filter { (_, result) -> result.voteCount >= MIN_SPOTLIGHT_VOTES }
+        .filter { (_, result) ->
+            !result.backdropPath.isNullOrBlank() && !result.posterPath.isNullOrBlank()
+        }
+        .map { (seedType, result) -> result.toMediaItem(seedType) }
+        .filter { it.year.isFeaturableYear() }
         .filter { it.key() !in alreadyWatched }
-        .distinctBy { it.tmdbId }
+        // On the key, not the id: TMDB numbers films and séries separately,
+        // so id 550 is both a film and a series. While this was films-only
+        // that could not collide; now it can, and `distinctBy { tmdbId }`
+        // would silently drop whichever of the two arrived second.
+        .distinctBy { it.key() }
         // Shuffled, and no longer ranked first. The sort was there to decide
         // who made the cut; with everyone in, ordering by score and then
         // shuffling is two passes that cancel out. What is worth keeping is
@@ -257,6 +349,20 @@ private suspend fun spotlightFrom(
 }
 
 private fun BucketEntryDto.tmdbId(): Int? = movie?.ids?.tmdb ?: show?.ids?.tmdb ?: ids?.tmdb ?: id
+
+/**
+ * Whether a release year is recent enough to be featured.
+ *
+ * A null is *not* featurable, which is the one judgement call in here. It is
+ * the opposite of how the IMDb bar in `HomeViewModel` treats a missing
+ * rating, and deliberately: that rating costs a request to learn, so waving
+ * an unknown through is the difference between a hero that shows something
+ * and one that stalls. A year costs nothing — it is already in the payload —
+ * so a title without one is not a title whose age is expensive to establish,
+ * it is a title TMDB has no release date for, which in practice means
+ * unreleased or barely catalogued. Neither is destaque material.
+ */
+private fun Int?.isFeaturableYear() = this != null && this >= MIN_SPOTLIGHT_YEAR
 
 private fun MediaItem.key() = "${type.mdblist}:$tmdbId"
 
@@ -287,9 +393,42 @@ private const val MDBLIST_ROOT = "https://api.mdblist.com/"
  * watched still takes effect without a restart.
  */
 private const val WATCHED_TTL_MS = 5 * 60 * 1_000L
-private const val SEED_ROWS = 5
+/**
+ * How many of the most recent watches are asked for neighbours.
+ *
+ * Does two jobs, which is why it is one number: it is the count of
+ * "porque você assistiu" fileiras, and it is the seed pool the hero rotates
+ * out of. Ten rather than five because both of those wanted more and the
+ * cost is flat — the seeds are fetched in parallel and shared between the
+ * two callers (see `candidates`), so the extra five add requests but not
+ * waiting.
+ */
+private const val SEED_ROWS = 10
+
+/**
+ * Cards kept per fileira.
+ *
+ * Worth knowing before raising it: one TMDB page is twenty results, and this
+ * cut runs *after* the already-watched filter, so it is not what limits a
+ * short fileira — it is a ceiling that a fileira only reaches when almost
+ * nothing was filtered out of it. Since `neighboursOf` began merging two
+ * endpoints there is genuinely more than twenty to choose from, which is the
+ * first time this number has had anything to cut.
+ */
 private const val PER_ROW = 20
 private const val MIN_ROW_SIZE = 4
+
+/**
+ * How far back the hero is allowed to reach.
+ *
+ * The pool is built from TMDB's neighbours of what the viewer last watched,
+ * and neighbourhood has no sense of time in it: finish a Terminator and the
+ * suggestions are its own decade, which is how a hero meant to open the app
+ * on something to watch tonight fills with 1959 and 1981. The seeds stay as
+ * they are — an old film is a fine thing to be recommended *from* — but what
+ * comes back out of them is held to the present.
+ */
+private const val MIN_SPOTLIGHT_YEAR = 2016
 
 /** "Nota superior a 6", on TMDB's own 0-10 scale. */
 private const val MIN_SPOTLIGHT_SCORE = 6.0

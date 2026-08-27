@@ -52,11 +52,11 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Icon
@@ -83,7 +83,10 @@ import kotlinx.coroutines.isActive
 @Composable
 internal fun spotlightHeroHeight(): androidx.compose.ui.unit.Dp {
     val windowHeightPx = LocalWindowInfo.current.containerSize.height
-    return with(LocalDensity.current) { windowHeightPx.toDp() } * HERO_HEIGHT_FRACTION
+    val windowHeight = with(LocalDensity.current) { windowHeightPx.toDp() }
+    // `coerceAtLeast` so a window shorter than the strip cannot ask for a
+    // negative height; on any real television the subtraction is the answer.
+    return (windowHeight - FIRST_SHELF_HEADING_REVEAL).coerceAtLeast(0.dp)
 }
 
 /**
@@ -181,30 +184,7 @@ fun SpotlightHero(
                 return@Column
             }
 
-            Text(
-                text = item.title,
-                // `h1 { text-shadow: 0 6px 40px rgba(0,0,0,0.7) }`, and not
-                // decoration: the veil is calibrated for artwork with
-                // something in it, and every so often a backdrop puts a blown
-                // sky exactly where the title goes. The shadow is what keeps
-                // that from being unreadable rather than merely bright.
-                style = MaterialTheme.typography.displayLarge.copy(shadow = TITLE_SHADOW),
-                color = HubColors.Text,
-                // One line, for the same reason `AutoScrollOverview` below is
-                // given a hard `height` rather than a `heightIn`: this
-                // `Column` is bottom-aligned inside a hero of fixed
-                // [spotlightHeroHeight], and the `Box` holding it clips. A
-                // title that wrapped to a second line pushed the copy block
-                // past the height it is measured against, and what went over
-                // the edge was the last thing in the column —
-                // [SpotlightActions]. The buttons were not merely nudged
-                // down, they were clipped away outright, so a rotation
-                // landing on a long title took "Surpreenda-me" off the screen
-                // together with the D-pad's only way to advance past it.
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth(TITLE_WIDTH_FRACTION),
-            )
+            HeroTitle(item = item, detail = detail)
             Spacer(Modifier.height(12.dp))
 
             SpotlightMeta(item = item, detail = detail)
@@ -308,6 +288,74 @@ private fun KenBurnsBackdrop(url: String) {
  * than through a `Modifier.background` so the radial can be placed where the
  * copy actually is instead of at the centre of the box.
  */
+/**
+ * The destaque's name — as artwork where there is artwork for it.
+ *
+ * Kodi's skins lead with the clearlogo, and so does this app's other hero
+ * (`HeroPanel` in `HomeScreen`); this brings the one place still setting a
+ * name in type into line with them. A clearlogo is the title as its own
+ * production drew it, which on a full-bleed panel reads as the film
+ * announcing itself rather than as a caption over a picture.
+ *
+ * The text has not gone away, and the fallback is not only for titles TMDB
+ * has no logo for. `spotlightDetail` deliberately emits `null` before each
+ * destaque's detail arrives — see its comment in `HomeViewModel` — so for the
+ * first moment of every rotation there is a title and no logo yet. Leaving
+ * the slot empty for that moment would flash a hole where the name goes on
+ * every single change.
+ *
+ * **The fixed [HERO_TITLE_HEIGHT] is load-bearing, not tidiness.** This
+ * `Column` is bottom-aligned inside a hero of fixed [spotlightHeroHeight]
+ * whose `Box` clips, so something here measuring taller than budgeted does
+ * not push the copy down — it pushes [SpotlightActions] off the clipped
+ * bottom edge, and with it the D-pad's only way out of the hero. That is the
+ * exact failure the old `maxLines = 1` on the title existed to prevent, and a
+ * clearlogo is a far better way to reintroduce it: arbitrary artwork of
+ * arbitrary aspect ratio, sized by whoever uploaded it. Given a slot, `Fit`
+ * scales the artwork to the height instead of the height to the artwork, and
+ * a 3000×1000 logo costs exactly what a 500×200 one does.
+ */
+@Composable
+private fun HeroTitle(item: MediaItem, detail: MediaDetail?) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth(TITLE_WIDTH_FRACTION)
+            .height(HERO_TITLE_HEIGHT),
+        contentAlignment = Alignment.BottomStart,
+    ) {
+        val logoUrl = detail?.logoUrl
+        if (logoUrl == null) {
+            Text(
+                text = item.title,
+                // `h1 { text-shadow: 0 6px 40px rgba(0,0,0,0.7) }`, and not
+                // decoration: the veil is calibrated for artwork with
+                // something in it, and every so often a backdrop puts a blown
+                // sky exactly where the title goes. The shadow is what keeps
+                // that from being unreadable rather than merely bright.
+                style = MaterialTheme.typography.displayLarge.copy(shadow = TITLE_SHADOW),
+                color = HubColors.Text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            AsyncImage(
+                model = logoUrl,
+                // The name, for anything reading this screen aloud. The
+                // artwork carries it in pixels and nowhere else, so without
+                // this the hero would announce itself as an unlabelled image.
+                contentDescription = item.title,
+                contentScale = ContentScale.Fit,
+                // Sits on the slot's floor, where the text's own baseline
+                // was, so the meta line below keeps its distance from the
+                // name rather than from the top of a tall logo's whitespace.
+                alignment = Alignment.BottomStart,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
 @Composable
 private fun HeroVeil() {
     val background = HubColors.Background
@@ -355,9 +403,24 @@ private fun SpotlightMeta(item: MediaItem, detail: MediaDetail?) {
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        item.score?.takeIf { it > 0 }?.let { score ->
+        // IMDb, not TMDB's own average — and named, rather than left as a
+        // bare number. The chip used to read "76%", which is `vote_average`
+        // times ten: a real figure, but one no viewer can place. Next to a
+        // recommendation a percentage reads as *match* — how well this suits
+        // you, the way Netflix means it — and it never was that. "IMDb 7,6"
+        // cannot be misread, and it is the number people actually keep in
+        // their heads about a film.
+        //
+        // Comes from [detail] rather than [item] because that is where it
+        // exists: the pool is built from TMDB search payloads, which carry no
+        // IMDb figure at all — mdblist's aggregated ratings arrive later with
+        // the rest of the detail. So the chip appears a beat after the
+        // artwork, like the genres beside it already do, and a title mdblist
+        // has no IMDb entry for shows none rather than a number from
+        // somewhere else wearing IMDb's name.
+        detail?.ratings?.firstOrNull { it.key == IMDB_RATING_KEY }?.let { imdb ->
             Text(
-                text = "$score%",
+                text = "${imdb.label} ${imdb.display}",
                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
                 // Not a fixed colour: the site's chip is dark ink on mint
                 // because mint is *its* secondary accent, and the same chip
@@ -685,19 +748,28 @@ private fun heroArtworkFilter(): ColorFilter {
 }
 
 /**
- * Share of the screen the hero occupies — the web build's `84svh` for TV.
+ * The strip of screen left below the hero — everything that is not hero.
  *
- * Not the whole screen, and the remainder is not slack: it is where the top of
- * the first row shows through the veil's lower fade, which is what tells the
- * viewer there is anything below the hero at all.
+ * A height, not a share, because what has to fit in it is a height: the
+ * heading of the first shelf and nothing else. The hero takes the rest of the
+ * screen, so it opens like the web home's `100svh` variant rather than sitting
+ * in a box with a row peeking out beneath it, and the one thing still showing
+ * says what the D-pad's first "down" leads to.
+ *
+ * The 40 dp is that heading measured rather than a comfortable-looking round
+ * number: 6 dp for the `LazyColumn`'s spacing above the first shelf (see the
+ * `spotlightOwnsViewport` arm of its `verticalArrangement`), about 26 dp for
+ * one line of `titleLarge` — 21 sp over Inter's own line box — and 8 dp of
+ * air under it, which is what keeps the text reading as a heading with the
+ * page continuing below rather than as a line clipped by the screen edge. The
+ * cards themselves start 10 dp past it and stay off screen until focus asks
+ * for them, at which point the pivot scroll brings the whole shelf up.
+ *
+ * A fraction would not have survived the range of TV window sizes this runs
+ * in: the same 0.94 that leaves a heading showing on a 540 dp viewport leaves
+ * a heading plus a slice of poster on a 720 dp one.
  */
-/**
- * Leaves the first shelf visible at rest so artwork and cards read as a single
- * composition instead of two consecutive pages. The backdrop remains the
- * dominant element, but its bottom gradient now lands immediately above the
- * row the viewer is about to browse.
- */
-private const val HERO_HEIGHT_FRACTION = 0.68f
+private val FIRST_SHELF_HEADING_REVEAL = 40.dp
 
 /**
  * How long one destaque holds the screen before the next takes over.
@@ -758,8 +830,28 @@ private const val PILL_HIGHLIGHT = 0.28f
 private const val ARTWORK_BRIGHTNESS = 1.34f
 private const val ARTWORK_SATURATION = 1.16f
 
-/** `h1 { max-width: 16ch }`, expressed against the panel rather than the glyphs. */
+/** The key `RatingsMapper` files mdblist's IMDb figure under. */
+private const val IMDB_RATING_KEY = "imdb"
+
+/**
+ * `h1 { max-width: 16ch }`, expressed against the panel rather than the
+ * glyphs — and now against the clearlogo too, which has no glyphs to be
+ * expressed against at all. A wide logo is a long title set on one line, and
+ * this is what stops one running across the hero into the artwork.
+ */
 private const val TITLE_WIDTH_FRACTION = 0.62f
+
+/**
+ * The slot the name gets, logo or text.
+ *
+ * The same 100 dp `HeroPanel` gives its clearlogo, so the two heroes announce
+ * a title at the same size rather than each picking its own. It is
+ * comfortably more than the ~58 dp one line of `displayLarge` occupies, and
+ * the surplus costs nothing visible: the copy block is anchored to the hero's
+ * bottom, so a slot taller than its text grows upward into artwork, not
+ * downward into the meta line.
+ */
+private val HERO_TITLE_HEIGHT = 100.dp
 
 /** `.overview { max-width: 52ch }` in the television block. */
 private const val OVERVIEW_WIDTH_FRACTION = 0.5f

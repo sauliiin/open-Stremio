@@ -45,6 +45,25 @@ interface TmdbApi {
         @Query("language") language: String,
     ): TmdbPageDto
 
+    /**
+     * The other neighbourhood around a title, merged with [recommendations].
+     *
+     * Not a spare copy of it: TMDB derives `/recommendations` from what
+     * audiences went on to watch and `/similar` from the title's own keywords
+     * and genres, so the two answer with overlapping but genuinely different
+     * sets. Asking both is what widens the candidate pool without reaching
+     * for page two of either — the second page of one endpoint is that
+     * endpoint's weaker half, whereas this is a first page of comparable
+     * standing.
+     */
+    @GET("{type}/{id}/similar")
+    suspend fun similar(
+        @Path("type") type: String,
+        @Path("id") tmdbId: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String,
+    ): TmdbPageDto
+
     /** Global movie picks used when there is no watch history to personalize from. */
     @GET("movie/popular")
     suspend fun popularMovies(

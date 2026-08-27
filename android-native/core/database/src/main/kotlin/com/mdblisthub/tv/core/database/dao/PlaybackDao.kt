@@ -5,6 +5,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import com.mdblisthub.tv.core.database.entity.LibraryEntity
+import com.mdblisthub.tv.core.database.entity.PlaybackHintEntity
 import com.mdblisthub.tv.core.database.entity.ResumeEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -41,6 +42,20 @@ interface PlaybackDao {
 
     @Query("DELETE FROM resume_points WHERE `key` = :key")
     suspend fun deleteResumePoint(key: String)
+
+    // -------------------------------------------------------------- hints
+
+    @Query("SELECT * FROM playback_hints WHERE `key` = :key")
+    suspend fun playbackHint(key: String): PlaybackHintEntity?
+
+    @Upsert
+    suspend fun upsertPlaybackHint(hint: PlaybackHintEntity)
+
+    @Query("DELETE FROM playback_hints WHERE `key` = :key")
+    suspend fun deletePlaybackHint(key: String)
+
+    @Query("DELETE FROM playback_hints")
+    suspend fun clearPlaybackHints()
 
     // ------------------------------------------------------------- library
 

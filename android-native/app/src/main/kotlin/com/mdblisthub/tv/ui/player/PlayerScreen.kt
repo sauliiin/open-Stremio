@@ -146,9 +146,60 @@ private const val MINI_PLAYER_MIN_REMAINING_MS = 5 * 60 * 1000L
  * broadcast subtitles use, and enough air that a two-line cue reads as two
  * lines from a sofa rather than as one block of text.
  */
+/**
+ * The seek bar's width, in dp rather than in screen shares.
+ *
+ * Sits a little inside where the proportional version landed on a 960dp
+ * television, which is what every Android TV is at its own density.
+ */
+private val TIMELINE_WIDTH = 660.dp
+
+/**
+ * The width reserved for each of the two time labels beside the bar.
+ *
+ * They are the only things in that row that would otherwise change size, and
+ * both change constantly: the elapsed side gains a character crossing an hour
+ * ("59:59" to "1:00:00"), and the remaining side loses one on the way back
+ * down. With the row's own width fixed and the bar taking what is left, every
+ * one of those changes moved both ends of the bar — it crept as the film
+ * played and jumped as it was scrubbed.
+ *
+ * So the space is reserved rather than measured: wide enough for "9:59:59" at
+ * this size, aligned to the start so the digits grow into the reserve instead
+ * of pushing anything. The bar's two ends then sit at the same pixel for every
+ * film, whatever its runtime.
+ */
+private val TIMELINE_TIME_WIDTH = 64.dp
+
+/**
+ * What separates the play button from the timeline beside it.
+ *
+ * Plus the row's own 8dp, so the gap on screen is this and eight more.
+ */
+private val TIMELINE_BUTTON_GAP = 4.dp
+
+/**
+ * How far the whole timeline sits left of centre.
+ *
+ * Optical rather than geometric: the row is centred on its own box, but its
+ * left end is a filled circle and its right end is a thin line of digits, and
+ * the eye reads the heavier end as further out than it is.
+ */
+private val TIMELINE_SHIFT_LEFT = 2.dp
+
+/**
+ * How far the play button alone sits right of where the row places it.
+ *
+ * Separate from [TIMELINE_BUTTON_GAP], which is real space that everything
+ * after the button is measured against. This one moves nothing but the circle.
+ */
+private val TIMELINE_PLAY_SHIFT_RIGHT = 2.dp
+
+/** How thick the progress bar itself is drawn. */
+private val TIMELINE_BAR_HEIGHT = 5.dp
+
 private val SUBTITLE_FONT_SIZE = 26.sp
 private val SUBTITLE_LINE_HEIGHT = 35.sp
-private const val SEEK_STEP_MS = 10_000L
 private const val SUBTITLE_OFFSET_STEP_MS = 100L
 
 /**
@@ -470,14 +521,14 @@ fun PlayerScreen(
                         if (controlsFocused) {
                             false
                         } else {
-                            viewModel.controller.seekBy(SEEK_STEP_MS); true
+                            viewModel.controller.nudge(forward = true); true
                         }
                     }
                     Key.DirectionLeft -> {
                         if (controlsFocused) {
                             false
                         } else {
-                            viewModel.controller.seekBy(-SEEK_STEP_MS); true
+                            viewModel.controller.nudge(forward = false); true
                         }
                     }
                     Key.DirectionDown -> {
@@ -490,10 +541,10 @@ fun PlayerScreen(
                         }
                     }
                     Key.MediaFastForward -> {
-                        viewModel.controller.seekBy(SEEK_STEP_MS); true
+                        viewModel.controller.nudge(forward = true); true
                     }
                     Key.MediaRewind -> {
-                        viewModel.controller.seekBy(-SEEK_STEP_MS); true
+                        viewModel.controller.nudge(forward = false); true
                     }
                     // Any other key only wakes the OSD, which is what a remote
                     // user expects from pressing "something".
@@ -653,7 +704,7 @@ fun PlayerScreen(
                     playback.currentSubtitleId != NO_TRACK,
                 scaleType = playback.scaleType,
                 onTogglePlay = { viewModel.controller.togglePlayPause(); poke() },
-                onSeek = { deltaMs -> viewModel.controller.seekBy(deltaMs); poke() },
+                onSeek = { forward -> viewModel.controller.nudge(forward); poke() },
                 onCycleScale = { viewModel.controller.cycleScale(); poke() },
                 onOpenSubtitles = {
                     castRailOpen = false
@@ -1176,7 +1227,7 @@ private fun PlayerOsd(
     subtitleActive: Boolean,
     scaleType: VideoScaleType,
     onTogglePlay: () -> Unit,
-    onSeek: (Long) -> Unit,
+    onSeek: (Boolean) -> Unit,
     onCycleScale: () -> Unit,
     onOpenSubtitles: () -> Unit,
     onOpenAudio: () -> Unit,
@@ -1240,7 +1291,18 @@ private fun PlayerOsd(
             contentAlignment = Alignment.Center,
         ) {
             Row(
-                modifier = Modifier.width((maxWidth * 0.8f) + 8.dp),
+                // Fixed rather than a share of the screen: a proportional
+                // bar changes length with the panel it sits in, so the same
+                // ten-second step covered a different distance on a 720p box
+                // than on a 4K one. `coerceAtMost` is only a floor for a
+                // screen too narrow to hold the fixed width — on any real
+                // television this is exactly [TIMELINE_WIDTH].
+                modifier = Modifier
+                    .width(TIMELINE_WIDTH.coerceAtMost(maxWidth))
+                    // Placement only — `offset` shifts where the row is drawn
+                    // without changing what the parent measured, so nothing
+                    // re-centres around it. See [TIMELINE_SHIFT_LEFT].
+                    .offset(x = -TIMELINE_SHIFT_LEFT),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -1249,15 +1311,24 @@ private fun PlayerOsd(
                 onClick = onTogglePlay,
                 modifier = Modifier
                     .focusRequester(playButtonFocusRequester)
+                    // Carried by the button rather than by a `Spacer` child,
+                    // which is what makes the gap settable at all: a spacer
+                    // between two children also collects the row's own
+                    // `spacedBy` on both sides of itself, so the smallest gap
+                    // it could express was 16dp and the old one came to 24.
+                    .padding(end = TIMELINE_BUTTON_GAP)
+                    // Placement only, so the button slides without taking the
+                    // timeline with it — see [TIMELINE_PLAY_SHIFT_RIGHT].
+                    .offset(x = TIMELINE_PLAY_SHIFT_RIGHT)
                     .onKeyEvent { event ->
                         if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                         when (event.key) {
                             Key.DirectionLeft -> {
-                                onSeek(-SEEK_STEP_MS)
+                                onSeek(/* forward = */ false)
                                 true
                             }
                             Key.DirectionRight -> {
-                                onSeek(SEEK_STEP_MS)
+                                onSeek(/* forward = */ true)
                                 true
                             }
                             Key.DirectionDown -> firstFlatControlFocusRequester.requestFocus()
@@ -1265,18 +1336,25 @@ private fun PlayerOsd(
                         }
                     },
             )
-            Spacer(Modifier.width(8.dp))
             Text(
                 text = formatTime(positionMs),
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
                 ),
                 color = if (HubColors.isCyberpunk) HubColors.Accent else HubColors.Text,
+                // Reserved, not measured — see [TIMELINE_TIME_WIDTH]. Aligned
+                // towards the bar, which is what puts the same gap on both
+                // sides of it: the digits grow away from the bar, into the
+                // reserve, instead of leaving it stranded off-centre.
+                modifier = Modifier.width(TIMELINE_TIME_WIDTH),
+                textAlign = TextAlign.End,
+                maxLines = 1,
+                softWrap = false,
             )
             Box(
                 Modifier
                     .weight(1f)
-                    .height(5.dp)
+                    .height(TIMELINE_BAR_HEIGHT)
                     .clip(RoundedCornerShape(HubShapes.Pill))
                     .background(Color(0xFFD9D9D9).copy(alpha = 0.6f))
             ) {
@@ -1297,6 +1375,10 @@ private fun PlayerOsd(
                     fontSize = (MaterialTheme.typography.titleMedium.fontSize.value - 1f).sp,
                 ),
                 color = if (HubColors.isCyberpunk) HubColors.Accent else HubColors.TextDim,
+                modifier = Modifier.width(TIMELINE_TIME_WIDTH),
+                textAlign = TextAlign.Start,
+                maxLines = 1,
+                softWrap = false,
             )
         }
         }

@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">OmniStream</string>
     <string name="menu_home">Accueil</string>
     <string name="menu_search">Rechercher</string>
@@ -244,8 +244,16 @@
 
     <!-- Lecteur : causes d’échec -->
     <string name="player_error_no_candidates">Aucun addon n’a fourni de lien lisible pour ce titre.</string>
+    <!--
+        `one` couvre 0 et 1 en français, d'où l'avertissement du lint : une
+        forme sans argument numérique y est normalement ambiguë. Elle ne l'est
+        pas ici. Zéro source n'atteint jamais ce message — `PlaybackController`
+        signale ce cas par `NoCandidates`, et `AllCandidatesFailed` n'est levé
+        qu'après un `queue.isEmpty()` qui retourne. Le compte vaut donc
+        toujours au moins un.
+    -->
     <plurals name="player_error_all_failed">
-        <item quantity="one">La seule source disponible a été essayée deux fois, sans succès.</item>
+        <item quantity="one" tools:ignore="ImpliedQuantity">La seule source disponible a été essayée deux fois, sans succès.</item>
         <item quantity="other">Les %1$d sources disponibles ont été essayées deux fois, sans succès.</item>
     </plurals>
     <string name="player_error_decoy_streak">Les sources renvoient un avis au lieu du film. Cela signifie presque toujours que le fournisseur de débridage limite les requêtes. Patientez quelques minutes et réessayez.</string>

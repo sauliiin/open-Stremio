@@ -180,6 +180,23 @@ data class AddonEntity(
 )
 
 /** A part-watched title, mirrored from the library provider so the row paints offline. */
+/**
+ * This app's own note about a title it played — see
+ * [com.mdblisthub.tv.core.model.PlaybackHint] for what each field is for.
+ *
+ * A separate table rather than columns on [ResumeEntity], and that separation
+ * is load-bearing: the provider owns `resume_points` and its sync replaces
+ * every row, so anything local kept there would be wiped on the next refresh.
+ */
+@Entity(tableName = "playback_hints")
+data class PlaybackHintEntity(
+    @PrimaryKey val key: String,
+    val positionMs: Long,
+    val durationMs: Long,
+    val sourceFilename: String?,
+    val updatedAt: Long,
+)
+
 @Entity(tableName = "resume_points")
 data class ResumeEntity(
     @PrimaryKey val key: String,

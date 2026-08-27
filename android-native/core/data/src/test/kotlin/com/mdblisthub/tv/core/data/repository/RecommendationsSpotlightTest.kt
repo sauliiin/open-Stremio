@@ -37,14 +37,26 @@ class RecommendationsSpotlightTest {
         movie = BucketTitleDto(ids = MdbIdsDto(tmdb = tmdbId)),
     )
 
-    private fun recommendation(tmdbId: Int) = TmdbSearchResultDto(
-        id = tmdbId,
-        title = "Film $tmdbId",
-        posterPath = "/poster.jpg",
-        backdropPath = "/backdrop.jpg",
-        voteAverage = 8.0,
-        voteCount = 500,
-    )
+    /**
+     * A candidate that clears every bar except the one under test.
+     *
+     * The release date is not decoration: the hero only features titles from
+     * [minFeaturedYear] on, so a recommendation built without one is filtered
+     * before it reaches whatever the test was actually about.
+     */
+    private fun recommendation(tmdbId: Int, releaseDate: String = "2020-06-01") =
+        TmdbSearchResultDto(
+            id = tmdbId,
+            title = "Film $tmdbId",
+            posterPath = "/poster.jpg",
+            backdropPath = "/backdrop.jpg",
+            releaseDate = releaseDate,
+            voteAverage = 8.0,
+            voteCount = 500,
+        )
+
+    /** Mirrors `MIN_SPOTLIGHT_YEAR`, which is private to the repository. */
+    private val minFeaturedYear = 2016
 
     /** Page one holds the recent watch; page two holds the older one. */
     private val bucketPages = mapOf<String?, BucketResponseDto>(
@@ -119,12 +131,18 @@ class RecommendationsSpotlightTest {
         assertTrue(buildSpotlight(emptyList(), recommendations).isEmpty())
     }
 
+    /**
+     * What replaced the films-only rule, and the test that used to guard it.
+     *
+     * The old assertion here was that this viewer — series recently, a film
+     * further back — ends up with the *film*, because every series TMDB
+     * suggested was dropped and a second pass over the most recent films was
+     * what kept the hero from sitting empty. Both halves of that are gone.
+     * The séries were always the recommendation; the workaround only existed
+     * because they were being thrown away.
+     */
     @Test
-    fun `a history of series alone still finds films, by reaching past the five`() = runBlocking {
-        // Five series watched more recently than the one film. TMDB answers
-        // `tv/{id}` with series, which the films-only rule drops — so without
-        // the second pass over the most recent *films* the hero would be
-        // empty for this viewer despite having something to show.
+    fun `a history of series is featured as series`() = runBlocking {
         val watched = buildList {
             repeat(5) { add(MediaType.SHOW to 1000 + it) }
             add(MediaType.MOVIE to lastNight)
@@ -138,6 +156,96 @@ class RecommendationsSpotlightTest {
             }
         }
 
-        assertEquals(listOf(unseen), spotlight.map { it.tmdbId })
+        assertEquals(
+            listOf(MediaType.SHOW to 2000, MediaType.MOVIE to unseen),
+            spotlight.map { it.type to it.tmdbId }.sortedBy { (_, id) -> id },
+        )
+    }
+
+    /**
+     * The trap inside letting séries through.
+     *
+     * TMDB leaves `media_type` off these payloads often enough to matter, and
+     * the fallback `toMediaItem` reaches for used to be the constant `MOVIE`
+     * — invisible while the films-only rule meant nothing else survived. A
+     * series arriving without a `media_type` would now be stamped as a film,
+     * and a series id looked up against `movie/{id}` is a detail screen that
+     * never loads. The fallback has to be the seed's own type.
+     */
+    @Test
+    fun `a neighbour that omits its media type inherits the seed's`() = runBlocking {
+        val spotlight = buildSpotlight(listOf(MediaType.SHOW to 1000)) { _, _ ->
+            listOf(recommendation(2000))
+        }
+
+        assertEquals(listOf(MediaType.SHOW to 2000), spotlight.map { it.type to it.tmdbId })
+    }
+
+    /**
+     * The hero is for what to watch now, and TMDB's neighbours have no sense
+     * of time: the films around a 1984 film are its own decade. Only what
+     * comes *out* of a seed is held to the year — the seed itself can be as
+     * old as the viewer's taste happens to be.
+     */
+    @Test
+    fun `a title older than the floor is not featured`() = runBlocking {
+        val old = 1990
+        val recent = 2024
+
+        val spotlight = buildSpotlight(listOf(MediaType.MOVIE to lastNight)) { _, _ ->
+            listOf(
+                recommendation(old, releaseDate = "${minFeaturedYear - 1}-12-31"),
+                recommendation(recent, releaseDate = "$minFeaturedYear-01-01"),
+            )
+        }
+
+        // The floor is inclusive: the title released *in* the floor year stays.
+        assertEquals(listOf(recent), spotlight.map { it.tmdbId })
+    }
+
+    /**
+     * The one place this rule is stricter than the IMDb bar it sits beside.
+     *
+     * A missing rating is waved through there because learning it costs a
+     * request. A missing year costs nothing to check — it simply is not in
+     * the payload — so it is not an unknown worth the benefit of the doubt,
+     * it is a title TMDB has no release date for.
+     */
+    @Test
+    fun `a title with no release date at all is not featured`() = runBlocking {
+        val undated = 4040
+
+        val spotlight = buildSpotlight(listOf(MediaType.MOVIE to lastNight)) { _, _ ->
+            listOf(recommendation(undated, releaseDate = ""))
+        }
+
+        assertTrue(spotlight.isEmpty())
+    }
+
+    /**
+     * Films and séries are numbered separately by TMDB, so the two id spaces
+     * overlap. While the hero was films-only that could never bite; now a
+     * dedupe on the bare id would drop whichever of a colliding pair arrived
+     * second, and the viewer would lose a destaque to a film they have never
+     * been shown.
+     */
+    @Test
+    fun `a film and a series sharing an id are both featured`() = runBlocking {
+        val collidingId = 4242
+
+        val spotlight = buildSpotlight(
+            listOf(MediaType.SHOW to 1000, MediaType.MOVIE to lastNight),
+        ) { type, _ ->
+            if (type == MediaType.SHOW) {
+                listOf(recommendation(collidingId).copy(mediaType = "tv"))
+            } else {
+                listOf(recommendation(collidingId))
+            }
+        }
+
+        assertEquals(
+            listOf(MediaType.MOVIE to collidingId, MediaType.SHOW to collidingId),
+            spotlight.map { it.type to it.tmdbId }.sortedBy { (type, _) -> type.name },
+        )
     }
 }

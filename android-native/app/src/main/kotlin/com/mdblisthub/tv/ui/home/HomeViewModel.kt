@@ -473,8 +473,10 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     /**
      * "Porque você assistiu" — built once per visit, not persisted: unlike
      * the mdblist rows above, TMDB's recommendations have nothing worth
-     * caching in Room for, and the five seeds are cheap to re-derive from
-     * whatever "Last Watched" looks like right now.
+     * caching in Room for, and the seeds are cheap to re-derive from
+     * whatever "Last Watched" looks like right now. Cheap because the
+     * repository shares one fetch with the hero below, which is asking about
+     * the same seeds at the same moment — see `RecommendationsRepository`.
      */
     private val _becauseYouWatched = MutableStateFlow<List<RecommendationRow>>(emptyList())
     val becauseYouWatched: StateFlow<List<RecommendationRow>> = _becauseYouWatched.asStateFlow()
@@ -532,12 +534,78 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
             items.getOrNull(index)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Advances the spotlight, wrapping. Drives both the timer and "Surpreenda-me". */
+    /**
+     * Advances the spotlight, wrapping. Drives both the timer and
+     * "Surpreenda-me" — and drops anything the IMDb bar rejects on the way.
+     *
+     * The bar cannot be applied where the pool is built. That pool comes from
+     * TMDB's neighbour endpoints, whose payloads carry `vote_average` and no
+     * IMDb figure whatsoever; the IMDb number arrives from mdblist, one
+     * request per title, and there are a hundred and sixty of them. Paying
+     * that on every Home is not a trade worth making for a hero that shows
+     * three titles a minute.
+     *
+     * So the test is applied here, to the one title about to take the screen,
+     * against a rating that is already in Room — `MetadataPrefetcher` warms
+     * the *next* destaque during the current one's dwell, precisely so that
+     * by the time this runs the answer is usually sitting there. Nothing is
+     * fetched to answer it.
+     *
+     * Two consequences worth stating plainly rather than discovering:
+     *
+     * A title whose rating has not arrived is **shown**, not held. Unknown is
+     * not the same as bad, and blocking on it would mean a hero that stalls
+     * on a slow connection rather than one that occasionally features
+     * something it would rather not.
+     *
+     * And after a skip, the title landed on is one the prefetch never warmed
+     * — it was two ahead, not one — so it is judged only if something else
+     * happened to cache it. A skip therefore costs the next slot its check.
+     */
     fun nextSpotlight() {
-        val size = _spotlight.value.size
-        if (size == 0) return
-        _spotlightIndex.value = (_spotlightIndex.value + 1) % size
+        val items = _spotlight.value
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            var index = _spotlightIndex.value
+            // Bounded by the pool: a rotation where every rating is known and
+            // every one of them fails must still land somewhere rather than
+            // walk the ring forever.
+            repeat(items.size) {
+                index = (index + 1) % items.size
+                if (meetsRatingBar(items[index])) {
+                    _spotlightIndex.value = index
+                    return@launch
+                }
+            }
+            _spotlightIndex.value = (_spotlightIndex.value + 1) % items.size
+        }
     }
+
+    /**
+     * Whether a title clears the IMDb bar for its own kind — 6 for a film, 7
+     * for a série — reading only what is already cached.
+     *
+     * Answers `true` for a title with no rating in Room yet and for one
+     * mdblist has no IMDb entry for at all. Both are "not known to be below
+     * the bar", and this is a filter against titles that are known bad, not a
+     * gate that demands proof of quality before anything may be shown.
+     */
+    private suspend fun meetsRatingBar(item: MediaItem): Boolean {
+        val cached = graph.media.observeDetail(item.type, item.tmdbId).first()
+            ?: return true
+        val imdb = cached.ratings.firstOrNull { it.key == IMDB_RATING_KEY }?.score
+            ?: return true
+        return imdb >= item.type.imdbBar
+    }
+
+    /**
+     * The bar, on `RatingBadge.score`'s own 0–100 scale rather than IMDb's
+     * 0–10 — that is what is stored, and converting the stored value back
+     * every time would be arithmetic in the hot path to make a constant look
+     * familiar.
+     */
+    private val MediaType.imdbBar: Int
+        get() = if (this == MediaType.SHOW) SHOW_IMDB_BAR else MOVIE_IMDB_BAR
 
     /**
      * The synopsis, genres and clearlogo behind the hero copy.
@@ -603,10 +671,10 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         }
         viewModelScope.launch {
             // Driven by the preference rather than fired once: turning the
-            // hero off has to stop costing a `sync/watched` plus five TMDB
-            // calls per launch, and turning it back on has to fill it without
-            // waiting for a restart. `collectLatest` cancels a fetch still in
-            // flight when the switch is flipped back the other way.
+            // hero off has to stop costing a `sync/watched` plus a round of
+            // TMDB calls per launch, and turning it back on has to fill it
+            // without waiting for a restart. `collectLatest` cancels a fetch
+            // still in flight when the switch is flipped back the other way.
             spotlightEnabled.collectLatest { enabled ->
                 if (!enabled) {
                     _spotlight.value = emptyList()
@@ -615,12 +683,44 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 _spotlightLoaded.value = false
                 try {
-                    _spotlight.value = graph.recommendations.spotlight()
+                    val pool = graph.recommendations.spotlight()
+                    _spotlight.value = pool
+                    _spotlightIndex.value = openingIndex(pool)
                 } finally {
                     _spotlightLoaded.value = true
                 }
             }
         }
+    }
+
+    /**
+     * Which destaque the hero opens on.
+     *
+     * The one slot [nextSpotlight]'s cheap test cannot cover: at this point
+     * the pool is seconds old and nothing in it has been warmed, so every
+     * rating reads as unknown and the bar would wave the first title through
+     * whatever it is. That slot is also the most seen in the app — it is what
+     * the Home *is*, for the first twenty seconds of every session.
+     *
+     * So this one is resolved rather than guessed, and the fetch is not an
+     * extra: `spotlightDetail` calls `ensureDetail` on whatever ends up here
+     * the moment it is shown, so what this changes is the order — the rating
+     * is asked for before the reveal instead of just after it. The cost is a
+     * round trip added to a wait that already spans a paginated watch history
+     * and twenty TMDB calls.
+     *
+     * [OPENING_CANDIDATES] caps it. Almost always the first title clears the
+     * bar and this is one fetch; the cap is there so that a pool whose head
+     * happens to be a run of weak titles cannot turn the opening into a
+     * sequence of round trips with the viewer watching a skeleton.
+     */
+    private suspend fun openingIndex(pool: List<MediaItem>): Int {
+        for (index in 0 until minOf(OPENING_CANDIDATES, pool.size)) {
+            val item = pool[index]
+            runCatching { graph.media.ensureDetail(item.type, item.tmdbId) }
+            if (meetsRatingBar(item)) return index
+        }
+        return 0
     }
 
     /** Refreshes account activity whenever Home becomes visible again. */
@@ -911,3 +1011,26 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     private fun catalogCacheKey(catalog: AddonCatalog): String =
         "${catalog.addonBase.trimEnd('/')}\u0000${catalog.key}"
 }
+
+/** The key `RatingsMapper` files mdblist's IMDb figure under. */
+private const val IMDB_RATING_KEY = "imdb"
+
+/**
+ * The IMDb floor a destaque has to clear, on `RatingBadge.score`'s 0–100
+ * scale: 6,0 for a film and 7,0 for a série.
+ *
+ * Two numbers rather than one because the scales are not comparable. IMDb
+ * grades a série on its whole run, and a run that stayed on the air long
+ * enough to be graded at all has already survived a filter no single film
+ * passes through — so 6,5 is a middling série and a perfectly good film.
+ * One shared floor would either fill the hero with unremarkable television
+ * or throw away films worth featuring.
+ */
+private const val MOVIE_IMDB_BAR = 60
+private const val SHOW_IMDB_BAR = 70
+
+/**
+ * How many titles the opening may resolve before giving up and taking the
+ * first. See `openingIndex`.
+ */
+private const val OPENING_CANDIDATES = 3

@@ -17,6 +17,7 @@ import com.mdblisthub.tv.core.database.entity.ListEntity
 import com.mdblisthub.tv.core.database.entity.ListItemEntity
 import com.mdblisthub.tv.core.database.entity.MediaDetailEntity
 import com.mdblisthub.tv.core.database.entity.MediaEntity
+import com.mdblisthub.tv.core.database.entity.PlaybackHintEntity
 import com.mdblisthub.tv.core.database.entity.ResumeEntity
 import com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity
 
@@ -29,6 +30,7 @@ import com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity
         EpisodeEntity::class,
         AddonEntity::class,
         ResumeEntity::class,
+        PlaybackHintEntity::class,
         LibraryEntity::class,
         WatchedEpisodeEntity::class,
     ],
@@ -37,7 +39,11 @@ import com.mdblisthub.tv.core.database.entity.WatchedEpisodeEntity
     // for the same reason as always — every table is a cache with an upstream
     // source of truth — and re-syncing is cheaper than the two full table
     // scans the missing indices cost.
-    version = 11,
+    // 12 adds `playback_hints`, this app's own note of where a title was left
+    // and which release it was left on. Destructive migration stays correct:
+    // the table is a speed cache, not a source of truth, and losing it costs
+    // one resume that falls back to the provider's percentage.
+    version = 12,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -60,6 +66,7 @@ abstract class HubDatabase : RoomDatabase() {
         mediaDao().clearDetails()
         mediaDao().clearMedia()
         playbackDao().clearResumePoints()
+        playbackDao().clearPlaybackHints()
         playbackDao().clearLibrary()
         playbackDao().clearWatchedEpisodes()
     }
