@@ -142,6 +142,7 @@ data class SettingsUiState(
     val subtitleBackgroundEnabled: Boolean = false,
     val subtitleBackgroundOpacity: Int = 40,
     val audioLanguage: String = "en",
+    val autoPlayNextEpisode: Boolean = false,
     val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
     val dimUnwatchedEpisodes: Boolean = false,
     /** No overlay by default, matching `UiPreferencesStore.clockScope`. */
@@ -197,6 +198,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.audioLanguage) { partial, audioLang ->
                     partial.copy(audioLanguage = audioLang)
+                }
+                .combine(graph.uiPreferences.autoPlayNextEpisode) { partial, enabled ->
+                    partial.copy(autoPlayNextEpisode = enabled)
                 }
                 .combine(graph.uiPreferences.libraryProvider) { partial, provider ->
                     partial.copy(libraryProvider = provider)
@@ -375,6 +379,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
         viewModelScope.launch { graph.uiPreferences.saveSubtitleBackgroundOpacity(clamped) }
     }
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
+    fun toggleAutoPlayNextEpisode() = viewModelScope.launch {
+        graph.uiPreferences.saveAutoPlayNextEpisode(!_state.value.autoPlayNextEpisode)
+    }
     fun setTheme(theme: HubThemeVariant) = viewModelScope.launch { graph.uiPreferences.saveTheme(theme) }
     fun toggleDimUnwatchedEpisodes() = viewModelScope.launch { graph.uiPreferences.saveDimUnwatchedEpisodes(!_state.value.dimUnwatchedEpisodes) }
 
@@ -616,6 +623,7 @@ fun SettingsScreen(
                             SettingsSection.PLAYER -> PlayerSettingsContent(
                                 state = state,
                                 onOpenLanguage = { audioPickerOpen = true },
+                                onToggleAutoPlayNextEpisode = viewModel::toggleAutoPlayNextEpisode,
                             )
                             SettingsSection.ADDONS -> AddonsScreen(
                                 graph = graph,
@@ -1177,13 +1185,22 @@ private fun SubtitleColorOption(
 }
 
 @Composable
-private fun PlayerSettingsContent(state: SettingsUiState, onOpenLanguage: () -> Unit) {
+private fun PlayerSettingsContent(
+    state: SettingsUiState,
+    onOpenLanguage: () -> Unit,
+    onToggleAutoPlayNextEpisode: () -> Unit,
+) {
     SettingsContentList {
         item {
             SettingsCard(
                 title = stringResource(R.string.settings_section_player),
                 subtitle = stringResource(R.string.settings_category_player_desc),
             ) {
+                ToggleSettingsRow(
+                    label = stringResource(R.string.settings_auto_play_next_episode),
+                    enabled = state.autoPlayNextEpisode,
+                    onToggle = onToggleAutoPlayNextEpisode,
+                )
                 SettingsRow(label = stringResource(R.string.settings_audio_preferred_lang)) {
                     val currentName = ALL_LANGUAGES.find { it.first == state.audioLanguage }?.second ?: state.audioLanguage
                     HubButton(text = currentName, primary = true, onClick = onOpenLanguage)

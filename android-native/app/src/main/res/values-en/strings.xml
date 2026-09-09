@@ -62,6 +62,7 @@
     <string name="color_black">Black</string>
     <string name="settings_section_player">Player</string>
     <string name="settings_audio_preferred_lang">Preferred Audio Track</string>
+    <string name="settings_auto_play_next_episode">Play next episode automatically</string>
     <string name="lang_pt">Portuguese</string>
     <string name="lang_en">English</string>
     <string name="lang_es">Spanish</string>
@@ -201,6 +202,10 @@
     <string name="player_attempt">%1$d of %2$d</string>
     <string name="player_failed_title">Could not play this</string>
     <string name="player_ended_title">The end</string>
+    <string name="player_next_episode">Next Episode</string>
+    <string name="player_stop_next_episode">Stop</string>
+    <string name="player_play_next_episode">Play Next Episode</string>
+    <string name="player_next_episode_number">Season %1$d · Episode %2$d</string>
     <string name="player_no_addons">No addons installed. Sources come from addons.</string>
     <string name="player_no_imdb">This title has no IMDb ID, and addons are indexed by it.</string>
     <string name="player_generic_error">Could not play this title.</string>

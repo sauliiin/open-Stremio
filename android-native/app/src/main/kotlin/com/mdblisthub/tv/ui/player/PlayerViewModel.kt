@@ -7,6 +7,7 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.mapper.Languages
 import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
 import com.mdblisthub.tv.core.model.CastMember
+import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.ClockPosition
@@ -48,6 +49,14 @@ data class PlayerUiState(
     val cast: List<CastMember> = emptyList(),
     val noAddons: Boolean = false,
     val missingImdbId: Boolean = false,
+    val nextEpisode: NextEpisodeTarget? = null,
+)
+
+data class NextEpisodeTarget(
+    val season: Int,
+    val episode: Int,
+    val name: String,
+    val stillUrl: String?,
 )
 
 /** The compact biography card that follows focus in the player's cast rail. */
@@ -186,6 +195,9 @@ class PlayerViewModel(
     val subtitleBackgroundOpacity: StateFlow<Int> = graph.uiPreferences.subtitleBackgroundOpacity
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 40)
 
+    val autoPlayNextEpisode: StateFlow<Boolean> = graph.uiPreferences.autoPlayNextEpisode
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     private var target: ScrobbleTarget? = null
     private var lastReportedProgress = 0f
 
@@ -233,6 +245,16 @@ class PlayerViewModel(
         val card = graph.media.cachedCard(type, tmdbId)
         val cachedDetail = graph.media.cachedDetail(type, tmdbId)
         publishArtwork(cachedDetail, card)
+
+        if (type == MediaType.SHOW && season != null && episode != null) {
+            viewModelScope.launch {
+                val next = findNextEpisode(cachedDetail) ?: run {
+                    graph.media.ensureCompleteDetail(type, tmdbId)
+                    findNextEpisode(graph.media.cachedDetail(type, tmdbId))
+                }
+                next?.let { _ui.update { current -> current.copy(nextEpisode = next) } }
+            }
+        }
 
         val stremioId = session.target?.stremioId() ?: return
         val options = graph.streams.subtitles(type, stremioId)
@@ -285,6 +307,14 @@ class PlayerViewModel(
 
         viewModelScope.launch {
             hydration.await()?.let { publishArtwork(it, card) }
+        }
+
+        if (type == MediaType.SHOW && season != null && episode != null) {
+            viewModelScope.launch {
+                val next = findNextEpisode(cachedDetail)
+                    ?: hydration.await()?.let { refreshed -> findNextEpisode(refreshed) }
+                next?.let { _ui.update { current -> current.copy(nextEpisode = next) } }
+            }
         }
 
         if (imdbId.isNullOrBlank()) {
@@ -414,6 +444,33 @@ class PlayerViewModel(
         // apart from a feature.
         return detail?.runtimeMinutes?.takeIf { it > 0 }
             ?: card?.runtimeMinutes?.takeIf { it > 0 }
+    }
+
+    /** Uses real metadata order, including the first populated later season. */
+    private suspend fun findNextEpisode(detail: MediaDetail?): NextEpisodeTarget? {
+        val currentSeason = season ?: return null
+        val currentEpisode = episode ?: return null
+
+        graph.media.ensureEpisodes(tmdbId, currentSeason)
+        nextEpisodeAfter(
+            episodes = graph.media.observeEpisodes(tmdbId, currentSeason).first(),
+            currentEpisode = currentEpisode,
+        )?.let { return it.toNextEpisodeTarget() }
+
+        val laterSeasons = detail?.seasons
+            .orEmpty()
+            .asSequence()
+            .filter { it.seasonNumber > currentSeason && it.episodeCount > 0 }
+            .sortedBy { it.seasonNumber }
+
+        for (laterSeason in laterSeasons) {
+            graph.media.ensureEpisodes(tmdbId, laterSeason.seasonNumber)
+            graph.media.observeEpisodes(tmdbId, laterSeason.seasonNumber)
+                .first()
+                .minByOrNull { it.episodeNumber }
+                ?.let { return it.toNextEpisodeTarget() }
+        }
+        return null
     }
 
     /**
@@ -659,3 +716,16 @@ class PlayerViewModel(
  * write never competes with playback.
  */
 private const val HINT_SAVE_INTERVAL_MS = 30_000L
+
+internal fun nextEpisodeAfter(episodes: List<Episode>, currentEpisode: Int): Episode? =
+    episodes
+        .asSequence()
+        .filter { it.episodeNumber > currentEpisode }
+        .minByOrNull { it.episodeNumber }
+
+private fun Episode.toNextEpisodeTarget() = NextEpisodeTarget(
+    season = seasonNumber,
+    episode = episodeNumber,
+    name = name,
+    stillUrl = stillUrl,
+)

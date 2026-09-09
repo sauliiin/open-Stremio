@@ -62,6 +62,7 @@
     <string name="color_black">Noir</string>
     <string name="settings_section_player">Lecteur</string>
     <string name="settings_audio_preferred_lang">Piste audio préférée</string>
+    <string name="settings_auto_play_next_episode">Lire automatiquement l’épisode suivant</string>
     <string name="lang_pt">Portugais</string>
     <string name="lang_en">Anglais</string>
     <string name="lang_es">Espagnol</string>
@@ -200,6 +201,10 @@
     <string name="player_attempt">%1$d sur %2$d</string>
     <string name="player_failed_title">Lecture impossible</string>
     <string name="player_ended_title">Fin</string>
+    <string name="player_next_episode">Épisode suivant</string>
+    <string name="player_stop_next_episode">Interrompre</string>
+    <string name="player_play_next_episode">Lire l’épisode suivant</string>
+    <string name="player_next_episode_number">Saison %1$d · Épisode %2$d</string>
     <string name="player_no_addons">Aucun addon installé. Les sources proviennent des addons.</string>
     <string name="player_no_imdb">Ce titre n’a pas d’identifiant IMDb, utilisé par les addons pour l’indexation.</string>
     <string name="player_generic_error">Impossible de lire ce titre.</string>

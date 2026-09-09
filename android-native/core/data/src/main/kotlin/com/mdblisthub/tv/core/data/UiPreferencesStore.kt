@@ -250,6 +250,14 @@ class UiPreferencesStore(context: Context) {
         store.edit { it[KEY_AUDIO_LANGUAGE] = lang }
     }
 
+    /** Opt-in handoff from an episode's credits to the following episode. */
+    val autoPlayNextEpisode: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_AUTO_PLAY_NEXT_EPISODE] ?: false
+    }
+    suspend fun saveAutoPlayNextEpisode(enabled: Boolean) {
+        store.edit { it[KEY_AUTO_PLAY_NEXT_EPISODE] = enabled }
+    }
+
     /**
      * Whether an unwatched episode's still is blurred on the detail screen, so
      * what is left to watch stands apart from what is already seen. Off by
@@ -363,6 +371,7 @@ class UiPreferencesStore(context: Context) {
         val KEY_SUBTITLE_BACKGROUND_ENABLED = booleanPreferencesKey("subtitle_background_enabled")
         val KEY_SUBTITLE_BACKGROUND_OPACITY = intPreferencesKey("subtitle_background_opacity")
         val KEY_AUDIO_LANGUAGE = stringPreferencesKey("audio_language")
+        val KEY_AUTO_PLAY_NEXT_EPISODE = booleanPreferencesKey("auto_play_next_episode")
         val KEY_DIM_UNWATCHED_EPISODES = booleanPreferencesKey("dim_unwatched_episodes")
     }
 }
