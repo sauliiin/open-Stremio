@@ -20,7 +20,7 @@ class RoutesTest {
         )
 
         assertEquals(
-            "player/show/1399?season=4&episode=7&select=true",
+            "player/show/1399?season=4&episode=7&select=true&restart=false",
             Routes.resume(point),
         )
     }
@@ -36,8 +36,22 @@ class RoutesTest {
         )
 
         assertEquals(
-            "player/movie/550?season=-1&episode=-1&select=true",
+            "player/movie/550?season=-1&episode=-1&select=true&restart=false",
             Routes.resume(point),
+        )
+    }
+
+    @Test
+    fun episodeCanStartFromBeginningWithoutOpeningSourcePicker() {
+        assertEquals(
+            "player/show/1399?season=4&episode=7&select=false&restart=true",
+            Routes.player(
+                type = MediaType.SHOW,
+                tmdbId = 1399,
+                season = 4,
+                episode = 7,
+                restart = true,
+            ),
         )
     }
 }

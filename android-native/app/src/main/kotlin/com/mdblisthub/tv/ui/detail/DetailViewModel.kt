@@ -118,6 +118,9 @@ class DetailViewModel(
     private val _libraryError = MutableStateFlow<AppError?>(null)
     val libraryError: StateFlow<AppError?> = _libraryError.asStateFlow()
 
+    private val _abandoning = MutableStateFlow(false)
+    val abandoning: StateFlow<Boolean> = _abandoning.asStateFlow()
+
     private val _castBio = MutableStateFlow(CastBioState())
     val castBio: StateFlow<CastBioState> = _castBio.asStateFlow()
 
@@ -164,6 +167,31 @@ class DetailViewModel(
         val point = resumePoint.value ?: return
         viewModelScope.launch {
             graph.playback.clear(point.toTarget())
+        }
+    }
+
+    fun abandonSeries() {
+        if (type != MediaType.SHOW || _abandoning.value) return
+        val current = detail.value ?: return
+        _libraryError.value = null
+        _abandoning.value = true
+
+        viewModelScope.launch {
+            try {
+                graph.library.abandonSeries(tmdbId, current.imdbId)
+                    .onSuccess {
+                        graph.homeFeeds.dismissFromUpNext(tmdbId, current.imdbId)
+                        graph.playback.clearSeriesProgress(
+                            ScrobbleTarget(MediaType.SHOW, tmdbId, current.imdbId),
+                        )
+                    }
+                    .onFailure { failure ->
+                        _libraryError.value =
+                            (failure as? AppException)?.error ?: AppError.Unexpected
+                    }
+            } finally {
+                _abandoning.value = false
+            }
         }
     }
 

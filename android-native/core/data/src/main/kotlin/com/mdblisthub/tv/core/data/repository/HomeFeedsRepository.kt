@@ -151,6 +151,21 @@ class HomeFeedsRepository(
         content.value = OwnedFeedContent()
     }
 
+    /** Removes an abandoned show from Up Next immediately, ahead of the next network refresh. */
+    suspend fun dismissFromUpNext(tmdbId: Int, imdbId: String?) {
+        val owner = ownerKey(preferences.currentLibraryProvider(), session.currentKey())
+        val current = content.value
+        if (current.ownerKey != owner) return
+
+        val remaining = current.items[MdblistHomeFeedKeys.UP_NEXT].orEmpty().filterNot { item ->
+            (tmdbId > 0 && item.media.tmdbId == tmdbId) ||
+                (imdbId != null && item.media.imdbId == imdbId)
+        }
+        content.value = current.copy(
+            items = current.items + (MdblistHomeFeedKeys.UP_NEXT to remaining),
+        )
+    }
+
     suspend fun toggleVisibility(feed: MdblistHomeFeed, hidden: Boolean) = runCatching {
         updatePreference(feed) { it.copy(hidden = hidden) }
     }

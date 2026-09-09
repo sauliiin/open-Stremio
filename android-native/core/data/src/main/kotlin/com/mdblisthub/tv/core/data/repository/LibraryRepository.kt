@@ -106,6 +106,11 @@ class LibraryRepository(
         watched
     }
 
+    /** Uses the selected provider's native way to stop tracking a series. */
+    suspend fun abandonSeries(tmdbId: Int, imdbId: String?): Result<Unit> = runCatching {
+        source().abandonShow(tmdbId, imdbId)
+    }
+
     /**
      * Forgets what was read from the previous provider.
      *

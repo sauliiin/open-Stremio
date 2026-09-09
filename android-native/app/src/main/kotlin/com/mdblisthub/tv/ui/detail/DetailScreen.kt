@@ -107,6 +107,7 @@ import com.mdblisthub.tv.core.ui.theme.HubEffects
 import com.mdblisthub.tv.core.ui.theme.HubShapes
 import com.mdblisthub.tv.core.ui.theme.HubStrokes
 import com.mdblisthub.tv.ui.component.HubButton
+import com.mdblisthub.tv.ui.component.EpisodeOptionsDialog
 import com.mdblisthub.tv.ui.component.MediaOptionsDialog
 import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
@@ -123,6 +124,7 @@ fun DetailScreen(
     tmdbId: Int,
     onBack: () -> Unit,
     onPlay: (season: Int?, episode: Int?) -> Unit,
+    onPlayFromBeginning: (season: Int?, episode: Int?) -> Unit,
     onSelectSource: (season: Int?, episode: Int?) -> Unit,
     onOpenTitle: (MediaItem) -> Unit,
     onPlayItem: (MediaItem) -> Unit,
@@ -149,6 +151,7 @@ fun DetailScreen(
     val libraryProvider by graph.uiPreferences.libraryProvider.collectAsStateWithLifecycle(initialValue = LibraryProvider.MDBLIST)
     val resumePoint by viewModel.resumePoint.collectAsStateWithLifecycle()
     val pending by viewModel.pending.collectAsStateWithLifecycle()
+    val abandoning by viewModel.abandoning.collectAsStateWithLifecycle()
     val libraryError by viewModel.libraryError.collectAsStateWithLifecycle()
     val castBio by viewModel.castBio.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -158,6 +161,7 @@ fun DetailScreen(
     var buttonRowHasFocus by remember { mutableStateOf(false) }
     var trailerOpen by remember { mutableStateOf(false) }
     var episodeDetails by remember { mutableStateOf<Episode?>(null) }
+    var episodeOptionTarget by remember { mutableStateOf<Episode?>(null) }
     var openedReview by remember { mutableStateOf<Review?>(null) }
     var recommendationOptionTarget by remember { mutableStateOf<MediaItem?>(null) }
     // Episode cards update this on focus. The main actions then follow the
@@ -247,6 +251,21 @@ fun DetailScreen(
                 recommendationOptionTarget = null
             },
             onDismiss = { recommendationOptionTarget = null },
+        )
+    }
+
+    episodeOptionTarget?.let { episode ->
+        EpisodeOptionsDialog(
+            title = episode.name,
+            onPlayFromBeginning = {
+                episodeOptionTarget = null
+                onPlayFromBeginning(episode.seasonNumber, episode.episodeNumber)
+            },
+            onChooseSource = {
+                episodeOptionTarget = null
+                onSelectSource(episode.seasonNumber, episode.episodeNumber)
+            },
+            onDismiss = { episodeOptionTarget = null },
         )
     }
 
@@ -388,6 +407,14 @@ fun DetailScreen(
                                 modifier = Modifier.fillMaxHeight(),
                             )
                         }
+                        if (type == MediaType.SHOW) {
+                            HubButton(
+                                text = stringResource(R.string.detail_abandon_series),
+                                enabled = !abandoning,
+                                onClick = viewModel::abandonSeries,
+                                modifier = Modifier.fillMaxHeight(),
+                            )
+                        }
                         HubButton(
                             text = if (library.watchlist) stringResource(R.string.detail_in_watchlist) else stringResource(R.string.detail_add_watchlist),
                             enabled = LibraryBucket.WATCHLIST !in pending,
@@ -408,7 +435,7 @@ fun DetailScreen(
                             onClick = viewModel::toggleWatched,
                             modifier = Modifier.fillMaxHeight(),
                         )
-                        if (resumePoint != null) {
+                        if (type == MediaType.MOVIE && resumePoint != null) {
                             HubButton(
                                 text = stringResource(R.string.detail_clear_progress),
                                 onClick = viewModel::clearProgress,
@@ -471,9 +498,7 @@ fun DetailScreen(
                         showTmdbId = tmdbId,
                         appLanguage = appLanguage,
                         onOpenDetails = { ep -> episodeDetails = ep },
-                        onSelectSource = { ep ->
-                            onSelectSource(ep.seasonNumber, ep.episodeNumber)
-                        },
+                        onOpenOptions = { episodeOptionTarget = it },
                         onFocused = { ep -> focusedEpisodeNumber = ep.episodeNumber },
                     )
                 }
@@ -675,7 +700,7 @@ private fun EpisodeRow(
     showTmdbId: Int,
     appLanguage: String,
     onOpenDetails: (Episode) -> Unit,
-    onSelectSource: (Episode) -> Unit,
+    onOpenOptions: (Episode) -> Unit,
     onFocused: (Episode) -> Unit,
 ) {
     if (episodes.isEmpty()) return
@@ -751,7 +776,7 @@ private fun EpisodeRow(
                             interactionSource = interaction,
                             indication = null,
                             onClick = { onOpenDetails(episode) },
-                            onLongClick = { onSelectSource(episode) },
+                            onLongClick = { onOpenOptions(episode) },
                         )
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),

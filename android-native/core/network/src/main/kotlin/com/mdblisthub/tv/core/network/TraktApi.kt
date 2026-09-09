@@ -119,6 +119,10 @@ interface TraktApi {
     @POST("sync/history/remove")
     suspend fun removeFromHistory(@Body body: TraktSyncWriteDto): TraktSyncResponseDto
 
+    /** Hides a show from watched progress without deleting its play history. */
+    @POST("users/hidden/progress_watched")
+    suspend fun hideFromWatchedProgress(@Body body: TraktSyncWriteDto): TraktSyncResponseDto
+
     // ----------------------------------------------------------- scrobbling
 
     /** `action` is `start`, `pause` or `stop`. Past 80% a stop marks it watched. */

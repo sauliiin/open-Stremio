@@ -7,6 +7,8 @@ import com.mdblisthub.tv.core.network.dto.MdbInfoDto
 import com.mdblisthub.tv.core.network.dto.MdbItemDto
 import com.mdblisthub.tv.core.network.dto.MdbListDto
 import com.mdblisthub.tv.core.network.dto.MdbUserDto
+import com.mdblisthub.tv.core.network.dto.MdblistDroppedResponseDto
+import com.mdblisthub.tv.core.network.dto.MdblistDroppedWriteDto
 import com.mdblisthub.tv.core.network.dto.PlaybackSessionDto
 import com.mdblisthub.tv.core.network.dto.UpNextResponseDto
 import kotlinx.serialization.json.JsonObject
@@ -84,6 +86,13 @@ interface MdblistApi {
         @Query("apikey") apiKey: String,
         @Body body: LibraryWriteDto,
     ): Response<ResponseBody>
+
+    /** Marks a show as dropped while preserving its watched episode history. */
+    @POST("sync/dropped")
+    suspend fun markShowDropped(
+        @Query("apikey") apiKey: String,
+        @Body body: MdblistDroppedWriteDto,
+    ): Response<MdblistDroppedResponseDto>
 
     /**
      * Scrobbling goes out as nested JSON — `{"progress":..,"movie":{"ids":{..}}}`.

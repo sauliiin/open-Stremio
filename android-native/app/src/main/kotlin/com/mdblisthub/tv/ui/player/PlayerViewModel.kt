@@ -77,6 +77,8 @@ class PlayerViewModel(
     // True when the user asked to pick a source up front, from the detail
     // screen's "select source" button, instead of letting the cascade choose.
     private val manualSelect: Boolean = false,
+    /** Ignores provider progress and the exact local playback hint. */
+    private val startFromBeginning: Boolean = false,
 ) : ViewModel() {
 
     /**
@@ -86,7 +88,11 @@ class PlayerViewModel(
      * point at which the answer to "was I opened from the mini-player" could
      * change under it.
      */
-    private val reclaimed = MiniPlayerCoordinator.reclaim(type, tmdbId, season, episode)
+    private val reclaimed = if (startFromBeginning) {
+        null
+    } else {
+        MiniPlayerCoordinator.reclaim(type, tmdbId, season, episode)
+    }
 
     /** Shared with a minimized session so one completion can only alert once. */
     private val completionNotifier = reclaimed?.completionNotifier ?: PlaybackCompletionNotifier(
@@ -298,11 +304,11 @@ class PlayerViewModel(
         }
 
         val candidates = graph.streams.candidates(type, stremioId)
-        val resumeAt = graph.playback.resumeFor(scrobbleTarget)
+        val resumeAt = if (startFromBeginning) null else graph.playback.resumeFor(scrobbleTarget)
         // Room, not the network — this is the note this app left itself last
         // time it played the title. Null on a first watch, and everything
         // downstream works without one.
-        val hint = graph.playback.hintFor(scrobbleTarget)
+        val hint = if (startFromBeginning) null else graph.playback.hintFor(scrobbleTarget)
 
         _ui.update { it.copy(searching = false) }
         controller.play(

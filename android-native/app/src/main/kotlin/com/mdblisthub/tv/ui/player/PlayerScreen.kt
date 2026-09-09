@@ -258,12 +258,24 @@ fun PlayerScreen(
     season: Int?,
     episode: Int?,
     manualSelect: Boolean = false,
+    startFromBeginning: Boolean = false,
     onBack: () -> Unit,
     onOpenAddons: () -> Unit,
 ) {
     val appContext = LocalContext.current.applicationContext
-    val viewModel = hubViewModel(key = "player-$type-$tmdbId-$season-$episode-$manualSelect") {
-        PlayerViewModel(graph, appContext, type, tmdbId, season, episode, manualSelect)
+    val viewModel = hubViewModel(
+        key = "player-$type-$tmdbId-$season-$episode-$manualSelect-$startFromBeginning",
+    ) {
+        PlayerViewModel(
+            graph,
+            appContext,
+            type,
+            tmdbId,
+            season,
+            episode,
+            manualSelect,
+            startFromBeginning,
+        )
     }
 
     val ui by viewModel.ui.collectAsStateWithLifecycle()

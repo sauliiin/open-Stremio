@@ -77,6 +77,9 @@ sealed interface AppError {
     /** A write to `api.mdblist.com` answered outside the 2xx range. */
     data class MdblistWriteRejected(val code: Int) : AppError
 
+    /** MDBList answered successfully but did not resolve or update the submitted title. */
+    data object MdblistTitleNotRecognized : AppError
+
     /** The account toggling a library bucket has no mdblist session at all. */
     data object MdblistSessionExpired : AppError
 

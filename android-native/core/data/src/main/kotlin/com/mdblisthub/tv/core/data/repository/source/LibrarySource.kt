@@ -14,6 +14,9 @@ import com.mdblisthub.tv.core.network.dto.LibraryKeyDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteDto
 import com.mdblisthub.tv.core.network.dto.LibraryWriteSeasonDto
+import com.mdblisthub.tv.core.network.dto.MdblistDroppedIdsDto
+import com.mdblisthub.tv.core.network.dto.MdblistDroppedShowDto
+import com.mdblisthub.tv.core.network.dto.MdblistDroppedWriteDto
 import com.mdblisthub.tv.core.network.dto.TraktIdsDto
 import com.mdblisthub.tv.core.network.dto.TraktSyncWriteDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteEpisodeDto
@@ -29,6 +32,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Where watchlist / watched / collection membership comes from.
@@ -72,6 +79,9 @@ interface LibrarySource {
         episode: Int,
         add: Boolean,
     )
+
+    /** Stops following a show without erasing the episodes already watched. */
+    suspend fun abandonShow(tmdbId: Int, imdbId: String?)
 }
 
 /**
@@ -158,6 +168,26 @@ class MdblistLibrarySource(
         requireOrFail(response.isSuccessful) { AppError.MdblistWriteRejected(response.code()) }
     }
 
+    override suspend fun abandonShow(tmdbId: Int, imdbId: String?) {
+        val key = session.currentKey()
+        requireOrFail(key.isNotBlank()) { AppError.MdblistSessionExpired }
+
+        val body = MdblistDroppedWriteDto(
+            shows = listOf(
+                MdblistDroppedShowDto(
+                    ids = MdblistDroppedIdsDto(
+                        imdb = imdbId,
+                        tmdb = tmdbId.takeIf { it > 0 },
+                    ),
+                    droppedAt = utcNow(),
+                ),
+            ),
+        )
+        val response = api.markShowDropped(key, body)
+        requireOrFail(response.isSuccessful) { AppError.MdblistWriteRejected(response.code()) }
+        requireOrFail(response.body()?.acceptedShow() == true) { AppError.MdblistTitleNotRecognized }
+    }
+
     /**
      * The endpoints, which used to live on [LibraryBucket] itself. They are
      * mdblist's spelling and no other provider's, so they belong here.
@@ -185,6 +215,11 @@ class MdblistLibrarySource(
 
     private companion object {
         const val ROOT = "https://api.mdblist.com/"
+
+        fun utcNow(): String = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).run {
+            timeZone = TimeZone.getTimeZone("UTC")
+            format(Date())
+        }
     }
 }
 
@@ -312,6 +347,23 @@ class TraktLibrarySource(
         requireOrFail(!response.resolvedNothing()) { AppError.TraktTitleNotRecognized }
     }
 
+    override suspend fun abandonShow(tmdbId: Int, imdbId: String?) {
+        requireOrFail(tokens.isLinked()) { AppError.TraktNotLinked }
+
+        val body = TraktSyncWriteDto(
+            shows = listOf(
+                TraktWriteItemDto(
+                    TraktIdsDto(
+                        imdb = imdbId,
+                        tmdb = tmdbId.takeIf { it > 0 },
+                    ),
+                ),
+            ),
+        )
+        val response = api.hideFromWatchedProgress(body)
+        requireOrFail(!response.resolvedNothing()) { AppError.TraktTitleNotRecognized }
+    }
+
     /**
      * Walks pages until one comes back short.
      *
@@ -397,6 +449,19 @@ class SimklLibrarySource(
             putJsonArray("seasons") { add(buildJsonObject { put("number", season); putJsonArray("episodes") { add(buildJsonObject { put("number", episode) }) } }) }
         }) } }
         val response = if (add) api.addHistory(body) else api.removeHistory(body)
+        requireResolved(response)
+    }
+
+    override suspend fun abandonShow(tmdbId: Int, imdbId: String?) {
+        check(tokens.isLinked()) { "Simkl is not connected" }
+        val response = api.addToList(
+            syncBody(
+                type = MediaType.SHOW,
+                tmdbId = tmdbId,
+                imdbId = imdbId,
+                watchlistStatus = "dropped",
+            ),
+        )
         requireResolved(response)
     }
 

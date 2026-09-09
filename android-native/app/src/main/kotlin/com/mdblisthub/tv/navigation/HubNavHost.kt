@@ -54,7 +54,7 @@ object Routes {
     const val ADDONS = "addons"
     const val SETTINGS = "settings"
     const val DETAIL = "detail/{type}/{tmdbId}?heroBackdropUrl={heroBackdropUrl}"
-    const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}&select={select}"
+    const val PLAYER = "player/{type}/{tmdbId}?season={season}&episode={episode}&select={select}&restart={restart}"
 
     /**
      * [heroBackdropUrl] is the backdrop already on screen for this title —
@@ -67,8 +67,15 @@ object Routes {
         return if (heroBackdropUrl.isNullOrBlank()) base else "$base?heroBackdropUrl=${Uri.encode(heroBackdropUrl)}"
     }
 
-    fun player(type: MediaType, tmdbId: Int, season: Int? = null, episode: Int? = null, select: Boolean = false) =
-        "player/${type.mdblist}/$tmdbId?season=${season ?: -1}&episode=${episode ?: -1}&select=$select"
+    fun player(
+        type: MediaType,
+        tmdbId: Int,
+        season: Int? = null,
+        episode: Int? = null,
+        select: Boolean = false,
+        restart: Boolean = false,
+    ) = "player/${type.mdblist}/$tmdbId?season=${season ?: -1}&episode=${episode ?: -1}" +
+        "&select=$select&restart=$restart"
 
     /** Resume the exact movie/episode, but let the viewer choose its source first. */
     fun resume(point: ResumePoint) =
@@ -314,6 +321,11 @@ fun HubNavHost(graph: DataGraph) {
                 onPlay = { season, episode ->
                     navController.navigate(Routes.player(type, tmdbId, season, episode))
                 },
+                onPlayFromBeginning = { season, episode ->
+                    navController.navigate(
+                        Routes.player(type, tmdbId, season, episode, restart = true),
+                    )
+                },
                 onSelectSource = { season, episode ->
                     navController.navigate(Routes.player(type, tmdbId, season, episode, select = true))
                 },
@@ -343,6 +355,7 @@ fun HubNavHost(graph: DataGraph) {
                 navArgument("season") { type = NavType.IntType; defaultValue = -1 },
                 navArgument("episode") { type = NavType.IntType; defaultValue = -1 },
                 navArgument("select") { type = NavType.BoolType; defaultValue = false },
+                navArgument("restart") { type = NavType.BoolType; defaultValue = false },
             ),
         ) { entry ->
             val args = entry.arguments
@@ -353,6 +366,7 @@ fun HubNavHost(graph: DataGraph) {
                 season = args?.getInt("season")?.takeIf { it > 0 },
                 episode = args?.getInt("episode")?.takeIf { it > 0 },
                 manualSelect = args?.getBoolean("select") ?: false,
+                startFromBeginning = args?.getBoolean("restart") ?: false,
                 onBack = { navController.popBackStack() },
                 onOpenAddons = { navController.navigate(Routes.ADDONS) },
             )

@@ -40,6 +40,21 @@ interface PlaybackDao {
     @Query("SELECT * FROM resume_points WHERE `key` = :key")
     suspend fun resumePoint(key: String): ResumeEntity?
 
+    /** Every paused episode that belongs to one title, regardless of season. */
+    @Query(
+        """
+        SELECT * FROM resume_points
+        WHERE type = :type
+          AND ((:tmdbId IS NOT NULL AND tmdbId = :tmdbId)
+            OR (:imdbId IS NOT NULL AND imdbId = :imdbId))
+        """,
+    )
+    suspend fun resumePointsForTitle(
+        type: String,
+        tmdbId: Int?,
+        imdbId: String?,
+    ): List<ResumeEntity>
+
     @Query("DELETE FROM resume_points WHERE `key` = :key")
     suspend fun deleteResumePoint(key: String)
 

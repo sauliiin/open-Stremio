@@ -151,6 +151,35 @@ class PlaybackRepository(
         return runCatching { source().clear(target, stored?.playbackId) }
     }
 
+    /** Clears all paused episodes while preserving the series' watched history. */
+    suspend fun clearSeriesProgress(target: ScrobbleTarget): Result<Unit> {
+        require(target.type == MediaType.SHOW) { "Only a series can have series progress cleared" }
+
+        val rows = dao.resumePointsForTitle(
+            type = target.type.mdblist,
+            tmdbId = target.tmdbId,
+            imdbId = target.imdbId,
+        )
+        val playbackSource = source()
+        var firstFailure: Throwable? = null
+
+        rows.forEach { row ->
+            val episodeTarget = ScrobbleTarget(
+                type = MediaType.SHOW,
+                tmdbId = row.tmdbId ?: target.tmdbId,
+                imdbId = row.imdbId ?: target.imdbId,
+                season = row.season,
+                episode = row.episode,
+            )
+            runCatching { playbackSource.clear(episodeTarget, row.playbackId) }
+                .onFailure { if (firstFailure == null) firstFailure = it }
+            dao.deleteResumePoint(row.key)
+            dao.deletePlaybackHint(episodeTarget.localKey())
+        }
+
+        return firstFailure?.let(Result.Companion::failure) ?: Result.success(Unit)
+    }
+
     /**
      * Forgets sessions read from the previous provider. Called when the
      * library setting changes, for the same reason `LibraryRepository` clears

@@ -122,3 +122,59 @@ fun MediaOptionsDialog(
         }
     }
 }
+
+/** Episode actions opened by holding OK on its card. */
+@Composable
+fun EpisodeOptionsDialog(
+    title: String,
+    onPlayFromBeginning: () -> Unit,
+    onChooseSource: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val firstActionFocus = remember { FocusRequester() }
+    var consumeOpeningConfirmRelease by remember { mutableStateOf(true) }
+    val actionScale = ButtonDefaults.scale(focusedScale = 1.03f)
+
+    LaunchedEffect(Unit) {
+        repeat(3) {
+            withFrameNanos { }
+            if (firstActionFocus.requestFocus()) return@LaunchedEffect
+        }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .width(300.dp)
+                .background(HubColors.Surface, RoundedCornerShape(14.dp))
+                .onPreviewKeyEvent { event ->
+                    val isConfirm = event.key == Key.DirectionCenter ||
+                        event.key == Key.Enter ||
+                        event.key == Key.NumPadEnter ||
+                        event.key == Key.Spacebar
+                    if (consumeOpeningConfirmRelease && isConfirm && event.type == KeyEventType.KeyUp) {
+                        consumeOpeningConfirmRelease = false
+                        true
+                    } else {
+                        false
+                    }
+                }
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(title, style = MaterialTheme.typography.titleLarge, color = HubColors.Text)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onPlayFromBeginning,
+                    scale = actionScale,
+                    modifier = Modifier.fillMaxWidth().focusRequester(firstActionFocus),
+                ) { Text(stringResource(R.string.detail_watch_from_beginning)) }
+                Button(
+                    onClick = onChooseSource,
+                    scale = actionScale,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.detail_select_source)) }
+            }
+        }
+    }
+}

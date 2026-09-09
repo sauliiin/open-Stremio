@@ -98,6 +98,8 @@
     <string name="media_options_info">Información</string>
     <string name="media_options_reset">Restablecer</string>
     <string name="detail_clear_progress">Restablecer progreso</string>
+    <string name="detail_abandon_series">Abandonar serie</string>
+    <string name="detail_watch_from_beginning">Ver desde el principio</string>
     <string name="detail_reviews">Reseñas</string>
     <string name="search_title">Buscar en TMDB</string>
     <string name="search_placeholder">Buscar películas o series…</string>
@@ -376,6 +378,7 @@
     <string name="error_mdblist_no_valid_manifests">MDBList no generó ningún manifest de addon válido.</string>
     <string name="error_mdblist_key_required">Ingresa tu clave de API de MDBList.</string>
     <string name="error_mdblist_write_rejected">mdblist respondió %1$d.</string>
+    <string name="error_mdblist_title_not_recognized">MDBList no reconoció esta serie.</string>
     <string name="error_mdblist_session_expired">Sesión expirada.</string>
     <string name="error_google_sign_in_required">Inicia sesión con Google primero.</string>
     <string name="error_google_account_changed_restore">La cuenta de Google cambió durante la restauración.</string>

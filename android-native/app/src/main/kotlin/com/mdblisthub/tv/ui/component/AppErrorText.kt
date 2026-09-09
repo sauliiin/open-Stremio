@@ -33,6 +33,7 @@ fun AppError.text(): String = when (this) {
     AppError.MdblistNoValidManifests -> stringResource(R.string.error_mdblist_no_valid_manifests)
     AppError.MdblistKeyRequired -> stringResource(R.string.error_mdblist_key_required)
     is AppError.MdblistWriteRejected -> stringResource(R.string.error_mdblist_write_rejected, code)
+    AppError.MdblistTitleNotRecognized -> stringResource(R.string.error_mdblist_title_not_recognized)
     AppError.MdblistSessionExpired -> stringResource(R.string.error_mdblist_session_expired)
 
     AppError.GoogleSignInRequired -> stringResource(R.string.error_google_sign_in_required)
