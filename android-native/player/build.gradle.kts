@@ -7,7 +7,14 @@ plugins {
 android {
     namespace = "com.mdblisthub.tv.player"
     compileSdk = libs.versions.compileSdk.get().toInt()
-    defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
+    defaultConfig {
+        minSdk = libs.versions.minSdk.get().toInt()
+        // The buffer budget is chosen from `Runtime.maxMemory()` and
+        // `ActivityManager.MemoryInfo`, neither of which a JVM test can
+        // produce a truthful answer for. The numbers that decide whether a box
+        // stutters only exist on a box.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -51,4 +58,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
 }

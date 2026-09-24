@@ -399,7 +399,16 @@ class PlayerViewModel(
         castPreviewJob?.cancel()
         _castPreview.value = PlayerCastPreviewState(member = member, loading = true)
         castPreviewJob = viewModelScope.launch {
-            val lookup = graph.wikipedia.summaryFor(member.id, member.name)
+            val lookup = graph.wikipedia.summaryFor(
+                personId = member.id,
+                name = member.name,
+                // Read here rather than held as a field: the popup is opened
+                // from the OSD long after playback started, so the cached
+                // detail is already there and a stale copy would be the only
+                // way to get this wrong.
+                releaseDate = graph.media.cachedDetail(type, tmdbId)?.releaseDate,
+                isSeries = type == MediaType.SHOW,
+            )
             val summary = (lookup as? WikipediaLookup.Found)?.summary
             castSummaryCache[member.id] = summary
             _castPreview.update { current ->

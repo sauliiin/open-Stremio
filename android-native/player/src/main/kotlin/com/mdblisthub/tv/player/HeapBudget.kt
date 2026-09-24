@@ -28,21 +28,15 @@ import android.content.Context
 internal object HeapBudget {
 
     /**
-     * The two readings that describe the *box* rather than the moment.
+     * The reading that describes the *box* rather than the moment.
      *
-     * `totalMem` and `isLowRamDevice` cannot change while the process lives,
-     * but each read costs a binder round trip to `ActivityManager` — and
-     * [targetBufferBytes] plus [bufferForPlaybackAfterRebufferMs] between them
-     * asked for one or the other five times, on the main thread, every time a
-     * film was opened. `availMem` is deliberately *not* cached below: that one
-     * moves minute to minute and sizing a buffer from a stale copy of it is
-     * the mistake this whole file exists to avoid.
+     * `totalMem` cannot change while the process lives, but reading it costs a
+     * binder round trip to `ActivityManager`. `availMem` is deliberately *not*
+     * cached below: that one moves minute to minute and sizing a buffer from a
+     * stale copy of it is the mistake this whole file exists to avoid.
      */
     @Volatile
     private var cachedTotalRamBytes: Long? = null
-
-    @Volatile
-    private var cachedConstrained: Boolean? = null
 
     /**
      * Share of the *currently free* heap headroom the buffer may claim.
@@ -100,37 +94,15 @@ internal object HeapBudget {
     private const val MODEST_MIN_BYTES = 128L * 1024 * 1024
 
     /**
-     * The bottom tier, and the one to lower first if anything regresses.
-     *
-     * This is the one tier where the floor is not academic. In the ordinary
-     * case the measured `allowance` already sits above the heap-third ceiling,
-     * so the ceiling decides and the floor is never consulted — true for every
-     * tier, including this one. But a Fire TV Stick is also the device most
-     * likely to *hit* `spareRamBytes` pressure, since 1GB of physical RAM
-     * leaves little headroom above the low-memory killer's threshold to begin
-     * with. When that happens is exactly when this floor stops being inert and
-     * starts forcing the buffer back up — during the one condition where doing
-     * that is actively wrong.
-     *
-     * So this stays close to the heap-third ceiling (~85MB on a 256MB heap)
-     * rather than doubling with the other two tiers: 56MB is ~22% of that
-     * heap, comfortably under the ~33% ratio that was thrashing, while still
-     * being ~18s of an 25Mbps remux — enough to bridge eMMC read latency, which
-     * is the only job left for this buffer now that [MediaPrefetcher] holds
-     * the deep cushion on disk.
-     */
-    private const val CONSTRAINED_MIN_BYTES = 56L * 1024 * 1024
-
-    /**
      * Where the tiers divide, in `ActivityManager.MemoryInfo.totalMem`.
      *
-     * `totalMem` is physical RAM as the kernel sees it, so a box marketed as
-     * "1GB" reports nearer 0.9GiB and a "1.5GB" stick nearer 1.4GiB — the
-     * thresholds sit in the gaps between those real readings rather than on
-     * the round numbers from a spec sheet.
+     * `totalMem` is physical RAM as the kernel sees it. Devices below this
+     * boundary use the 128MB floor; those at or above it use 256MB.
      */
-    private const val CONSTRAINED_RAM_BYTES = 1_250L * 1024 * 1024
     private const val MODEST_RAM_BYTES = 2_400L * 1024 * 1024
+
+    private const val BUFFER_FOR_PLAYBACK_MS = 5_000
+    private const val BUFFER_AFTER_REBUFFER_MS = 10_000
 
     /**
      * Above this the extra buffer buys nothing a viewer can perceive.
@@ -143,27 +115,50 @@ internal object HeapBudget {
     private const val MAX_TARGET_BYTES = 448L * 1024 * 1024
 
     /**
-     * Fraction of the byte budget the back buffer may hold.
+     * Fraction of the budget's *surplus* the back buffer may hold.
      *
-     * A fixed number of *seconds* cannot stay in proportion to a byte budget:
-     * at 20Mbps, 30s is ~75MB, which on a small box exceeds the entire budget
-     * on its own and starves the forward buffer — the one that decides whether
-     * playback stutters. Pinning the back buffer to a share of the same pot
-     * means it can never do that, at any bitrate.
+     * A share of the whole pot cannot stay in proportion, because the pot is
+     * not all discretionary: playback does not resume after a rebuffer until
+     * [bufferForPlaybackAfterRebufferMs] is buffered, so that much of every
+     * budget — and a working cushion above it, see [RESERVED_FORWARD_MS] — is
+     * spoken for before anything is shared out. Taking twenty percent off the
+     * top instead is how a device whose entire budget was twenty-five seconds
+     * of a high-bitrate remux ended up handing five of them to film already
+     * watched, leaving barely more than the resume threshold in front of the
+     * playhead. That device stutters where a 4GB one does not, and this is one
+     * of the reasons.
+     *
+     * Against the surplus the same twenty percent is proportionate at every
+     * size: a budget that cannot cover the reserve gets no back buffer at all,
+     * and one with minutes to spare still reaches [MAX_BACK_BUFFER_MS].
      */
     const val BACK_BUFFER_SHARE = 0.20
 
     /** The ceiling on rewind-for-free, once the share above allows that much. */
     const val MAX_BACK_BUFFER_MS = 10_000L
 
-    /** Enough to keep the picture moving while the pressure passes. */
-    const val MIN_BACK_BUFFER_MS = 2_000L
+    /**
+     * Forward buffer reserved before any of the budget is shared out.
+     *
+     * Twice [bufferForPlaybackAfterRebufferMs], because a cushion equal to the
+     * resume threshold is not a cushion — it is a guarantee that the next
+     * hiccup stops the picture again, which is the freeze/resume cycle this
+     * whole file exists to avoid.
+     *
+     * Nothing is lost on the devices this excludes. Rewinding reads from
+     * [MediaCache], which is on disk, costs no heap and holds minutes rather
+     * than seconds; the RAM back buffer only ever saved the difference between
+     * a disk read and a memory one, and a disk read is not what makes a
+     * picture stop.
+     */
+    private const val RESERVED_FORWARD_MS = 2 * BUFFER_AFTER_REBUFFER_MS
 
     /**
-     * Used only until real throughput is observed — see [AdaptiveLoadControl].
-     * Deliberately a high estimate (~25Mbps), because guessing low here is what
-     * produces an oversized back buffer on exactly the high-bitrate release
-     * that cannot afford one.
+     * Used only until real throughput is observed — see [AdaptiveLoadControl],
+     * which keeps the last measurement rather than returning here once it has
+     * one. Deliberately a high estimate (~25Mbps), because guessing low here is
+     * what produces an oversized back buffer on exactly the high-bitrate
+     * release that cannot afford one.
      */
     const val ASSUMED_BYTES_PER_SECOND = 3_100_000L
 
@@ -221,27 +216,6 @@ internal object HeapBudget {
     }
 
     /**
-     * True on the boxes this whole change is about — a Fire TV Stick rather
-     * than a television with a real SoC in it.
-     *
-     * `isLowRamDevice` is checked first and trusted outright: it is the
-     * manufacturer declaring the device is memory-constrained, which is better
-     * evidence than any threshold guessed here.
-     */
-    fun isConstrainedDevice(context: Context): Boolean {
-        cachedConstrained?.let { return it }
-        val manager = context.getSystemService(ActivityManager::class.java)
-        val constrained = if (manager?.isLowRamDevice == true) {
-            true
-        } else {
-            val total = totalRamBytes(context)
-            total != null && total < CONSTRAINED_RAM_BYTES
-        }
-        cachedConstrained = constrained
-        return constrained
-    }
-
-    /**
      * The floor for this box, by tier.
      *
      * An unreadable `totalMem` lands on the middle tier rather than the top
@@ -250,10 +224,6 @@ internal object HeapBudget {
      * upward is the garbage collection this change exists to stop.
      */
     private fun minimumBufferBytes(context: Context): Long {
-        // Covers the bottom tier outright, including the `isLowRamDevice`
-        // declaration that no RAM threshold would catch on its own, so what
-        // remains below is only the split between the middle and top tiers.
-        if (isConstrainedDevice(context)) return CONSTRAINED_MIN_BYTES
         val total = totalRamBytes(context) ?: return MODEST_MIN_BYTES
         return if (total < MODEST_RAM_BYTES) MODEST_MIN_BYTES else ROOMY_MIN_BYTES
     }
@@ -292,33 +262,86 @@ internal object HeapBudget {
     }
 
     /**
-     * How much buffer the player must rebuild before it resumes from a stall.
-     *
-     * Media3 defaults to 2s and this app raised it to 8s, on the reasoning that
-     * resuming with almost nothing in hand turns one stall into a run of them.
-     * That reasoning holds on a box that can refill 8s quickly. On a Fire TV
-     * Stick behind its own weak radio, pulling 8 seconds of a high-bitrate
-     * remux can take longer than the outage did — and until it finishes, the
-     * picture stays stopped. That is the freeze that only a seek clears: seek
-     * backward and the bytes come off disk instantly, seek forward and the
-     * requirement is recomputed somewhere the link can actually satisfy.
-     *
-     * So the constrained tier resumes sooner. It can afford to: with
-     * [MediaPrefetcher] holding minutes of film on disk, "almost nothing in
-     * hand" is no longer true — the RAM buffer refills from the cache file at
-     * eMMC speed rather than from the network, so the run-of-stalls the 8s was
-     * defending against cannot start.
+     * Avoids declaring the first frame ready on a nearly empty buffer on a
+     * device. This must not shrink just because the device has more RAM: RAM
+     * determines the maximum byte budget, whereas this is the minimum time
+     * cushion needed to survive a brief source slowdown.
      */
-    fun bufferForPlaybackAfterRebufferMs(context: Context): Int =
-        if (isConstrainedDevice(context)) 2_500 else 8_000
+    fun bufferForPlaybackMs(): Int = BUFFER_FOR_PLAYBACK_MS
+
+    /**
+     * Rebuild a meaningful cushion before resuming after a real rebuffer.
+     * This deliberately favours one slightly longer wait over repeated
+     * freeze/resume cycles while the source is unstable.
+     *
+     * The *ceiling*, not the answer. `DefaultLoadControl` takes it as a flat
+     * constant for every device, and [AdaptiveLoadControl] lowers it through
+     * [rebufferStartMs] wherever the byte budget cannot hold it — see there
+     * for why a device that cannot afford this number must not be asked for
+     * it anyway.
+     */
+    fun bufferForPlaybackAfterRebufferMs(): Int = BUFFER_AFTER_REBUFFER_MS
+
+    /**
+     * Share of the byte budget a device may be asked to refill before the
+     * picture comes back.
+     *
+     * A third, so that resuming leaves two thirds of the budget still to fill
+     * — a cushion, rather than a resume straight back onto the edge of the
+     * next stall.
+     */
+    private const val REBUFFER_START_SHARE = 0.33
+
+    /**
+     * The floor on that, and the number to raise first if stutter returns.
+     *
+     * Media3 defaults to 2s. Below about this a resume really does land back
+     * in the stall it just left — but the reason it can be this low at all is
+     * [MediaPrefetcher]: the RAM buffer refills from a cache file at eMMC
+     * speed rather than from the radio, so "almost nothing in hand" stopped
+     * being true when the deep cushion moved to disk.
+     */
+    const val MIN_REBUFFER_START_MS = 2_500L
+
+    /**
+     * How much buffer this device can actually be asked to rebuild before
+     * playback resumes, given what its budget holds at this bitrate.
+     *
+     * [bufferForPlaybackAfterRebufferMs] is one number for every device, and
+     * on a box whose entire budget is twenty seconds of a high-bitrate remux,
+     * ten of them is half the pot — spent stopped, while the link that just
+     * faltered is asked to deliver at a rate it has already demonstrated it
+     * cannot. Until it finishes the picture stays frozen, and the thing that
+     * ends that freeze is the viewer pressing skip: a seek recomputes the
+     * requirement somewhere the link can satisfy, or serves it from the disk
+     * cache outright. That is a resume threshold the device cannot pay,
+     * presenting as a player that has stopped responding.
+     *
+     * A device with room for the full ten seconds is unaffected — the share
+     * below lands well past the ceiling and is clamped straight back to it.
+     * Only a budget too small to hold it is lowered, which is exactly the
+     * population that was freezing.
+     */
+    fun rebufferStartMs(targetBytes: Int, bytesPerSecond: Long): Long {
+        val usable = bytesPerSecond.coerceAtLeast(1L)
+        val capacityMs = targetBytes * 1_000L / usable
+        val affordableMs = (capacityMs * REBUFFER_START_SHARE).toLong()
+        return affordableMs.coerceIn(MIN_REBUFFER_START_MS, BUFFER_AFTER_REBUFFER_MS.toLong())
+    }
 
     /**
      * How much back buffer [targetBytes] affords at the given throughput,
-     * clamped so it is never the reason the forward buffer runs dry.
+     * taken from the surplus alone so it can never be the reason the forward
+     * buffer runs dry.
      */
     fun backBufferMs(targetBytes: Int, bytesPerSecond: Long): Long {
         val usable = bytesPerSecond.coerceAtLeast(1L)
-        val affordableMs = (targetBytes * BACK_BUFFER_SHARE / usable * 1000L).toLong()
-        return affordableMs.coerceIn(MIN_BACK_BUFFER_MS, MAX_BACK_BUFFER_MS)
+        // What the whole budget is worth in film at this bitrate, less the
+        // part that is not discretionary — see [RESERVED_FORWARD_MS].
+        val budgetMs = targetBytes * 1_000L / usable
+        val surplusMs = budgetMs - RESERVED_FORWARD_MS
+        if (surplusMs <= 0) return 0L
+        val affordableMs = (surplusMs * BACK_BUFFER_SHARE).toLong()
+        return affordableMs.coerceAtMost(MAX_BACK_BUFFER_MS)
     }
 }

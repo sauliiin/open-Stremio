@@ -221,7 +221,15 @@ class DetailViewModel(
     fun openCast(member: CastMember) {
         _castBio.value = CastBioState(member = member, loading = true)
         viewModelScope.launch {
-            val result = graph.wikipedia.summaryFor(member.id, member.name)
+            val result = graph.wikipedia.summaryFor(
+                personId = member.id,
+                name = member.name,
+                // What turns "is 49 years old" into "and was 32 when the film
+                // premiered". Null while the detail is still loading, which
+                // only costs the second clause.
+                releaseDate = detail.value?.releaseDate,
+                isSeries = type == MediaType.SHOW,
+            )
             _castBio.update {
                 // The popup may have been closed, or another member opened,
                 // while this was in flight — a stale answer should not
