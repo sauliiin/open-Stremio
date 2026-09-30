@@ -1,5 +1,7 @@
 package com.mdblisthub.tv.core.ui.component
 
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -41,6 +43,7 @@ import androidx.compose.ui.draw.alpha
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.core.ui.theme.HubMotion
 import kotlin.math.abs
 
 /**
@@ -73,15 +76,26 @@ private class SafeHorizontalScroll(private val insetPx: Float) : BringIntoViewSp
 }
 
 /**
- * Netflixy-only: pins the focused card to the leading inset instead of the
- * minimal "safe area" scroll [SafeHorizontalScroll] does for every other
- * theme. Every D-pad move scrolls the row so the newly focused card lands
- * at that same x position — the first (leftmost) column — matching the
+ * Netflixy and Primefly: pins the focused card to the leading inset instead
+ * of the minimal "safe area" scroll [SafeHorizontalScroll] does for every
+ * other theme. Every D-pad move scrolls the row so the newly focused card
+ * lands at that same x position — the first (leftmost) column — matching the
  * Netflix TV behaviour the theme is named for. Mirrors its vertical
- * counterpart, `RowPivotScroll`, in `HomeScreen`.
+ * counterpart, `RowPivotScroll`, in `HomeScreen`, which keeps the focused
+ * shelf as the top one.
+ *
+ * [slide] replaces the default spring with a timed glide, so the whole row
+ * visibly slides one card over on each press rather than snapping into place.
  */
 @OptIn(ExperimentalFoundationApi::class)
-private class LeadingColumnScroll(private val insetPx: Float) : BringIntoViewSpec {
+private class LeadingColumnScroll(
+    private val insetPx: Float,
+    private val slide: AnimationSpec<Float>? = null,
+) : BringIntoViewSpec {
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override val scrollAnimationSpec: AnimationSpec<Float>
+        get() = slide ?: super.scrollAnimationSpec
+
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
         return offset - insetPx
     }
@@ -186,10 +200,13 @@ fun MediaRow(
         HubDimens.ScreenPaddingHorizontal.toPx()
     }
     val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant) {
-        if (HubColors.isNetflixLayout) {
-            LeadingColumnScroll(horizontalInsetPx)
-        } else {
-            SafeHorizontalScroll(horizontalInsetPx)
+        when {
+            HubColors.isNetflixLayout -> LeadingColumnScroll(horizontalInsetPx)
+            HubColors.isPrimefly -> LeadingColumnScroll(
+                horizontalInsetPx,
+                slide = tween(HubMotion.Content, easing = HubMotion.EmphasizedDecelerate),
+            )
+            else -> SafeHorizontalScroll(horizontalInsetPx)
         }
     }
 

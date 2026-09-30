@@ -184,6 +184,8 @@
     <string name="home_type_show">Series</string>
     <string name="home_type_movie">Movie</string>
     <string name="home_minutes">%1$d min</string>
+    <string name="home_hours">%1$d h</string>
+    <string name="home_hours_minutes">%1$d h %2$d min</string>
     <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
     <string name="home_episode_code">S%1$02dE%2$02d</string>
     <string name="home_exit_question">Sign out?</string>

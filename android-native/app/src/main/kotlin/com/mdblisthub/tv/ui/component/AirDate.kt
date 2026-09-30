@@ -6,8 +6,11 @@ import java.util.Locale
 /**
  * A TMDB air date, written the way each of this app's languages writes one.
  *
- * pt: "sex., 18/12/2026"   en: "Fri, Dec 18, 2026"   es: "vie., 18 dic 2026"
- * fr: "ven. 18 déc. 2026"
+ * pt: "sex., 18/12/2026"   en: "Fri, 12/18/2026"   es: "vie., 18/12/2026"
+ * fr: "ven. 18/12/2026"
+ *
+ * The date itself is the same all-numeric form [formatReleaseDate] writes,
+ * so an episode's air date and its title's release date read alike.
  *
  * Takes the raw "pt"/"en"/"es"/"fr" code rather than a `Locale` — `Locale.forLanguageTag`
  * on a bare "pt" resolves to European Portuguese, whose CLDR weekday
@@ -26,6 +29,17 @@ import java.util.Locale
 internal fun formatAirDate(airDate: String, language: String): String? {
     val parsed = runCatching { parser.get()!!.parse(airDate) }.getOrNull() ?: return null
     return formatters.getValue(language.takeIf(formatters::containsKey) ?: "en").get()!!.format(parsed)
+}
+
+/**
+ * A TMDB release date as a compact, all-numeric date — the home hero's
+ * metadata line, where a weekday would crowd out the genre and runtime.
+ *
+ * pt/es/fr: "15/12/2026"   en: "12/15/2026"
+ */
+internal fun formatReleaseDate(releaseDate: String, language: String): String? {
+    val parsed = runCatching { parser.get()!!.parse(releaseDate) }.getOrNull() ?: return null
+    return numericFormatters.getValue(language.takeIf(numericFormatters::containsKey) ?: "en").get()!!.format(parsed)
 }
 
 /**
@@ -50,7 +64,14 @@ private val parser = formatter("yyyy-MM-dd", Locale.US)
 
 private val formatters = mapOf(
     "pt" to formatter("EEE, dd/MM/yyyy", Locale.forLanguageTag("pt-BR")),
-    "es" to formatter("EEE, d MMM yyyy", Locale.forLanguageTag("es")),
-    "fr" to formatter("EEE d MMM yyyy", Locale.FRENCH),
-    "en" to formatter("EEE, MMM d, yyyy", Locale.US),
+    "es" to formatter("EEE, dd/MM/yyyy", Locale.forLanguageTag("es")),
+    "fr" to formatter("EEE dd/MM/yyyy", Locale.FRENCH),
+    "en" to formatter("EEE, MM/dd/yyyy", Locale.US),
+)
+
+private val numericFormatters = mapOf(
+    "pt" to formatter("dd/MM/yyyy", Locale.forLanguageTag("pt-BR")),
+    "es" to formatter("dd/MM/yyyy", Locale.forLanguageTag("es")),
+    "fr" to formatter("dd/MM/yyyy", Locale.FRENCH),
+    "en" to formatter("MM/dd/yyyy", Locale.US),
 )

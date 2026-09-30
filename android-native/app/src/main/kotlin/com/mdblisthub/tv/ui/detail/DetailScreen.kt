@@ -97,6 +97,8 @@ import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.ui.component.formatAirDate
+import com.mdblisthub.tv.ui.component.formatReleaseDate
+import com.mdblisthub.tv.ui.component.runtimeLabel
 import com.mdblisthub.tv.core.ui.component.HubSpinner
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.MediaRow
@@ -316,9 +318,10 @@ fun DetailScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         listOfNotNull(
-                            current.year?.toString(),
+                            current.releaseDate?.let { formatReleaseDate(it, appLanguage) }
+                                ?: current.year?.toString(),
                             current.certification,
-                            current.runtimeMinutes?.let { "$it min" },
+                            current.runtimeMinutes?.let { runtimeLabel(it) },
                             current.seasonCount?.let { "$it temporada${if (it > 1) "s" else ""}" },
                             current.genres.take(3).joinToString(" · ").takeIf { it.isNotBlank() },
                         ).forEach {
@@ -588,8 +591,7 @@ private fun EpisodeDetailsDialog(
     LaunchedEffect(episode.id) { watchFocus.requestFocus() }
     val metadata = listOfNotNull(
         episode.airDate?.let { formatAirDate(it, appLanguage) },
-        episode.runtimeMinutes?.takeIf { it > 0 }
-            ?.let { stringResource(R.string.detail_episode_runtime, it) },
+        episode.runtimeMinutes?.takeIf { it > 0 }?.let { runtimeLabel(it) },
         episode.voteAverage?.takeIf { it > 0.0 }
             ?.let { stringResource(R.string.detail_episode_rating, it) },
     ).joinToString("  •  ")

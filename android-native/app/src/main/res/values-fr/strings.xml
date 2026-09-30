@@ -184,6 +184,8 @@
     <string name="home_type_show">Série</string>
     <string name="home_type_movie">Film</string>
     <string name="home_minutes">%1$d min</string>
+    <string name="home_hours">%1$d h</string>
+    <string name="home_hours_minutes">%1$d h %2$d min</string>
     <string name="home_episode_code">S%1$02dE%2$02d</string>
     <string name="home_exit_question">Se déconnecter ?</string>
     <string name="home_no_visible_rows">Aucune ligne visible</string>

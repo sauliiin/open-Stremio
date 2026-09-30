@@ -69,6 +69,7 @@ import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
+import com.mdblisthub.tv.ui.component.formatReleaseDate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -132,6 +133,7 @@ fun SpotlightHero(
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     primaryFocusRequester: FocusRequester? = null,
+    language: String = "en",
 ) {
     val heroHeight = spotlightHeroHeight()
 
@@ -187,7 +189,7 @@ fun SpotlightHero(
             HeroTitle(item = item, detail = detail)
             Spacer(Modifier.height(12.dp))
 
-            SpotlightMeta(item = item, detail = detail)
+            SpotlightMeta(item = item, detail = detail, language = language)
             Spacer(Modifier.height(14.dp))
 
             // A hard `height`, not `heightIn`: fixing it does two jobs at
@@ -389,15 +391,18 @@ private fun HeroVeil() {
     )
 }
 
-/** `.meta`: score, year, a dot, the type, then up to three genres. */
+/** `.meta`: score, release date, a dot, the type, then up to three genres. */
 @Composable
-private fun SpotlightMeta(item: MediaItem, detail: MediaDetail?) {
+private fun SpotlightMeta(item: MediaItem, detail: MediaDetail?, language: String) {
     val genres = remember(item, detail) {
         (detail?.genres.orEmpty().ifEmpty { item.genres })
             .filter { it.isNotBlank() }
             .take(MAX_GENRE_CHIPS)
     }
-    val year = item.year ?: detail?.year
+    // The full release date once the detail has landed; until then (or when
+    // TMDB has none) the card's bare year, so the slot never sits empty.
+    val released = detail?.releaseDate?.let { formatReleaseDate(it, language) }
+        ?: (item.year ?: detail?.year)?.toString()
 
     Row(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -438,9 +443,9 @@ private fun SpotlightMeta(item: MediaItem, detail: MediaDetail?) {
             )
         }
 
-        year?.let {
+        released?.let {
             Text(
-                text = it.toString(),
+                text = it,
                 style = MaterialTheme.typography.titleMedium,
                 color = HubColors.TextDim,
             )

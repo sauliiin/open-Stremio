@@ -7,6 +7,7 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.data.mapper.Languages
 import com.mdblisthub.tv.core.data.mapper.SubtitleMatcher
 import com.mdblisthub.tv.core.model.CastMember
+import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.Episode
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
@@ -334,11 +335,22 @@ class PlayerViewModel(
         }
 
         val candidates = graph.streams.candidates(type, stremioId)
-        val resumeAt = if (startFromBeginning) null else graph.playback.resumeFor(scrobbleTarget)
+        val synced = if (startFromBeginning) null else graph.playback.resumeFor(scrobbleTarget)
         // Room, not the network — this is the note this app left itself last
         // time it played the title. Null on a first watch, and everything
         // downstream works without one.
-        val hint = if (startFromBeginning) null else graph.playback.hintFor(scrobbleTarget)
+        val stored = if (startFromBeginning) null else graph.playback.hintFor(scrobbleTarget)
+        // A film marked watched with no saved position, or one already past
+        // the credits threshold, is a rewatch: any position is from the last
+        // viewing, not this one. Below the threshold it is a rewatch the
+        // viewer paused, and resumes as usual. The release name is kept, so a
+        // rewatch still skips the cascade and hits the same disk cache.
+        val progress = listOfNotNull(synced, stored?.progressPercent).maxOrNull()
+        val rewatch = type == MediaType.MOVIE &&
+            (progress == null || progress > REWATCH_THRESHOLD_PERCENT) &&
+            graph.library.observeMembership(LibraryBucket.WATCHED, tmdbId).first()
+        val resumeAt = if (rewatch) null else synced
+        val hint = if (rewatch) stored?.copy(positionMs = 0) else stored
 
         _ui.update { it.copy(searching = false) }
         controller.play(
@@ -725,6 +737,9 @@ class PlayerViewModel(
  * write never competes with playback.
  */
 private const val HINT_SAVE_INTERVAL_MS = 30_000L
+
+/** Saved progress past which a watched film restarts instead of resuming. */
+private const val REWATCH_THRESHOLD_PERCENT = 90f
 
 internal fun nextEpisodeAfter(episodes: List<Episode>, currentEpisode: Int): Episode? =
     episodes

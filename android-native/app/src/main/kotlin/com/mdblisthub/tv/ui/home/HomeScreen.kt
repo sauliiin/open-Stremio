@@ -108,6 +108,8 @@ import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.MediaOptionsDialog
 import com.mdblisthub.tv.ui.component.formatAirDate
+import com.mdblisthub.tv.ui.component.formatReleaseDate
+import com.mdblisthub.tv.ui.component.runtimeLabel
 import com.mdblisthub.tv.ui.hubViewModel
 import com.mdblisthub.tv.ui.player.MiniPlayerCoordinator
 import kotlinx.coroutines.flow.StateFlow
@@ -2030,6 +2032,7 @@ private fun SpotlightHeroBlock(
 ) {
     val item by viewModel.spotlightItem.collectAsStateWithLifecycle()
     val detail by viewModel.spotlightDetail.collectAsStateWithLifecycle()
+    val language by viewModel.language.collectAsStateWithLifecycle()
 
     SpotlightHero(
         item = item,
@@ -2039,6 +2042,7 @@ private fun SpotlightHeroBlock(
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         primaryFocusRequester = primaryFocusRequester,
+        language = language,
         modifier = modifier,
     )
 }
@@ -2167,7 +2171,7 @@ private fun HeroPanelContent(
     }
 }
 
-/** Exact themed order: year • genre • duration, with theme-coloured separators. */
+/** Exact themed order: release date • genre • duration, with theme-coloured separators. */
 @Composable
 private fun HeroMetadataRow(
     item: MediaItem,
@@ -2192,18 +2196,15 @@ private fun HeroMetadataRow(
             episodeCode,
             item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
                 ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
-            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
-                stringResource(R.string.home_minutes, it)
-            },
+            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let { runtimeLabel(it) },
         )
     } else {
         listOfNotNull(
-            (item.year ?: detail?.year)?.toString(),
+            detail?.releaseDate?.let { formatReleaseDate(it, language) }
+                ?: (item.year ?: detail?.year)?.toString(),
             item.genres.firstOrNull()?.takeIf { it.isNotBlank() }
                 ?: detail?.genres?.firstOrNull()?.takeIf { it.isNotBlank() },
-            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let {
-                stringResource(R.string.home_minutes, it)
-            },
+            (item.runtimeMinutes ?: detail?.runtimeMinutes)?.let { runtimeLabel(it) },
         )
     }
 
