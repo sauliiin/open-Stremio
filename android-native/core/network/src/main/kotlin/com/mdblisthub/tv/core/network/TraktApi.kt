@@ -1,6 +1,7 @@
 package com.mdblisthub.tv.core.network
 
 import com.mdblisthub.tv.core.network.dto.TraktCollectionItemDto
+import com.mdblisthub.tv.core.network.dto.TraktCommentDto
 import com.mdblisthub.tv.core.network.dto.TraktHistoryItemDto
 import com.mdblisthub.tv.core.network.dto.TraktPlaybackDto
 import com.mdblisthub.tv.core.network.dto.TraktScrobbleDto
@@ -73,11 +74,21 @@ interface TraktApi {
 
     /**
      * The whole watched set rather than a recent slice, which is what the
-     * detail screen's "watched" button reads. Not paginated in the way the
-     * others are — Trakt returns the account's full set here.
+     * detail screen's "watched" button reads.
+     *
+     * Paginated since July 2026: without `limit` this answers 100 items, not
+     * the account's full set, and caps `limit` at 250. `extended=full` is now
+     * a no-op; per-episode `seasons` only come with `extended=progress`, which
+     * in turn caps pages at 100. A `Response` so the caller can walk pages by
+     * `X-Pagination-Page-Count` instead of guessing from a short page.
      */
-    @GET("sync/watched/{type}?extended=full")
-    suspend fun watched(@Path("type") type: String): List<TraktWatchedItemDto>
+    @GET("sync/watched/{type}")
+    suspend fun watched(
+        @Path("type") type: String,
+        @Query("extended") extended: String? = null,
+        @Query("limit") limit: Int,
+        @Query("page") page: Int = 1,
+    ): Response<List<TraktWatchedItemDto>>
 
     @GET("sync/progress/up_next")
     suspend fun upNext(
@@ -92,6 +103,23 @@ interface TraktApi {
         @Path("type") type: String,
         @Query("limit") limit: Int,
     ): List<TraktPlaybackDto>
+
+    /**
+     * Public comments on a title — the detail screen's Trakt reviews.
+     *
+     * OAuth optional: with no linked account this still answers, and with one
+     * Trakt drops comments from users that account has blocked. `id` takes a
+     * Trakt id, slug or IMDb id (not a TMDB id). `sort` is `likes`, `newest`,
+     * `oldest`, `replies`, `highest`, `lowest` or `plays`.
+     */
+    @GET("{type}/{id}/comments/{sort}")
+    suspend fun comments(
+        @Path("type") type: String,
+        @Path("id") id: String,
+        @Path("sort") sort: String = "likes",
+        @Query("limit") limit: Int,
+        @Query("page") page: Int = 1,
+    ): List<TraktCommentDto>
 
     // --------------------------------------------------------------- writes
 

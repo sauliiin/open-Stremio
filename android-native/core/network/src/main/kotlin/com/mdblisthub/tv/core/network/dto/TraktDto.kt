@@ -183,6 +183,7 @@ data class TraktWatchedItemDto(
     @SerialName("last_watched_at") val lastWatchedAt: String? = null,
     val movie: TraktTitleDto? = null,
     val show: TraktTitleDto? = null,
+    /** Shows only, and only when requested with `extended=progress`. */
     val seasons: List<TraktWatchedSeasonDto>? = null,
 )
 
@@ -321,4 +322,33 @@ data class TraktScrobbleDto(
 data class TraktScrobbleEpisodeDto(
     val season: Int,
     val number: Int,
+)
+
+// ---------------------------------------------------------------- comments
+
+/**
+ * One top-level comment from `/{movies,shows}/{id}/comments/{sort}`.
+ *
+ * Trakt has no separate review resource: a review is a comment of 200 words
+ * or more, flagged by [review]. [spoiler] covers the whole comment, but
+ * inline `[spoiler]…[/spoiler]` tags can appear in one that isn't flagged.
+ */
+@Serializable
+data class TraktCommentDto(
+    val id: Long = 0,
+    val comment: String = "",
+    val spoiler: Boolean = false,
+    val review: Boolean = false,
+    val likes: Int = 0,
+    val language: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    /** The author's own 1–10 rating of the title, null when they never rated it. */
+    @SerialName("user_rating") val userRating: Int? = null,
+    val user: TraktCommentUserDto? = null,
+)
+
+@Serializable
+data class TraktCommentUserDto(
+    val username: String = "",
+    val name: String? = null,
 )

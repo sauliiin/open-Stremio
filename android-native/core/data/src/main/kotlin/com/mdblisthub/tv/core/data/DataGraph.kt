@@ -103,7 +103,15 @@ class DataGraph(context: Context) {
         scope,
     ) }
     val media by lazy {
-        MediaRepository(network.tmdb, network.mdblist, network.omdb, network.fanartTv, session, database)
+        MediaRepository(
+            network.tmdb,
+            network.mdblist,
+            network.omdb,
+            network.fanartTv,
+            network.trakt,
+            session,
+            database,
+        )
     }
 
     /**

@@ -20,13 +20,14 @@ import com.mdblisthub.tv.core.network.FanartTvApi
 import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.OmdbApi
 import com.mdblisthub.tv.core.network.TmdbApi
+import com.mdblisthub.tv.core.network.TraktApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 /**
- * One title, assembled from three APIs and kept in Room.
+ * One title, assembled from several APIs and kept in Room.
  *
  * `observeDetail` never touches the network — it emits the cached row, or null
  * when there is none. `ensureDetail` is what fills it, and the workers call
@@ -38,6 +39,7 @@ class MediaRepository(
     private val mdblistApi: MdblistApi,
     private val omdbApi: OmdbApi,
     private val fanartTvApi: FanartTvApi,
+    private val traktApi: TraktApi,
     private val session: SessionStore,
     private val database: HubDatabase,
 ) {
@@ -201,6 +203,7 @@ class MediaRepository(
         if (!force && cached != null &&
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
             cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
+            cached.fetchedAt >= TRAKT_DIRECT_REVIEWS_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, maxAge)
         ) {
             return@runCatching
@@ -223,6 +226,7 @@ class MediaRepository(
             cached.metadataComplete &&
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
             cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
+            cached.fetchedAt >= TRAKT_DIRECT_REVIEWS_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)
         ) {
             return@runCatching
@@ -268,6 +272,19 @@ class MediaRepository(
             if (imdbId.isNullOrBlank()) Result.success(null)
             else runCatching { omdbApi.byImdb(ApiConfig.OMDB_KEY, imdbId, "full") }
         }
+        // Trakt's own comments, keyed by IMDb id since Trakt's id parameter
+        // takes no TMDB id. Deliberately left out of `metadataComplete`: a
+        // failure here costs nothing, mdblist's mirrored copy covers it.
+        val traktComments = async {
+            if (imdbId.isNullOrBlank() || ApiConfig.TRAKT_CLIENT_ID.isBlank()) null
+            else runCatching {
+                traktApi.comments(
+                    type = if (type == MediaType.SHOW) "shows" else "movies",
+                    id = imdbId,
+                    limit = TRAKT_COMMENTS_LIMIT,
+                )
+            }.getOrNull()
+        }
         // Fanart.tv keys films by TMDB id, but series by TVDB id.
         val fanartId = if (type == MediaType.SHOW) tmdb.externalIds?.tvdbId else tmdbId
         val fanartLandscape = async {
@@ -290,6 +307,7 @@ class MediaRepository(
             omdb = omdbResult.getOrNull(),
             now = System.currentTimeMillis(),
             metadataComplete = infoResult.isSuccess && omdbResult.isSuccess,
+            traktComments = traktComments.await(),
         ).let { detail ->
             // Explicit order requested by Primefly: TMDB landscape collection,
             // Fanart.tv landscape, then the title's generic backdrop field.
@@ -316,6 +334,13 @@ class MediaRepository(
 private const val LANDSCAPE_ART_SELECTION_V2_MS = 1_786_478_867_150L
 /** Refreshes cached details once to source TMDB reviews and score directly. */
 private const val TMDB_EDITORIAL_METADATA_V1_MS = 1_787_356_800_000L
+/** Refreshes cached details once to source Trakt reviews from Trakt itself. */
+private const val TRAKT_DIRECT_REVIEWS_V1_MS = 1_791_244_800_000L
+/**
+ * Comments fetched per title, before spoilers and one-liners are dropped.
+ * Trakt pages default to ten, which would often leave nothing after filtering.
+ */
+private const val TRAKT_COMMENTS_LIMIT = 40
 private const val ARTWORK_APPEND = "external_ids,images"
 
 private fun bestTmdbLandscape(

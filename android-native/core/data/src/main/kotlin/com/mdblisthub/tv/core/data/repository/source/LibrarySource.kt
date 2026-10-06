@@ -22,6 +22,7 @@ import com.mdblisthub.tv.core.network.dto.TraktSyncWriteDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteEpisodeDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteItemDto
 import com.mdblisthub.tv.core.network.dto.TraktWriteSeasonDto
+import com.mdblisthub.tv.core.network.dto.TraktWatchedItemDto
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -32,6 +33,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import retrofit2.HttpException
+import retrofit2.Response
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -258,12 +261,13 @@ class TraktLibrarySource(
                         .mapNotNull { it.show?.ids?.tmdb }
                 )
 
-            // Not paginated: this endpoint answers with the account's whole
-            // watched set in one response.
+            // `progress` for shows: it is the only `extended` value that still
+            // returns the per-episode `seasons` the episode marks come from.
             LibraryBucket.WATCHED -> {
                 try {
-                    val movies = api.watched("movies").mapNotNull { it.movie?.ids?.tmdb }
-                    val showsDto = api.watched("shows")
+                    val movies = watchedPages("movies", extended = null, limit = WATCHED_PAGE)
+                        .mapNotNull { it.movie?.ids?.tmdb }
+                    val showsDto = watchedPages("shows", extended = "progress", limit = PAGE)
                     val shows = showsDto.mapNotNull { it.show?.ids?.tmdb }
                     val episodes = showsDto.flatMap { showDto ->
                         val showTmdbId = showDto.show?.ids?.tmdb ?: return@flatMap emptyList()
@@ -386,10 +390,46 @@ class TraktLibrarySource(
         return all
     }
 
+    private suspend fun watchedPages(
+        type: String,
+        extended: String?,
+        limit: Int,
+    ): List<TraktWatchedItemDto> =
+        readAllTraktPages(limit, MAX_PAGES) { page -> api.watched(type, extended, limit, page) }
+
     private companion object {
         const val PAGE = 100
         const val MAX_PAGES = 20
+
+        /** Films carry no seasons, so they can use Trakt's 250-item maximum. */
+        const val WATCHED_PAGE = 250
     }
+}
+
+/**
+ * Walks a Trakt read by its `X-Pagination-Page-Count` header rather than by a
+ * short page. Trakt can answer fewer items than `limit` mid-way (hidden or
+ * deleted titles are dropped after paging), and stopping there would quietly
+ * un-watch whatever sat on the pages never read. A short page is only the
+ * fallback for a response that carries no header. [maxPages] bounds a
+ * pathologically large account.
+ */
+internal suspend fun <T> readAllTraktPages(
+    limit: Int,
+    maxPages: Int,
+    fetch: suspend (page: Int) -> Response<List<T>>,
+): List<T> {
+    val all = mutableListOf<T>()
+    for (page in 1..maxPages) {
+        val response = fetch(page)
+        if (!response.isSuccessful) throw HttpException(response)
+        val batch = response.body().orEmpty()
+        all += batch
+        val pageCount = response.headers()["X-Pagination-Page-Count"]?.toIntOrNull()
+        val done = if (pageCount != null) page >= pageCount else batch.size < limit
+        if (done || batch.isEmpty()) break
+    }
+    return all
 }
 
 class SimklLibrarySource(
