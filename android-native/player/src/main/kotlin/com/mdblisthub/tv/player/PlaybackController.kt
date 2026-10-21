@@ -934,7 +934,9 @@ class PlaybackController(
                     Log.i(
                         TAG,
                         "rebuffer at ${player.currentPosition}ms " +
-                            "with ${player.totalBufferedDuration}ms buffered",
+                            "with ${player.totalBufferedDuration}ms buffered, " +
+                            "${allocator.totalBytesAllocated / MB}/${targetBufferBytes / MB}MB allocated, " +
+                            "loading=${player.isLoading}",
                     )
                 }
                 _state.update {
@@ -1427,6 +1429,9 @@ class PlaybackController(
                 softReconnectLimit = SOFT_RECONNECT_LIMIT,
             )
             var lastBuffered = C.TIME_UNSET
+            var loaderIdleMs = 0L
+            var lastPlayingPosition = C.TIME_UNSET
+            var clockFrozenMs = 0L
 
             while (isActive) {
                 delay(STALL_POLL_MS)
@@ -1440,6 +1445,58 @@ class PlaybackController(
                     player.playbackState == Player.STATE_BUFFERING
 
                 val buffered = player.bufferedPosition
+
+                // Waiting for a picture with the loader *not asked to load* is
+                // not a slow link, it is a deadlock: `isLoading` is the
+                // LoadControl's verdict, and having said no while the renderers
+                // starve, nothing inside the engine will ever ask it again.
+                // The ten-second evidence the tracker below gathers is for
+                // telling a slow source from a dead one — there is nothing to
+                // tell apart here, so the repair runs after two polls instead.
+                // The end of the file is excluded: loading has legitimately
+                // finished there.
+                val duration = player.duration
+                val loaderIdle = waiting && !player.isLoading &&
+                    duration > 0 && buffered < duration - END_OF_FILE_GUARD_MS
+                loaderIdleMs = if (loaderIdle) loaderIdleMs + STALL_POLL_MS else 0L
+                if (loaderIdleMs >= LOADER_IDLE_STALL_MS) {
+                    loaderIdleMs = 0L
+                    lastBuffered = C.TIME_UNSET
+                    Log.w(
+                        TAG,
+                        "buffering with the loader idle at ${player.currentPosition}ms " +
+                            "(${player.totalBufferedDuration}ms buffered, " +
+                            "${allocator.totalBytesAllocated / MB}MB allocated) — kicking it",
+                    )
+                    softReconnect()
+                    continue
+                }
+
+                // The freeze that never reaches STATE_BUFFERING: READY and
+                // playing, with the clock standing still. An audio sink whose
+                // track stopped consuming — passthrough and the FFmpeg renderer
+                // on cheap boxes are the usual suspects — holds the video with
+                // it, since video is timed against audio. Nothing reports it,
+                // and everything above only looks at buffering, which is why a
+                // skip was the only way out. A seek flushes the renderers.
+                val position = player.currentPosition
+                val playing = committedStream != null && player.isPlaying
+                clockFrozenMs = if (
+                    playing && lastPlayingPosition != C.TIME_UNSET &&
+                    position - lastPlayingPosition < CLOCK_MIN_ADVANCE_MS
+                ) {
+                    clockFrozenMs + STALL_POLL_MS
+                } else {
+                    0L
+                }
+                lastPlayingPosition = if (playing) position else C.TIME_UNSET
+                if (clockFrozenMs >= CLOCK_FROZEN_MS) {
+                    clockFrozenMs = 0L
+                    lastPlayingPosition = C.TIME_UNSET
+                    Log.w(TAG, "clock frozen at ${position}ms while READY and playing — flushing renderers")
+                    kickLoaderAt(position + RECONNECT_NUDGE_MS)
+                    continue
+                }
 
                 // A byte demuxed is a socket alive. This is the only thing that
                 // clears the suspicion `resume` raises, and it has to be
@@ -1517,12 +1574,17 @@ class PlaybackController(
             "soft reconnect at ${player.currentPosition}ms — " +
                 "under ${STALL_MIN_PROGRESS_MS}ms of buffer gained while waiting",
         )
-        val target = maxOf(player.currentPosition, player.bufferedPosition)
-            .coerceAtLeast(0L) + RECONNECT_NUDGE_MS
+        kickLoaderAt(
+            maxOf(player.currentPosition, player.bufferedPosition).coerceAtLeast(0L) + RECONNECT_NUDGE_MS,
+        )
+    }
+
+    /** The exact seek [softReconnect] is built on, for any target. */
+    private fun kickLoaderAt(targetMs: Long) {
         _state.update { it.copy(phase = PlaybackPhase.BUFFERING, error = null) }
         player.setSeekParameters(SeekParameters.EXACT)
         noteSeek()
-        player.seekTo(target)
+        player.seekTo(targetMs)
         player.setSeekParameters(SeekParameters.CLOSEST_SYNC)
     }
 
@@ -2112,6 +2174,27 @@ class PlaybackController(
          * exactly where it was.
          */
         const val RECONNECT_NUDGE_MS = 10L
+
+        /**
+         * How long the player may wait for a picture with nothing loading
+         * before the stall watch kicks the loader — see [startStallWatch].
+         * Two polls, so one sampled between a seek and its load starting
+         * cannot trigger it.
+         */
+        const val LOADER_IDLE_STALL_MS = 2_000L
+
+        /** Within this of the end, an idle loader means the file is all read. */
+        const val END_OF_FILE_GUARD_MS = 1_000L
+
+        /**
+         * Playhead progress per poll below which a READY, playing player
+         * counts as frozen. Well under real time, well over the few
+         * milliseconds `currentPosition` extrapolates between engine updates.
+         */
+        const val CLOCK_MIN_ADVANCE_MS = 250L
+
+        /** How long the clock may stand still while playing before it is flushed. */
+        const val CLOCK_FROZEN_MS = 4_000L
 
         /**
          * How long a pause has to last before the connection is assumed lost.

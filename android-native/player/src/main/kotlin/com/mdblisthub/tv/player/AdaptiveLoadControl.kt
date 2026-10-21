@@ -104,6 +104,9 @@ class AdaptiveLoadControl(
     private var loggedBackBufferMs = -1L
     private var loggedRebufferStartMs = -1L
 
+    /** One warning per starvation episode, not one per `shouldContinueLoading`. */
+    private var loggedStarvation = false
+
     // ------------------------------------------------- forwarded, unchanged
     //
     // Every one of these matters: `DefaultLoadControl` holds per-player state
@@ -190,7 +193,41 @@ class AdaptiveLoadControl(
         if (MemoryPressure.isTight && parameters.bufferedDurationUs > PRESSURE_FLOOR_US) {
             return false
         }
-        return delegate.shouldContinueLoading(parameters)
+        if (delegate.shouldContinueLoading(parameters)) return true
+
+        // Never refuse bytes with the buffer nearly empty.
+        //
+        // `minBufferMs` is far above what the byte budget holds, so the
+        // delegate is permanently in its "below min buffer" branch, where —
+        // with `prioritizeTimeOverSizeThresholds` off — loading stops the
+        // moment the allocator is full. The allocator, though, also holds the
+        // back buffer and every *disabled* track's samples ahead of the
+        // playhead (a dual-audio remux carries a TrueHD track nobody selected),
+        // while `bufferedDurationUs` is the *least* buffered enabled track. On
+        // a badly interleaved file that is a full allocator with the video
+        // queue empty: the renderer is not ready, nothing is loading, and
+        // ExoPlayer waits in STATE_BUFFERING forever. A seek is the only thing
+        // that resets the allocator — which is exactly the viewer's "it only
+        // comes back when I press forward". Media3 logs it as "Target buffer
+        // size reached with less than 500ms of buffered media data".
+        //
+        // NuvioTV avoids the same trap by setting the prioritize flag outright;
+        // here that would let 120s of a remux into the heap, so the exception
+        // is confined to the starved zone, where the overshoot is bounded by
+        // the file's interleaving rather than by `minBufferMs`.
+        if (parameters.bufferedDurationUs < STARVATION_FLOOR_US) {
+            if (!loggedStarvation) {
+                loggedStarvation = true
+                Log.w(
+                    TAG,
+                    "allocator full (${allocator.totalBytesAllocated / MB}MB) with only " +
+                        "${parameters.bufferedDurationUs / 1_000}ms buffered — loading anyway",
+                )
+            }
+            return true
+        }
+        loggedStarvation = false
+        return false
     }
 
     /**
@@ -261,5 +298,12 @@ class AdaptiveLoadControl(
          * for, just without the headroom above it.
          */
         const val PRESSURE_FLOOR_US = 30L * 1_000_000L
+
+        /**
+         * Below this much buffer, a full allocator is not allowed to stop
+         * loading — see [shouldContinueLoading]. Above [HeapBudget
+         * .MIN_REBUFFER_START_MS], so the resume threshold can always be met.
+         */
+        const val STARVATION_FLOOR_US = 3L * 1_000_000L
     }
 }
