@@ -3,7 +3,6 @@ package com.mdblisthub.tv.ui.detail
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
@@ -13,7 +12,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -81,7 +79,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.mdblisthub.tv.R
 import coil3.compose.AsyncImage
@@ -92,7 +89,6 @@ import com.mdblisthub.tv.core.model.LibraryBucket
 import com.mdblisthub.tv.core.model.LibraryProvider
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
-import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.Review
 import com.mdblisthub.tv.core.model.ReviewProvider
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
@@ -115,7 +111,6 @@ import com.mdblisthub.tv.ui.component.text
 import com.mdblisthub.tv.ui.hubViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import java.util.Locale
 
 @OptIn(ExperimentalFoundationApi::class)

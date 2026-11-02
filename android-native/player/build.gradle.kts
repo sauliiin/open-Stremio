@@ -59,6 +59,9 @@ dependencies {
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
     androidTestImplementation(libs.junit)
+    // The real playback client rather than a copy of its settings: its timeouts
+    // and protocols are part of what `StallLabDeviceTest` is measuring.
+    androidTestImplementation(projects.core.network)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
 }

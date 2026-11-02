@@ -7,35 +7,23 @@ import com.mdblisthub.tv.core.model.fail
 import com.mdblisthub.tv.core.model.orFail
 import com.mdblisthub.tv.core.model.requireOrFail
 import com.mdblisthub.tv.core.data.SessionStore
-import com.mdblisthub.tv.core.model.MdblistAddonExportReport
 import com.mdblisthub.tv.core.model.StremioAccount
 import com.mdblisthub.tv.core.model.StremioImportReport
 import com.mdblisthub.tv.core.network.StremioAccountApi
-import com.mdblisthub.tv.core.network.StremioApi
 import com.mdblisthub.tv.core.network.dto.StremioApiResponse
 import com.mdblisthub.tv.core.network.dto.StremioCollectionRequest
-import com.mdblisthub.tv.core.network.dto.StremioCollectionEntryDto
-import com.mdblisthub.tv.core.network.dto.StremioCollectionSetRequest
 import com.mdblisthub.tv.core.network.dto.StremioLoginRequest
-import com.mdblisthub.tv.core.network.dto.StremioLoginResult
 import com.mdblisthub.tv.core.network.dto.StremioLogoutRequest
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 class StremioAccountRepository(
     private val api: StremioAccountApi,
     private val store: StremioAccountStore,
     private val addons: AddonsRepository,
-    private val stremioTransport: StremioApi,
     private val lists: ListsRepository,
     private val session: SessionStore,
 ) {
     val account: Flow<StremioAccount?> = store.account
-    val mdblistAddonsEnabled: Flow<Boolean> = store.mdblistAddonsEnabled
 
     suspend fun login(email: String, password: String): Result<StremioImportReport> = runCatching {
         val cleanEmail = email.trim()

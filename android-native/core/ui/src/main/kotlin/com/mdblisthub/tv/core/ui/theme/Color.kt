@@ -162,19 +162,4 @@ object HubColors {
         }
         variant = target
     }
-
-    /**
-     * Advances to the next palette and returns where it landed, so the caller
-     * can persist the choice without having to re-derive it.
-     */
-    fun toggleTheme(autotrailer: Boolean = false): HubThemeVariant {
-        val next = when (variant) {
-            HubThemeVariant.NORMAL -> HubThemeVariant.CYBERPUNK
-            HubThemeVariant.CYBERPUNK -> if (autotrailer) HubThemeVariant.CYBERFLIX else HubThemeVariant.NETFLIXY
-            HubThemeVariant.NETFLIXY, HubThemeVariant.CYBERFLIX -> if (autotrailer) HubThemeVariant.OPTIMUS_PRIME else HubThemeVariant.PRIMEFLY
-            HubThemeVariant.PRIMEFLY, HubThemeVariant.OPTIMUS_PRIME -> HubThemeVariant.NORMAL
-        }
-        apply(next)
-        return next
-    }
 }

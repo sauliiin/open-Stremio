@@ -99,11 +99,3 @@ fun AnimatedOpenStreamTitle(
     modifier: Modifier = Modifier,
     showIcon: Boolean = true,
 ) = AnimatedOmniStreamTitle(style = style, modifier = modifier, showIcon = showIcon)
-
-/** Alias for [AnimatedOmniStreamTitle]. */
-@Composable
-fun AnimatedBrandTitle(
-    style: TextStyle,
-    modifier: Modifier = Modifier,
-    showIcon: Boolean = true,
-) = AnimatedOmniStreamTitle(style = style, modifier = modifier, showIcon = showIcon)

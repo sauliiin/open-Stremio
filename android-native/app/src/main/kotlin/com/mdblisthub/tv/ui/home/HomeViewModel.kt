@@ -14,7 +14,6 @@ import com.mdblisthub.tv.core.model.MdblistHomeFeed
 import com.mdblisthub.tv.core.model.RecommendationRow
 import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.model.ScrobbleTarget
-import com.mdblisthub.tv.core.ui.theme.HubColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.CoroutineStart
@@ -173,17 +172,6 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
      */
     private val _trailerPlayingItemKey = MutableStateFlow<String?>(null)
     val trailerPlayingItemKey: StateFlow<String?> = _trailerPlayingItemKey.asStateFlow()
-
-    /**
-     * Advances the palette and writes the choice down, so the box comes back
-     * in it. The repaint is immediate and the write is not waited on: the
-     * palette is in-memory state, and the store only has to agree with it by
-     * the next cold start.
-     */
-    fun cycleTheme() {
-        val next = HubColors.toggleTheme(autotrailer.value)
-        viewModelScope.launch { graph.uiPreferences.saveTheme(next) }
-    }
 
     fun toggleListVisibility(list: MediaList) {
         viewModelScope.launch {
@@ -881,18 +869,6 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                 loadingMoreLists -= listId
             }
         }
-    }
-
-    /**
-     * Drops a title from "Continuar assistindo", here and on the account.
-     *
-     * `PlaybackRepository.clear` has existed since the row did — it posts
-     * `scrobble/clear` and deletes the Room row — but nothing ever called it,
-     * so a half-watched title someone had abandoned stayed on the home screen
-     * with no way to remove it short of finishing it.
-     */
-    fun removeResumePoint(point: ResumePoint) {
-        viewModelScope.launch { graph.playback.clear(point.toTarget()) }
     }
 
     /**

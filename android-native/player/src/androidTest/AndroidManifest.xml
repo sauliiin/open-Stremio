@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+        largeHeap matches the app's own manifest: the buffer budget is derived
+        from `Runtime.maxMemory()`, so a test process without it would measure a
+        different device. Cleartext is for the lab server on the host, and lives
+        in this test manifest only.
+    -->
+    <application
+        android:largeHeap="true"
+        android:usesCleartextTraffic="true" />
+</manifest>

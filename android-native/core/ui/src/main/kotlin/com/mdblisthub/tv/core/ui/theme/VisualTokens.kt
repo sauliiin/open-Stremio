@@ -22,7 +22,6 @@ object HubMotion {
     const val FocusedCardDelayMillis = 3_000L
 
     const val FocusScale = 1.02f
-    const val PressedScale = 0.98f
 
     val StandardEasing: Easing = FastOutSlowInEasing
 
@@ -61,5 +60,4 @@ object HubEffects {
     const val MutedSurfaceAlpha = 0.58f
     const val SoftBorderAlpha = 0.72f
     const val SelectedWashAlpha = 0.18f
-    const val FocusGlowAlpha = 0.24f
 }

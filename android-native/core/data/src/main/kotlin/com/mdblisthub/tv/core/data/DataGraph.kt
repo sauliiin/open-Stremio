@@ -132,7 +132,6 @@ class DataGraph(context: Context) {
         network.stremioAccount,
         stremioAccountStore,
         addons,
-        network.stremioInstall,
         lists,
         session,
     ) }

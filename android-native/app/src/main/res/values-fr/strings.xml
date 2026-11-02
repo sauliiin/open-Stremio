@@ -73,7 +73,6 @@
     <string name="detail_select_source_episode">Source S%1$dE%2$d</string>
     <string name="detail_episode_source_hint">Appuyez sur OK pour les détails et les options</string>
     <string name="detail_episode_number">Saison %1$d · Épisode %2$d</string>
-    <string name="detail_episode_runtime">%1$d min</string>
     <string name="detail_episode_rating">Note %1$.1f</string>
     <string name="detail_episode_no_overview">Aucun synopsis disponible pour cet épisode.</string>
     <string name="detail_trailer">Bande-annonce</string>
@@ -265,7 +264,6 @@
         <item quantity="one" tools:ignore="ImpliedQuantity">La seule source disponible a été essayée deux fois, sans succès.</item>
         <item quantity="other">Les %1$d sources disponibles ont été essayées deux fois, sans succès.</item>
     </plurals>
-    <string name="player_error_decoy_streak">Les sources renvoient un avis au lieu du film. Cela signifie presque toujours que le fournisseur de débridage limite les requêtes. Patientez quelques minutes et réessayez.</string>
     <string name="player_error_manual_no_link">Cette source ne contient aucun lien lisible.</string>
     <string name="player_error_manual_unresponsive">Cette source n’a pas répondu. Choisissez-en une autre dans la liste.</string>
     <string name="player_error_manual_failed">Cette source ne s’est pas ouverte. Choisissez-en une autre dans la liste.</string>

@@ -83,9 +83,18 @@ as fontes verificadas ao
 assim que cada uma chega. Ele tenta a fila automaticamente; uma fonte morta,
 token expirado ou erro de demux avança para a próxima sem interromper o usuário.
 
+A fila vem ordenada por prontidão: Real-Debrid em cache, outro debrid em cache,
+desconhecido e, por último, o que ainda não está em cache. Depois vêm a resolução
+e o maior arquivo que uma conexão doméstica aguenta.
+
 Sucesso exige o Media3 chegar a `STATE_READY`, não apenas aceitar uma URL. Se
 todas as opções falharem, a mesma fila aparece para escolha manual — antes
 disso, a seleção continua automática.
+
+Travamentos durante o filme têm documento próprio:
+[`player/PLAYBACK_STALLS.md`](player/PLAYBACK_STALLS.md) registra as causas medidas,
+as tentativas anteriores, as regras que não podem ser quebradas e como reproduzir
+cada falha. Leia antes de mexer em buffer, retries ou cache.
 
 Tudo isso acontece atrás de um véu com o fanart do título. Nove mirrors podem ser
 testados e descartados sem que nada apareça além de "Preparando a reprodução…".

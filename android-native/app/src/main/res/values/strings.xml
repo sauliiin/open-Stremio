@@ -73,7 +73,6 @@
     <string name="detail_select_source_episode">Fonte T%1$dE%2$d</string>
     <string name="detail_episode_source_hint">OK para detalhes e opções</string>
     <string name="detail_episode_number">Temporada %1$d · Episódio %2$d</string>
-    <string name="detail_episode_runtime">%1$d min</string>
     <string name="detail_episode_rating">Nota %1$.1f</string>
     <string name="detail_episode_no_overview">Sinopse indisponível para este episódio.</string>
     <string name="detail_trailer">Trailer</string>
@@ -258,7 +257,6 @@
         <item quantity="one">Testei a única fonte disponível, duas vezes, e ela não abriu.</item>
         <item quantity="other">Testei as %1$d fontes disponíveis, duas vezes, e nenhuma abriu.</item>
     </plurals>
-    <string name="player_error_decoy_streak">As fontes estão devolvendo um aviso no lugar do filme, o que quase sempre é o provedor debrid limitando requisições. Espere alguns minutos e tente de novo.</string>
     <string name="player_error_manual_no_link">Essa fonte não tem um link reproduzível.</string>
     <string name="player_error_manual_unresponsive">Essa fonte não respondeu. Escolha outra na lista.</string>
     <string name="player_error_manual_failed">Essa fonte não abriu. Escolha outra na lista.</string>

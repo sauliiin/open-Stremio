@@ -307,15 +307,10 @@ internal object HeapBudget {
      * How much buffer this device can actually be asked to rebuild before
      * playback resumes, given what its budget holds at this bitrate.
      *
-     * [bufferForPlaybackAfterRebufferMs] is one number for every device, and
-     * on a box whose entire budget is twenty seconds of a high-bitrate remux,
-     * ten of them is half the pot — spent stopped, while the link that just
-     * faltered is asked to deliver at a rate it has already demonstrated it
-     * cannot. Until it finishes the picture stays frozen, and the thing that
-     * ends that freeze is the viewer pressing skip: a seek recomputes the
-     * requirement somewhere the link can satisfy, or serves it from the disk
-     * cache outright. That is a resume threshold the device cannot pay,
-     * presenting as a player that has stopped responding.
+     * [bufferForPlaybackAfterRebufferMs] is one number for every device, and on a
+     * box whose entire budget is twenty seconds of a high-bitrate remux, ten of them
+     * is half the pot — spent stopped, while the link that just faltered is asked to
+     * deliver at a rate it has already shown it cannot.
      *
      * A device with room for the full ten seconds is unaffected — the share
      * below lands well past the ceiling and is clamped straight back to it.

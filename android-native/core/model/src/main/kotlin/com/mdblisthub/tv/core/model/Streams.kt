@@ -16,6 +16,18 @@ enum class StreamKind {
 }
 
 /**
+ * How ready a link is to be watched right now, best first — the declaration
+ * order is the order the cascade walks them in.
+ *
+ * Read from the addon's own label, since the protocol has no field for it. An
+ * uncached link is not a slower version of a cached one: it asks the debrid
+ * service to start fetching the torrent, and what comes back in the meantime is
+ * a placeholder clip or a connection that trickles.
+ */
+@Serializable
+enum class SourceReadiness { CACHED_REAL_DEBRID, CACHED_DEBRID, UNKNOWN, NOT_CACHED }
+
+/**
  * A source offered by an installed Stremio addon.
  *
  * Note what is *not* here: the container blocklist the browser build needed.
@@ -49,6 +61,7 @@ data class PlayableStream(
      * since some debrid links 403 without the right user agent or referer.
      */
     val headers: Map<String, String> = emptyMap(),
+    val readiness: SourceReadiness = SourceReadiness.UNKNOWN,
 ) {
     val playable: Boolean get() = kind == StreamKind.DIRECT && !url.isNullOrBlank()
 
@@ -79,14 +92,6 @@ data class PlayableStream(
 }
 
 private val STREAM_SIZE = Regex("""(\d+(?:[.,]\d+)?)\s*(GB|MB)""", RegexOption.IGNORE_CASE)
-
-/** The result of fanning a stream request out over every installed addon. */
-@Serializable
-data class StreamQuery(
-    val streams: List<PlayableStream> = emptyList(),
-    val queried: Int = 0,
-    val failed: Int = 0,
-)
 
 /**
  * An external subtitle track.

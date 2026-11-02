@@ -45,8 +45,6 @@ class TraktTokenStore(context: Context) {
 
     val linked: Flow<Boolean> = store.data.map { it[KEY_ACCESS].isNullOrBlank().not() }
 
-    suspend fun currentAccount(): TraktAccount? = account.first()
-
     suspend fun isLinked(): Boolean = linked.first()
 
     suspend fun accessToken(): String = cachedAccessToken ?: store.data.first()[KEY_ACCESS].orEmpty().also {
@@ -56,9 +54,6 @@ class TraktTokenStore(context: Context) {
     suspend fun refreshToken(): String = cachedRefreshToken ?: store.data.first()[KEY_REFRESH].orEmpty().also {
         cachedRefreshToken = it
     }
-
-    /** Unix milliseconds the access token stops being accepted at. */
-    suspend fun expiresAt(): Long = store.data.first()[KEY_EXPIRES_AT] ?: 0
 
     /**
      * Stores a freshly issued pair.

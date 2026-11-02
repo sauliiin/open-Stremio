@@ -95,8 +95,6 @@ class SessionStore(context: Context) {
 
     suspend fun areListPreferencesDirty(): Boolean = listPreferencesDirty.first()
 
-    suspend fun currentDeletedListIds(): Set<Long> = deletedListIds.first()
-
     suspend fun saveListPreferences(
         preferences: List<FirebaseListPreferenceDto>,
         dirty: Boolean = true,
@@ -152,10 +150,6 @@ class SessionStore(context: Context) {
             current.filterNot { it.id == listId } +
                 (previous ?: FirebaseListPreferenceDto(id = listId)).copy(deleted = true),
         )
-    }
-
-    suspend fun clearDeletedLists() {
-        saveListPreferences(currentListPreferences().filterNot { it.deleted })
     }
 
     suspend fun clearListPreferences() {

@@ -2,6 +2,7 @@ package com.mdblisthub.tv.core.data.mapper
 
 import com.mdblisthub.tv.core.model.Addon
 import com.mdblisthub.tv.core.model.PlayableStream
+import com.mdblisthub.tv.core.model.SourceReadiness
 import com.mdblisthub.tv.core.model.StreamKind
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.network.dto.OpenSubtitlesItemDto
@@ -15,6 +16,23 @@ private val QUALITY_ORDER = listOf("2160p", "1440p", "1080p", "720p", "480p", "3
 private val QUALITY_4K = Regex("""\b(2160p|4k|uhd)\b""", RegexOption.IGNORE_CASE)
 private val QUALITY_ANY = Regex("""\b(1440|1080|720|480|360)p\b""", RegexOption.IGNORE_CASE)
 private val SIZE_TEXT = Regex("""(\d+(?:[.,]\d+)?)\s*(GB|MB|GiB|MiB)""", RegexOption.IGNORE_CASE)
+
+// How the addons mark a debrid link: Torrentio and AIOStreams write `[RD+]` and
+// `[RD download]`, Comet and AIOStreams' other templates `[RD⚡]`, `[RD⏳]` and
+// `[RD⬇️]`, MediaFusion `⚡️` and `⏳`. "Not cached" is checked first and against
+// the whole label. Whatever could also be part of a release's title — "instant",
+// "ready", `+]` — is only trusted in `name`, which carries the addon's tag and not
+// the release: "Ready Player One" and `[HDR10+]` are not cached links.
+private val NOT_CACHED_MARK =
+    Regex("""⏳|⬇|\bdownload]|\bnot[ -]cached\b|\buncached\b|\bnot ready\b""", RegexOption.IGNORE_CASE)
+private val CACHED_MARK = Regex("""⚡""")
+private val CACHED_NAME_MARK = Regex("""\+]|\b(instant|cached|ready)\b""", RegexOption.IGNORE_CASE)
+private val REAL_DEBRID_LABEL = Regex("""\breal-?debrid\b""", RegexOption.IGNORE_CASE)
+private val REAL_DEBRID_NAME = Regex("""\bRD\b""")
+private val REAL_DEBRID_CDN = Regex("""^https?://[^/]*(real-debrid\.com|rdeb\.io)/""", RegexOption.IGNORE_CASE)
+
+/** Above this a file only plays where the link is well beyond a TV's usual Wi-Fi. */
+private const val COMFORTABLE_BITS_PER_SECOND = 50_000_000L
 
 /**
  * Normalises an addon's stream entry.
@@ -52,6 +70,7 @@ fun StremioStreamDto.toPlayable(addon: Addon, index: Int): PlayableStream {
         sizeBytesHint = behaviorHints?.videoSize?.takeIf { it > 0 },
         filename = behaviorHints?.filename,
         headers = behaviorHints?.proxyHeaders?.request.orEmpty(),
+        readiness = readinessOf(name.orEmpty(), label + " " + description.orEmpty(), url),
     )
 
     return when {
@@ -70,22 +89,55 @@ fun StremioStreamDto.toPlayable(addon: Addon, index: Int): PlayableStream {
 }
 
 /**
- * The order the cascade walks: sharpest first, then biggest file.
+ * The order the cascade walks: ready to watch first, then sharpest, then the
+ * biggest file a home connection can keep up with.
  *
  * Nothing here is ever shown as a list, so this ordering is the entire
  * expression of "which source do we watch" — it decides what plays, and the
  * ones below it only matter when the ones above fail.
+ *
+ * Readiness comes before resolution because a 4K link that is still being
+ * fetched by the debrid service is not a better film than a 1080p one that is
+ * already there. And "biggest first" stops at a bitrate: picking the largest
+ * remux on purpose is why the same box stuttered on some titles and not others.
+ * Only ever a reordering inside one resolution, and only when [runtimeMinutes]
+ * makes the bitrate knowable — a file past the line still plays if nothing else
+ * does.
  */
-fun List<PlayableStream>.rankForPlayback(): List<PlayableStream> {
+fun List<PlayableStream>.rankForPlayback(runtimeMinutes: Int? = null): List<PlayableStream> {
     val seen = mutableSetOf<String>()
     return this
         .filter { it.playable }
         .filter { seen.add(it.url!!) }
         .sortedWith(
-            compareBy<PlayableStream> { stream ->
-                stream.quality?.let(QUALITY_ORDER::indexOf)?.takeIf { it >= 0 } ?: QUALITY_ORDER.size
-            }.thenByDescending { gigabytes(it.size) }
+            compareBy<PlayableStream> { it.readiness }
+                .thenBy { stream ->
+                    stream.quality?.let(QUALITY_ORDER::indexOf)?.takeIf { it >= 0 } ?: QUALITY_ORDER.size
+                }
+                .thenBy { it.exceedsComfortableBitrate(runtimeMinutes) }
+                .thenByDescending { it.sizeBytes ?: 0L }
         )
+}
+
+private fun PlayableStream.exceedsComfortableBitrate(runtimeMinutes: Int?): Boolean {
+    val bytes = sizeBytes ?: return false
+    val seconds = runtimeMinutes?.takeIf { it > 0 }?.times(60L) ?: return false
+    return bytes * 8 / seconds > COMFORTABLE_BITS_PER_SECOND
+}
+
+private fun readinessOf(name: String, label: String, url: String?): SourceReadiness {
+    if (NOT_CACHED_MARK.containsMatchIn(label)) return SourceReadiness.NOT_CACHED
+
+    // A link already on Real-Debrid's own CDN has been resolved, so the file is
+    // there whatever the label says or fails to say.
+    val onCdn = url != null && REAL_DEBRID_CDN.containsMatchIn(url)
+    val cached = onCdn || CACHED_MARK.containsMatchIn(label) || CACHED_NAME_MARK.containsMatchIn(name)
+    if (!cached) return SourceReadiness.UNKNOWN
+
+    val realDebrid = onCdn || REAL_DEBRID_NAME.containsMatchIn(name) ||
+        REAL_DEBRID_LABEL.containsMatchIn(label) ||
+        (url != null && REAL_DEBRID_LABEL.containsMatchIn(url))
+    return if (realDebrid) SourceReadiness.CACHED_REAL_DEBRID else SourceReadiness.CACHED_DEBRID
 }
 
 private fun qualityOf(label: String): String? = when {
@@ -104,12 +156,6 @@ private fun sizeOf(label: String, bytes: Long?): String? {
     val gb = bytes / 1024.0 / 1024.0 / 1024.0
     return if (gb >= 1) String.format(Locale.US, "%.2f GB", gb)
     else "${(bytes / 1024.0 / 1024.0).roundToInt()} MB"
-}
-
-private fun gigabytes(size: String?): Double {
-    if (size == null) return 0.0
-    val value = size.takeWhile { it.isDigit() || it == '.' }.toDoubleOrNull() ?: return 0.0
-    return if (size.uppercase().contains("GB")) value else value / 1024
 }
 
 private fun magnet(infoHash: String, name: String): String {

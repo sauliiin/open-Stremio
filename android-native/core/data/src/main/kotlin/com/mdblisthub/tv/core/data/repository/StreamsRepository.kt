@@ -8,6 +8,7 @@ import com.mdblisthub.tv.core.data.mapper.toOption
 import com.mdblisthub.tv.core.data.mapper.toPlayable
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PlayableStream
+import com.mdblisthub.tv.core.model.SourceReadiness
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.model.SubtitleTrack
 import com.mdblisthub.tv.core.network.ApiConfig
@@ -29,6 +30,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -54,9 +56,12 @@ class StreamsRepository(
      * Tuned for a yes/no signal, not for the download that follows: the
      * shared addon client's own timeouts (6s connect / 8s read) are sized for
      * fetching a JSON manifest, not for finding out in a hurry whether a
-     * video mirror is even alive.
+     * video mirror is even alive. The same protocols as `HttpClients.playback`,
+     * because they are part of what makes a pooled connection reusable: with any
+     * other list, the socket this warms up is one the player can never pick up.
      */
     private val probeClient = addonClient.newBuilder()
+        .protocols(listOf(Protocol.HTTP_1_1))
         .connectTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .callTimeout(PROBE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         .build()
@@ -89,7 +94,11 @@ class StreamsRepository(
      * An addon that fails contributes nothing rather than failing the call:
      * with a dozen installed, one being down is the normal case.
      */
-    fun candidates(type: MediaType, id: String): Flow<PlayableStream> = channelFlow {
+    fun candidates(
+        type: MediaType,
+        id: String,
+        runtimeMinutes: Int? = null,
+    ): Flow<PlayableStream> = channelFlow {
         val providers = addons.addons().filter { it.serves("stream", type, id) }
         if (providers.isEmpty()) return@channelFlow
 
@@ -158,8 +167,14 @@ class StreamsRepository(
 
         // The window expired with nothing usable in hand. Starting is not an
         // option, so wait for whoever answers first, however long that takes;
-        // the addon client's own timeouts bound it.
-        while (firstWave.none { it.playable } && answered < providers.size) {
+        // the addon client's own timeouts bound it. A link the debrid service
+        // has not fetched yet does not count as usable: it would be opened
+        // first, and it takes far longer to play than a slower addon takes to
+        // answer with one that is ready.
+        while (
+            firstWave.none { it.playable && it.readiness != SourceReadiness.NOT_CACHED } &&
+            answered < providers.size
+        ) {
             val result = inbox.receiveCatching()
             if (result.isClosed) break
             val batch = result.getOrNull() ?: continue
@@ -167,7 +182,7 @@ class StreamsRepository(
             firstWave += batch
         }
 
-        val ranked = withContext(Dispatchers.Default) { firstWave.rankForPlayback() }
+        val ranked = withContext(Dispatchers.Default) { firstWave.rankForPlayback(runtimeMinutes) }
         val seen = ranked.mapNotNullTo(mutableSetOf()) { it.url }
 
         // One gate for the whole call, not one per batch. Since the late
@@ -217,7 +232,7 @@ class StreamsRepository(
             // here rather than inside the launched child, or two batches
             // arriving together could both pass the same URL through.
             val late = withContext(Dispatchers.Default) {
-                batch.rankForPlayback().filter { it.url != null && seen.add(it.url!!) }
+                batch.rankForPlayback(runtimeMinutes).filter { it.url != null && seen.add(it.url!!) }
             }
             launch { sendProbed(late, gate) }
         }
@@ -414,10 +429,6 @@ class StreamsRepository(
             .awaitAll()
             .flatten()
     }
-
-    /** How many installed addons even claim to serve streams for this id. */
-    suspend fun providerCount(type: MediaType, id: String): Int =
-        addons.addons().count { it.serves("stream", type, id) }
 
     private companion object {
         /**

@@ -96,7 +96,6 @@ import com.mdblisthub.tv.core.ui.component.RailItem
 import com.mdblisthub.tv.core.ui.component.SideRail
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.model.AddonCatalogItem
-import com.mdblisthub.tv.core.model.ClockPosition
 import com.mdblisthub.tv.ui.component.AppClock
 import com.mdblisthub.tv.ui.component.alignment
 import com.mdblisthub.tv.core.ui.theme.HubDimens

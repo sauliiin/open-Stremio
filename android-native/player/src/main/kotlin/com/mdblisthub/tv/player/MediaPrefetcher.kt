@@ -8,10 +8,12 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.datasource.cache.ContentMetadata
+import androidx.media3.datasource.cache.ContentMetadataMutations
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,60 +23,42 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Downloads ahead of the playback position, onto disk.
+ * Downloads ahead of the player, onto disk: the deep cushion the Java heap
+ * cannot afford on a TV.
  *
- * **Why this exists.** The cache wired into `PlaybackController` is a
- * `CacheDataSource`, and a `CacheDataSource` is read-through: it stores the
- * bytes the player has *already asked for* and never a byte more. So it makes a
- * rewind free and a retry cheap, but it does nothing for the thing that
- * actually decides whether the picture stops — how far ahead of the current
- * frame the app is holding media.
+ * **The only writer of the cache.** The player reads it without ever writing to
+ * it, and that is not an optimisation. A read-through `CacheDataSource` holds a
+ * lock on the whole hole it is filling, up to the next cached span or the end of
+ * the file, so a second writer can never get a lock anywhere ahead of the player.
+ * This class used to run alongside one: every chunk it fetched was read and thrown
+ * away, the cursor stayed where it was, and after three chunks it gave up, having
+ * spent 48MB of the link and stored nothing.
  *
- * That cushion lived entirely in `DefaultAllocator`, which takes its `byte[]`
- * from the **Java heap**. On a box with 3GB of RAM there is room for it. On a
- * Fire TV Stick there is not, and the failure is not a clean one: the buffer
- * competes with Compose, Coil and the decoders for a heap ceiling around a
- * quarter of a gigabyte, garbage collection turns into the stutter, and a
- * rebuffer that cannot refill `bufferForPlaybackAfterRebufferMs` fast enough
- * leaves the picture stopped until the user seeks.
+ * With no lock in the way, the player simply finds these spans when its loader
+ * reaches them, and moves its read from the network onto the disk. From then on
+ * this is the only thing using the link.
  *
- * Disk has none of those limits. eMMC on the cheapest stick is still orders of
- * magnitude faster than the Wi-Fi radio next to it, and a gigabyte of it costs
- * the heap nothing. So the deep cushion moves here — minutes of film, on disk,
- * ahead of the playhead — and the RAM buffer shrinks back to what a constrained
- * device can actually afford (see [HeapBudget]). When the link hiccups, the
- * player reads out of the cache instead of waiting on the network.
+ * **It yields the link whenever the player's next bytes are not on disk.** A player
+ * reading from the cache is not competing for anything, so it is not a reason to
+ * stop. A player reading from the network is, because splitting a bottleneck two
+ * ways makes the stall longer.
  *
- * **What it deliberately does not do:**
+ * Every field read across the thread boundary is `@Volatile` and pushed in from the
+ * main thread: ExoPlayer is single-threaded by contract and this loop runs on IO.
  *
- * - **Compete with the player for bandwidth.** [onLoadingChanged] reports
- *   whether the player's own `LoadControl` still wants bytes, and while it
- *   does the loop stands down completely; [onPlayerStalled] additionally
- *   abandons the chunk in flight once the picture has actually stopped. A
- *   starving player means the network is the bottleneck, and splitting a
- *   bottleneck two ways makes the stall longer, not shorter. Prefetching only
- *   ever uses the bandwidth left over.
- * - **Touch the player.** Every field it reads across the thread boundary is
- *   `@Volatile` and pushed in from the main thread. ExoPlayer is
- *   single-threaded by contract and this loop runs on IO.
- * - **Run on anything but a progressive file.** See [canPrefetch]: byte offsets
- *   into an HLS playlist or a DASH manifest are meaningless, and a local file
- *   is already on disk.
+ * See `player/PLAYBACK_STALLS.md` before changing who writes the cache.
  */
 @OptIn(UnstableApi::class)
 internal class MediaPrefetcher(
     private val cache: Cache,
     private val upstreamFactory: DataSource.Factory,
+    private val calls: AbortableCallFactory,
+    private val loader: LoaderTap,
     private val scope: CoroutineScope,
     /**
-     * Ceiling on how far ahead this may work, derived from the cache the spans
-     * have to fit in.
-     *
-     * Overrunning it is not merely wasteful. `LeastRecentlyUsedCacheEvictor`
-     * would start evicting to make room, and the only thing older than what
-     * this just wrote is the film the viewer is *currently watching* — so an
-     * oversized window turns the prefetcher into something that deletes the
-     * back buffer to make room for itself.
+     * Ceiling on how far ahead this may work, derived from the cache the spans have
+     * to fit in. Wider than the cache, the evictor would delete the film being
+     * watched to make room for the part not yet reached.
      */
     private val maxWindowBytes: Long,
 ) {
@@ -82,50 +66,31 @@ internal class MediaPrefetcher(
     @Volatile
     private var positionMs = 0L
 
-    /**
-     * Whether the link is the player's or this worker's, and when a download
-     * already in flight has to be given up. See [PrefetchPolicy] — the rule
-     * lives there so it can be tested as a series rather than inferred from a
-     * film that did or did not stutter.
-     */
-    private val policy = PrefetchPolicy()
+    @Volatile
+    private var playerLoading = true
 
-    /**
-     * Cancelled from the main thread on a seek, so a chunk fetched for a
-     * position the viewer has just left does not have to finish first.
-     */
     @Volatile
     private var writer: CacheWriter? = null
 
+    /** Set when this class ended a chunk itself, so that is not read as the host failing. */
+    @Volatile
+    private var chunkCancelled = false
+
     private var job: Job? = null
+
+    @Volatile
     private var activeKey: String? = null
 
     /**
-     * A file this loop has given up on, and will not be restarted for.
-     *
-     * [start] is called from every position tick, so a run that simply
-     * `return`s leaves the very next tick to start it again — which turned a
-     * permanent condition into a loop that surrendered and resumed every forty
-     * seconds, three wasted chunks at a time. The verdict has to outlive the
-     * coroutine that reached it.
-     *
-     * Cleared by [stop], which is what a genuinely new source goes through.
+     * A file given up on, not to be restarted for. [start] runs on every position
+     * tick, so the verdict has to outlive the coroutine that reached it. Cleared by
+     * [stop], which is what a genuinely new source goes through.
      */
     private var surrenderedKey: String? = null
 
-    /**
-     * Starts working ahead of [uri], or does nothing if one is already running
-     * for the same file.
-     *
-     * The idempotence matters: this is called from every `STATE_READY` and
-     * from the position ticker, both of which fire repeatedly through a film.
-     * Without the guard, each rebuffer would tear down the loop and restart it
-     * from an empty window.
-     */
+    /** Starts working ahead of [uri], or does nothing if already doing so. */
     fun start(uri: Uri, cacheKey: String?, durationMs: Long) {
         val key = cacheKey?.takeIf { it.isNotBlank() } ?: uri.toString()
-        // Nothing has changed since this file was given up on; see
-        // [surrenderedKey].
         if (key == surrenderedKey) return
         if (activeKey == key && job?.isActive == true) return
         stop()
@@ -134,125 +99,84 @@ internal class MediaPrefetcher(
         job = scope.launch(Dispatchers.IO) { run(uri, key, durationMs) }
     }
 
-    /**
-     * A sample of the playhead and of what the player's loader is doing.
-     *
-     * The loading flag is repeated here rather than left to
-     * [onLoadingChanged] alone because an event only fires on a *change*: a
-     * prefetch run beginning while the player happens not to be loading would
-     * otherwise sit out the whole film waiting for a transition that already
-     * happened. It is also the only place the buffer trend is measured, which
-     * is what [PrefetchPolicy] needs to tell a player topping up from a player
-     * losing ground.
-     */
+    /** A sample of the playhead and the loader, in case an event was missed. */
     fun onPosition(positionMs: Long, playerLoading: Boolean) {
         this.positionMs = positionMs
-        apply(policy.onSample(playerLoading))
+        this.playerLoading = playerLoading
     }
 
     /**
-     * The player's `LoadControl` has started or stopped wanting bytes.
-     *
-     * Pushed from `onIsLoadingChanged` rather than read off the position
-     * ticker, which runs every four seconds once the OSD is hidden — the
-     * normal state of a film being watched. A player that started wanting
-     * bytes again was, until this existed, competing with this loop for up to
-     * four seconds before the loop was even told, and on a box whose byte
-     * budget is refilled several times a minute that window was open most of
-     * the time.
-     *
-     * Carries no buffer reading, so it can only ever stop the *next* chunk —
-     * see [PrefetchPolicy.onLoadingChanged] for why that is the right amount
-     * of authority for this signal, and [onPlayerStalled] for the one that
-     * may do more.
+     * The player's `LoadControl` started or stopped wanting bytes. Pushed rather than
+     * read off the position tick, which runs every four seconds once the OSD is
+     * hidden — long enough to empty a small buffer on a shared link.
      */
-    fun onLoadingChanged(playerLoading: Boolean) {
-        apply(policy.onLoadingChanged(playerLoading))
+    fun onLoadingChanged(loading: Boolean) {
+        playerLoading = loading
+        val key = activeKey ?: return
+        if (playerNeedsLink(key)) cancelChunk()
     }
 
-    /** The picture has stopped — `STATE_BUFFERING`. Everything goes to the player. */
-    fun onPlayerStalled() {
-        apply(policy.onPlayerStalled())
-    }
-
-    /**
-     * Abandons the chunk in flight without stopping the loop — the next pass
-     * recomputes the window from wherever the viewer just landed.
-     */
-    fun invalidate() {
-        apply(policy.onSeek())
-    }
-
-    private fun apply(effect: PrefetchPolicy.Effect) {
-        if (effect == PrefetchPolicy.Effect.CANCEL_IN_FLIGHT) writer?.cancel()
-    }
+    /** The viewer moved, so the chunk in flight was fetched for somewhere they left. */
+    fun invalidate() = cancelChunk()
 
     fun stop() {
-        writer?.cancel()
-        writer = null
+        cancelChunk()
         job?.cancel()
         job = null
         activeKey = null
         surrenderedKey = null
-        policy.reset()
+        playerLoading = true
+    }
+
+    private fun playerNeedsLink(key: String): Boolean =
+        playerLoading && !cache.isCached(key, loader.readPosition, COVERED_BYTES)
+
+    /** Aborts the call too: a chunk stuck on a quiet socket would not see the flag. */
+    private fun cancelChunk() {
+        chunkCancelled = true
+        writer?.cancel()
+        calls.abortLatest()
     }
 
     private suspend fun run(uri: Uri, key: String, durationMs: Long) {
-        // One `CacheDataSource` for the whole run: it is opened and closed per
-        // chunk by `CacheWriter`, and rebuilding the factory each time would
-        // discard OkHttp's warm connection to the host along with it.
+        // One data source for the whole run: `CacheWriter` opens and closes it per
+        // chunk, and rebuilding it would discard the warm connection to the host.
         val dataSource = CacheDataSource.Factory()
             .setCache(cache)
             .setUpstreamDataSourceFactory(upstreamFactory)
-            // Same reasoning as the player's own source: a half-written span
-            // from a mirror that died must never be why a working one fails.
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
             .createDataSource()
 
         val copyBuffer = ByteArray(COPY_BUFFER_BYTES)
         var backoffMs = MIN_BACKOFF_MS
-        var consecutiveFailures = 0
-        // See [MAX_UNPRODUCTIVE_CHUNKS]. Tracked as the cursor rather than a
-        // byte count because the cursor is what the next pass is computed
-        // from: if it does not move, nothing this loop did survived.
-        var lastCursor = -1L
+        var refusals = 0
+        var lastCompletedCursor = -1L
         var unproductiveChunks = 0
+        var loggedAhead = -1L
 
         while (currentCoroutineContext().isActive) {
-            // The player is the only thing that can establish this, on its
-            // first read, so early in playback there is simply nothing to work
-            // from — and guessing a length would place every range request
-            // wrong for the rest of the film.
-            val contentLength = ContentMetadata.getContentLength(cache.getContentMetadata(key))
-            if (contentLength <= 0 || !policy.mayStartChunk) {
+            val contentLength = contentLengthOf(key)
+            if (contentLength <= 0 || playerNeedsLink(key)) {
                 delay(IDLE_POLL_MS)
                 continue
             }
 
-            // Bytes per millisecond, averaged over the whole file. This is an
-            // approximation — a variable-bitrate encode is denser in some
-            // places than others — and it does not need to be better than one.
-            // Being a few seconds off only means the window starts slightly
-            // before or after where the playhead really is, and the window is
-            // minutes wide.
+            // Averaged over the whole file. A variable bitrate makes this a few
+            // seconds off, against a window minutes wide.
             val bytesPerMs = contentLength.toDouble() / durationMs
-            val from = (positionMs * bytesPerMs).toLong().coerceIn(0L, contentLength)
+            val playhead = (positionMs * bytesPerMs).toLong()
+            val from = maxOf(playhead, loader.readPosition).coerceIn(0L, contentLength)
+            // Measured from the loader, not the playhead: what sits between the two is
+            // already in the heap, and a window counting it could end before the
+            // buffer does.
             val windowBytes = minOf((WINDOW_MS * bytesPerMs).toLong(), maxWindowBytes)
             val target = minOf(from + windowBytes, contentLength)
-
-            // The playhead is at the end of the file — the last minutes of a
-            // film, or a position past it while a seek settles. Checked before
-            // the index lookup below rather than after, so `getCachedLength` is
-            // never asked about a zero-length range.
             if (from >= target) {
                 delay(IDLE_POLL_MS)
                 continue
             }
 
-            // Skip whatever is already on disk in one contiguous run from the
-            // playhead. `CacheWriter` would skip it too, but doing it here
-            // means the common case — window already full — costs one index
-            // lookup rather than opening a data source to discover the same.
+            // Skips what is already on disk in one contiguous run past the loader.
             val cached = cache.getCachedLength(key, from, target - from)
             val cursor = if (cached > 0) from + cached else from
             if (cursor >= target) {
@@ -260,83 +184,98 @@ internal class MediaPrefetcher(
                 continue
             }
 
-            val spec = DataSpec.Builder()
-                .setUri(uri)
-                .setPosition(cursor)
-                .setLength(minOf(CHUNK_BYTES, target - cursor))
-                // Mirrors what `DefaultMediaSourceFactory` puts on the player's
-                // own reads from `MediaItem.customCacheKey`. If these two
-                // disagree the prefetcher fills a cache the player never looks
-                // in, and every byte here is wasted twice — once downloading
-                // it, once downloading it again.
-                .setKey(key)
-                .build()
-
-            // A window this loop cannot hold on to is a window it must stop
-            // fetching — see [MAX_UNPRODUCTIVE_CHUNKS].
-            if (cursor == lastCursor) {
+            if (cursor == lastCompletedCursor) {
                 unproductiveChunks++
                 if (unproductiveChunks >= MAX_UNPRODUCTIVE_CHUNKS) {
-                    Log.i(TAG, "standing down: $cursor re-fetched $unproductiveChunks times without being retained")
+                    Log.i(TAG, "read-ahead standing down: $cursor fetched $unproductiveChunks times, not retained")
                     surrenderedKey = key
                     return
                 }
             } else {
                 unproductiveChunks = 0
             }
-            lastCursor = cursor
 
-            val chunk = CacheWriter(dataSource, spec, copyBuffer, /* progressListener = */ null)
+            val spec = DataSpec.Builder()
+                .setUri(uri)
+                .setPosition(cursor)
+                .setLength(minOf(CHUNK_BYTES, target - cursor))
+                // The key the player reads under. If these disagree, this fills a
+                // cache the player never looks in.
+                .setKey(key)
+                .build()
+
+            chunkCancelled = false
+            val chunk = CacheWriter(dataSource, spec, copyBuffer) { _, _, _ ->
+                if (playerNeedsLink(key)) cancelChunk()
+            }
             writer = chunk
-            // `cache()` blocks until the chunk is on disk, the writer is
-            // cancelled, or the read fails. None of those is a coroutine
-            // cancellation, so `runCatching` here cannot swallow one.
-            val failed = runCatching { chunk.cache() }.isFailure
+            // Blocks until the chunk is on disk, the writer is cancelled, or the read
+            // fails. None of those is a coroutine cancellation.
+            val error = runCatching { chunk.cache() }.exceptionOrNull()
             writer = null
 
-            if (failed) {
-                // Nothing here is worth reporting. A prefetch that fails costs
-                // the viewer nothing — the player will fetch those bytes
-                // itself when it reaches them — so the loop backs off and
-                // tries further along rather than surfacing an error for
-                // something that is not a playback problem.
-                consecutiveFailures++
-                // Giving up entirely, rather than retrying at a slower rate,
-                // because of what a *run* of failures most likely means: a host
-                // that allows one connection per link and is refusing this
-                // second one. That is not a transient condition and it will not
-                // improve over the film — meanwhile every attempt is another
-                // request against a host that has already said no, on a link
-                // the player still needs. Nothing is lost by stopping: the
-                // player's own connection is untouched and playback continues
-                // exactly as it did before this class existed.
-                if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                    // Same reasoning as the surrender above: without this the
-                    // next position tick starts the whole run again, against a
-                    // host that has already refused it five times.
-                    surrenderedKey = key
-                    return
+            when {
+                chunkCancelled -> Unit
+                error == null -> {
+                    lastCompletedCursor = cursor
+                    refusals = 0
+                    backoffMs = MIN_BACKOFF_MS
+                    val ahead = (cursor + spec.length - loader.readPosition) / LOG_STEP_BYTES
+                    if (ahead != loggedAhead) {
+                        loggedAhead = ahead
+                        Log.d(TAG, "read-ahead ${ahead * LOG_STEP_BYTES / MB}MB on disk past the loader")
+                    }
                 }
-                delay(backoffMs)
-                backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
-            } else {
-                consecutiveFailures = 0
-                backoffMs = MIN_BACKOFF_MS
+                else -> {
+                    // A host answering 4xx or 5xx most likely allows one connection per
+                    // link and is refusing this second one, which will not improve over
+                    // the film. Nothing is lost by stopping: the player's own connection
+                    // is untouched. A read that timed out says nothing of the kind, and
+                    // giving up on it would cost the rest of the film its read-ahead
+                    // over one network outage.
+                    if (error.isRefusal()) refusals++
+                    if (refusals >= MAX_REFUSALS) {
+                        Log.i(TAG, "read-ahead standing down: refused $refusals times in a row")
+                        surrenderedKey = key
+                        return
+                    }
+                    delay(backoffMs)
+                    backoffMs = (backoffMs * 2).coerceAtMost(MAX_BACKOFF_MS)
+                }
             }
         }
+    }
+
+    /**
+     * Nothing writes the length for this class any more: `CacheDataSource` only stores
+     * it while writing, and the player no longer does. So it is taken from the player's
+     * own response and stored, which also lets a later session find it when every byte
+     * it needs at first is already on disk.
+     */
+    private fun contentLengthOf(key: String): Long {
+        val stored = ContentMetadata.getContentLength(cache.getContentMetadata(key))
+        if (stored > 0) return stored
+        val reported = loader.contentLength
+        if (reported > 0) {
+            val mutations = ContentMetadataMutations()
+            ContentMetadataMutations.setContentLength(mutations, reported)
+            runCatching { cache.applyContentMetadataMutations(key, mutations) }
+        }
+        return reported
     }
 
     private companion object {
 
         const val TAG = "Playback"
 
+        const val MB = 1024L * 1024L
+
+        const val LOG_STEP_BYTES = 64L * MB
+
         /**
-         * Only progressive files over the network.
-         *
-         * HLS and DASH address media by segment through a manifest, so a byte
-         * offset into the URI names part of a playlist rather than part of the
-         * film; `file://` and `content://` are already on local storage, and
-         * copying them into the cache would double the space for no gain.
+         * Only progressive files over the network. HLS and DASH address media by
+         * segment, so a byte offset would name part of a playlist, and a local file is
+         * already on disk.
          */
         fun canPrefetch(uri: Uri): Boolean {
             val scheme = uri.scheme?.lowercase()
@@ -345,77 +284,42 @@ internal class MediaPrefetcher(
         }
 
         /**
-         * How far ahead of the playhead to keep the cache filled.
-         *
-         * Ten minutes is far past any outage worth waiting through — which is
-         * the point: on a high-bitrate remux this limit is not what binds.
-         * `maxWindowBytes` is, and it is the honest constraint, because what
-         * the disk can hold is a real quantity while a number of seconds is
-         * only a wish. At ~25Mbps ten minutes is about 1.9GB, so on most boxes
-         * the byte budget cuts the window well before this does, and this
-         * exists mainly so a *low*-bitrate encode does not have the prefetcher
+         * How far ahead of the loader to keep the cache filled. On a high-bitrate
+         * remux `maxWindowBytes` binds first; this keeps a low-bitrate encode from
          * racing hours ahead of a viewer who is about to change episode.
-         *
-         * The cost of overshooting is bandwidth spent on film nobody watches,
-         * which is why this is not simply unbounded.
          */
         const val WINDOW_MS = 600_000L
 
-        /**
-         * How much is fetched before the loop looks at the playhead again.
-         *
-         * The trade is between HTTP requests and wasted bytes. Smaller chunks
-         * mean a new range request every few seconds of film; larger ones mean
-         * a seek throws away more of what is in flight. 16MB is roughly five
-         * seconds of a 25Mbps remux — frequent enough that the window tracks a
-         * moving playhead, large enough that the request overhead disappears
-         * against the transfer.
-         */
+        /** How much is fetched before the loop looks at the playhead again. */
         const val CHUNK_BYTES = 16L * 1024 * 1024
 
-        /** `CacheWriter`'s own default; there is no reason to differ. */
+        /** `CacheWriter`'s own default. */
         const val COPY_BUFFER_BYTES = 128 * 1024
 
-        /** Long enough that a full window costs almost nothing to re-check. */
+        /**
+         * How much must be on disk past the loader for it not to need the link. Well
+         * above `CacheDataSource`'s 100KB between looks at the cache, so the player is
+         * sure to find it there.
+         */
+        const val COVERED_BYTES = 1024L * 1024
+
         const val IDLE_POLL_MS = 2_000L
 
         /**
-         * Chunks re-fetched at the same offset before this loop gives up on
-         * the source.
-         *
-         * The cursor is recomputed each pass from what the cache actually
-         * holds, so a chunk that was written and then evicted leaves it
-         * exactly where it was. That is not a rare condition: this cache is
-         * shared with the player's own read-through spans, and
-         * [maxWindowBytes] bounds only this loop's share of it — so once the
-         * two together reach the evictor's limit, the span written here is the
-         * one thrown away, because it is the one nothing has read yet.
-         *
-         * Left alone the loop then re-downloads the same 16MB forever: it
-         * cannot advance, and every pass is another range request on the link
-         * the player is using. Observed on a television with a 156MB cache,
-         * where the same offset was fetched a dozen times and the host's
-         * answers grew steadily slower — 1.8 seconds for the first, nine for
-         * the twelfth.
-         *
-         * Three, because two can happen honestly: a seek moves the window
-         * back over ground already cached, and the first pass after it can
-         * repeat an offset without anything being wrong.
-         *
-         * Standing down costs nothing the viewer can see. The player fetches
-         * what it needs on its own connection, exactly as it did before this
-         * class existed — which is the same reasoning as
-         * [MAX_CONSECUTIVE_FAILURES] above.
+         * Chunks fetched at the same offset before giving up. A span that is written and
+         * then evicted leaves the cursor where it was, and left alone this would fetch
+         * the same bytes forever on the link the player is using.
          */
         const val MAX_UNPRODUCTIVE_CHUNKS = 3
 
         const val MIN_BACKOFF_MS = 1_000L
         const val MAX_BACKOFF_MS = 20_000L
 
-        /**
-         * Failed chunks in a row before the prefetcher stands down for good on
-         * this source. Five is past anything a flaky link explains.
-         */
-        const val MAX_CONSECUTIVE_FAILURES = 5
+        /** Refused chunks in a row before standing down for good on this source. */
+        const val MAX_REFUSALS = 5
     }
+}
+
+private fun Throwable.isRefusal(): Boolean = causes().any {
+    it is HttpDataSource.InvalidResponseCodeException
 }

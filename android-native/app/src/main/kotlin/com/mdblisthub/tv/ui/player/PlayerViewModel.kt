@@ -334,7 +334,8 @@ class PlayerViewModel(
             return
         }
 
-        val candidates = graph.streams.candidates(type, stremioId)
+        val runtimeMinutes = expectedRuntimeMinutes(cachedDetail, card)
+        val candidates = graph.streams.candidates(type, stremioId, runtimeMinutes)
         val synced = if (startFromBeginning) null else graph.playback.resumeFor(scrobbleTarget)
         // Room, not the network — this is the note this app left itself last
         // time it played the title. Null on a first watch, and everything
@@ -356,7 +357,7 @@ class PlayerViewModel(
         controller.play(
             candidates,
             resumeAt,
-            expectedRuntimeMinutes(cachedDetail, card),
+            runtimeMinutes,
             selectManually = manualSelect,
             hint = hint,
         )

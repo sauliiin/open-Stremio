@@ -1,131 +1,119 @@
 package com.mdblisthub.tv.player
 
 /**
- * Decides, poll by poll, whether a committed source has stopped being worth
- * waiting for.
+ * Decides, poll by poll, whether the connection feeding the player has stopped
+ * being worth keeping.
  *
- * Pulled out of `PlaybackController.startStallWatch` rather than left inline,
- * because the bug this class was extracted to fix was not visible from the
- * outside. A source trickling a few milliseconds of media per second and a
- * source delivering normally produce the same sequence of player states, the
- * same logs, and — under the old rule, which asked only whether
- * `bufferedPosition` had *moved* — the same verdict. The difference is
- * arithmetic over a series of polls, and arithmetic over a series is exactly
- * what cannot be checked by watching a film play.
+ * It measures whether the forward edge of the buffer keeps up with real time
+ * while the loader is asking for bytes, and it starts measuring long before the
+ * buffer runs out. Waiting for `STATE_BUFFERING` meant every bad connection
+ * became a frozen picture first, when replacing it costs nothing as long as it
+ * happens while there is still film in hand.
  *
  * Everything the decision needs is a parameter, and nothing here reads a
- * player, a clock or a socket. That is the point: [onPoll] is a pure function
- * of the inputs and the counters below, so the freeze a viewer reports as
- * "it only comes back when I press skip" can be written down as a test.
+ * player, a clock or a socket, so a freeze can be written down as a test.
+ *
+ * The thresholds come from measurements: see `player/PLAYBACK_STALLS.md`.
  */
 internal class StallTracker(
     private val pollMs: Long,
-    private val frozenMs: Long,
-    private val suspectMs: Long,
-    private val minProgressMs: Long,
-    private val softReconnectLimit: Int,
+    private val windowMs: Long,
+    private val waitingWindowMs: Long,
+    private val maxWindowMs: Long,
+    /** Share of real time the buffer must gain for a connection to count as healthy. */
+    private val healthyRate: Double,
+    /** Below this share, a stopped picture is not waiting on a slow link but on a dead one. */
+    private val deadRate: Double,
+    private val reconnectsBeforeReopen: Int,
 ) {
 
     /** What the watch should do about this poll. */
     enum class Action {
-        /** Nothing yet — either the source is fine or the evidence is still accumulating. */
+        /** Nothing yet — the source is fine, or the evidence is still accumulating. */
         WAIT,
 
-        /** Reopen the socket at the same moment of the film, keeping the picture. */
-        SOFT_RECONNECT,
+        /** Replace the socket and resume in place, which nobody can see. */
+        RECONNECT,
 
-        /** The link ignored a reconnection too; re-prepare the source cold. */
+        /** The link ignored new connections too; re-prepare the source cold. */
         REOPEN,
     }
 
-    private var frozenForMs = 0L
-    private var reference = UNSET
-    private var softReconnects = 0
+    /** The buffer's edge at each poll, newest last, as far back as the longest window. */
+    private val edges = ArrayDeque<Long>()
+    private var poorWindows = 0
+    private var deadWindows = 0
 
     /**
-     * @param waiting whether the player is stopped, wants to play, and has a
-     *   committed source — anything else is not a stall to repair.
+     * Judged over the trailing window on every poll, not over windows laid end to end.
+     * A connection that sends a burst and dies would otherwise be saved by the burst,
+     * and be noticed a whole window after it mattered.
+     *
+     * @param loaderActive whether the loader is asking for bytes. A full buffer
+     *   gains nothing by design, and that is not a measurement.
+     * @param waiting whether the picture has stopped for lack of media.
      * @param bufferedMs the forward edge of the buffer, in film time.
-     * @param suspect whether the connection is already presumed dead, which
-     *   shortens the proof required from [frozenMs] to [suspectMs].
-     * @param settling whether a seek is recent enough that silence is still
-     *   the expected state. The freeze counter keeps running underneath — this
-     *   postpones the response, it does not forgive it.
+     * @param settling whether a seek is recent enough that silence is still the
+     *   expected state.
      */
-    fun onPoll(
-        waiting: Boolean,
-        bufferedMs: Long,
-        suspect: Boolean,
-        settling: Boolean,
-    ): Action {
-        if (!waiting) {
-            // Decays rather than resets. A link that delivers half a second of
-            // film between ten-second waits is not recovering, but under the
-            // old rule each of those half-seconds zeroed the counter, so the
-            // ladder below never reached its first rung. Decaying at the rate
-            // it accumulates means a source that really is playing clears its
-            // debt in seconds while one that is merely twitching does not.
-            frozenForMs = (frozenForMs - pollMs).coerceAtLeast(0L)
-            if (frozenForMs == 0L) softReconnects = 0
-            reference = UNSET
+    fun onPoll(loaderActive: Boolean, waiting: Boolean, bufferedMs: Long, settling: Boolean): Action {
+        if (!loaderActive || settling) {
+            edges.clear()
             return Action.WAIT
         }
+        // A buffer behind the last reading means a backward seek moved it.
+        if (edges.isNotEmpty() && bufferedMs < edges.last()) edges.clear()
+        edges.addLast(bufferedMs)
+        if (edges.size > maxWindowMs / pollMs + 1) edges.removeFirst()
 
-        // Progress is measured against a reference several polls back, and it
-        // has to be *meaningful*. Any movement at all used to count as proof
-        // of life, which made a mirror trickling a few milliseconds per second
-        // indistinguishable from a healthy one — while playback, which will
-        // not resume until `bufferForPlaybackAfterRebufferMs` is buffered,
-        // stayed stopped for as long as the trickle lasted.
-        //
-        // A buffer *behind* the reference means a backward seek moved it, and
-        // a difference that can never turn positive is not a measurement.
-        // No reference to measure against, or a buffer behind one — the
-        // latter meaning a backward seek moved it, and a difference that can
-        // never turn positive is not a measurement. Establish and wait.
-        //
-        // The debt is deliberately *kept* across this. Re-establishing a
-        // reference is not evidence that anything was delivered, and zeroing
-        // here reopened the hole the decay above was closing: a stutter that
-        // ends each frozen run with one poll of playback comes back with the
-        // reference cleared, and if that cleared the counter too the ladder
-        // could never be reached however long the stuttering lasted.
-        if (reference == UNSET || bufferedMs < reference) {
-            reference = bufferedMs
+        val base = if (waiting) waitingWindowMs else windowMs
+
+        // Next to nothing arriving is never backed off from, because there is no
+        // throughput left to protect.
+        val recent = rateOver(base)
+        if (recent != null && recent < deadRate) {
+            restartFrom(bufferedMs)
+            if (!waiting) {
+                deadWindows = 0
+                return Action.RECONNECT
+            }
+            deadWindows++
+            if (deadWindows > reconnectsBeforeReopen) {
+                deadWindows = 0
+                return Action.REOPEN
+            }
+            return Action.RECONNECT
+        }
+
+        // A link that delivers does get backed off from: when it is simply slower than
+        // the film, every connection is as poor as the last, and a reconnect every few
+        // seconds costs a fifth of the little it has.
+        val backedOff = (base shl poorWindows.coerceAtMost(MAX_BACKOFF_SHIFT)).coerceAtMost(maxWindowMs)
+        val rate = rateOver(backedOff) ?: return Action.WAIT
+        if (rate >= healthyRate) {
+            poorWindows = 0
+            deadWindows = 0
             return Action.WAIT
         }
-        if (bufferedMs - reference >= minProgressMs) {
-            reference = bufferedMs
-            frozenForMs = 0L
-            return Action.WAIT
-        }
+        restartFrom(bufferedMs)
+        poorWindows++
+        deadWindows = 0
+        return Action.RECONNECT
+    }
 
-        frozenForMs += pollMs
-        if (frozenForMs < (if (suspect) suspectMs else frozenMs)) return Action.WAIT
-        if (settling) return Action.WAIT
+    /** What the buffer gained per unit of real time, or null with less history than that. */
+    private fun rateOver(windowMs: Long): Double? {
+        val polls = (windowMs / pollMs).toInt()
+        if (edges.size <= polls) return null
+        return (edges.last() - edges[edges.size - 1 - polls]).toDouble() / windowMs
+    }
 
-        // Cleared before the repair rather than after: both rungs return long
-        // before anything is delivered, and the next poll must not measure
-        // staleness against a buffer position belonging to the connection just
-        // abandoned.
-        frozenForMs = 0L
-        reference = UNSET
-
-        if (softReconnects < softReconnectLimit) {
-            softReconnects++
-            return Action.SOFT_RECONNECT
-        }
-        softReconnects = 0
-        return Action.REOPEN
+    private fun restartFrom(bufferedMs: Long) {
+        edges.clear()
+        edges.addLast(bufferedMs)
     }
 
     private companion object {
-        /**
-         * "No reference yet", as a value no buffer position can take.
-         * Deliberately not `C.TIME_UNSET`: nothing else here knows what a
-         * media library is, and keeping it that way is what makes this
-         * testable on the JVM.
-         */
-        const val UNSET = Long.MIN_VALUE
+        const val MAX_BACKOFF_SHIFT = 6
     }
 }

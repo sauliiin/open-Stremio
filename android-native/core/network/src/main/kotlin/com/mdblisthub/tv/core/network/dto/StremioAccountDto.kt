@@ -51,15 +51,6 @@ data class StremioCollectionEntryDto(
     val transportName: String? = null,
 )
 
-@Serializable
-data class StremioCollectionSetRequest(
-    val type: String = "AddonCollectionSet",
-    val authKey: String,
-    val addons: List<StremioCollectionEntryDto>,
-)
-
-@Serializable
-data class StremioSuccessResult(val success: Boolean = false)
 
 @Serializable
 data class StremioLogoutRequest(

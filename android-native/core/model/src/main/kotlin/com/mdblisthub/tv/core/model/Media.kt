@@ -134,21 +134,7 @@ data class MediaDetail(
     val reviews: List<Review> = emptyList(),
     val budget: Long? = null,
     val revenue: Long? = null,
-) {
-    fun toItem(): MediaItem = MediaItem(
-        tmdbId = tmdbId,
-        type = type,
-        title = title,
-        imdbId = imdbId,
-        year = year,
-        posterUrl = posterUrl,
-        landscapeUrl = landscapeUrl,
-        backdropUrl = backdropUrl,
-        genres = genres,
-        runtimeMinutes = runtimeMinutes,
-        score = ratings.firstOrNull()?.score,
-    )
-}
+)
 
 /** The account behind the mdblist API key. */
 @Serializable
