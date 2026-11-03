@@ -29,6 +29,8 @@ import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.upstream.Loader
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.PlaybackHint
+import com.mdblisthub.tv.core.model.SourceReadiness
+import com.mdblisthub.tv.core.model.StreamKind
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.model.SubtitleTrack
 import kotlinx.coroutines.CoroutineScope
@@ -83,11 +85,17 @@ class PlaybackController(
     private val scope: CoroutineScope,
     /**
      * The client whose connection pool the mirror probe already warmed, so the
-     * TCP+TLS handshake `StreamsRepository.isReachable` just paid for is reused
+     * TCP+TLS handshake `StreamsRepository.probe` just paid for is reused
      * rather than repeated. Must not carry a `callTimeout`: here a single call is
      * the whole film — see `HttpClients.playback`.
      */
     callFactory: okhttp3.Call.Factory,
+    /**
+     * Told of every source opened, and of null on [release]. The app uses it to drop a
+     * torrent the moment the player moves to another source, so a swarm never goes on
+     * downloading a film nobody is watching.
+     */
+    private val onSourceOpened: (PlayableStream?) -> Unit = {},
 ) : Player.Listener {
 
     private val appContext = context.applicationContext
@@ -651,6 +659,14 @@ class PlaybackController(
      * first pass has often minted a fresh token by the time it comes round
      * again, and one more attempt is far cheaper than telling someone to try
      * later.
+     *
+     * A short queue is walked again after that, with a growing pause, until
+     * [PERSIST_MS] have passed since [play]. One or two links, which is what a
+     * little-known film often has, fail their two passes in a few seconds when
+     * the host is briefly refusing: a 429 from an addon's rate limit, a 503
+     * from a busy debrid server. Measured in the lab, that was an error four
+     * seconds in, on a link that worked fifteen seconds later. A link given
+     * up on for what it is, a notice or a damaged file, is never walked again.
      */
     private fun tryAdvance() {
         watchdog?.cancel()
@@ -667,11 +683,30 @@ class PlaybackController(
                 return
             }
             passes++
-            if (passes >= MAX_PASSES) {
-                fail(PlaybackFailure.AllCandidatesFailed(queue.size))
+            val retryable = queue.indices.any { it !in rejectedIndices && queue[it].url != null }
+            if (!retryable || (passes >= MAX_PASSES && sincePlayMs() >= PERSIST_MS)) {
+                fail(
+                    // Every link a notice the debrid service shows while it fetches the
+                    // file: there is nothing to play yet, and saying so is the useful answer.
+                    if (queue.all { it.readiness == SourceReadiness.NOT_CACHED }) {
+                        PlaybackFailure.NotCachedYet
+                    } else {
+                        PlaybackFailure.AllCandidatesFailed(queue.size)
+                    },
+                )
                 return
             }
             queueIndex = -1
+            if (passes >= MAX_PASSES) {
+                val pauseMs = (PASS_PAUSE_MS shl (passes - MAX_PASSES)).coerceAtMost(MAX_PASS_PAUSE_MS)
+                Log.i(TAG, "queue of ${queue.size} walked $passes times by +${sincePlayMs()}ms, again in ${pauseMs}ms")
+                // On [watchdog], so anything that ends this playback ends the wait too.
+                watchdog = scope.launch {
+                    delay(pauseMs)
+                    tryAdvance()
+                }
+                return
+            }
             tryAdvance()
             return
         }
@@ -719,6 +754,7 @@ class PlaybackController(
         )
 
         dataPath.switchTo(stream.headers)
+        onSourceOpened(stream)
 
         val mediaItem = MediaItem.Builder()
             .setUri(url)
@@ -1164,6 +1200,9 @@ class PlaybackController(
     private fun updatePrefetch() {
         val prefetcher = prefetcher ?: return
         val stream = committedStream ?: return
+        // A torrent is already on this device's disk as it arrives. Reading it ahead into
+        // the cache would store the film twice, and the swarm, not a socket, sets the pace.
+        if (stream.kind == StreamKind.TORRENT) return
         val url = stream.url ?: return
         prefetcher.start(
             uri = url.toUri(),
@@ -1335,8 +1374,13 @@ class PlaybackController(
                 val buffered = player.bufferedPosition
 
                 damage.onPoll(buffered)
+                // Not on a torrent. Its pieces are checked against their hashes, so what the
+                // demuxer gets is the file as published, and the torrent server hands over
+                // what has arrived and then waits, which reads just like a wedge. Measured:
+                // after a swarm left, a reopen was taken for damage and 5s of film skipped.
+                val torrent = committedStream?.kind == StreamKind.TORRENT
                 val wedged = wedgeDetector.onPoll(
-                    waiting = waiting,
+                    waiting = waiting && !torrent,
                     bytesRead = dataPath.bytesRead,
                     allocatedBytes = allocator.totalBytesAllocated.toLong(),
                     bufferedMs = buffered,
@@ -1902,6 +1946,7 @@ class PlaybackController(
      */
     fun release() {
         stopInternal()
+        onSourceOpened(null)
         subtitleTrack = null
         player.removeListener(this)
         player.release()
@@ -1928,6 +1973,16 @@ class PlaybackController(
         const val DECOY_ABSOLUTE_CAP_MS = 15 * 60_000L
 
         const val MAX_PASSES = 2
+
+        /**
+         * How long a short queue keeps being walked, from [play], before the cascade fails.
+         * Past [MAX_PASSES], each walk waits [PASS_PAUSE_MS], doubling to [MAX_PASS_PAUSE_MS],
+         * so a single dead link is tried about seven times. A long queue has spent this on
+         * its two passes already, and fails as it did.
+         */
+        const val PERSIST_MS = 60_000L
+        const val PASS_PAUSE_MS = 2_000L
+        const val MAX_PASS_PAUSE_MS = 15_000L
 
         /** Position polling while the OSD is up — see [startTicker]. */
         const val TICK_MS = 500L

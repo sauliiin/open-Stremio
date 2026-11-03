@@ -34,6 +34,12 @@ private val REAL_DEBRID_CDN = Regex("""^https?://[^/]*(real-debrid\.com|rdeb\.io
 /** Above this a file only plays where the link is well beyond a TV's usual Wi-Fi. */
 private const val COMFORTABLE_BITS_PER_SECOND = 50_000_000L
 
+/** Torrentio and its imitators: `👤 123` in the label. */
+private val SEEDERS = Regex("""👤\s*(\d+)""")
+
+/** Below this a swarm rarely keeps up with a film; see [rankForPlayback]. */
+private const val HEALTHY_SEEDERS = 10
+
 /**
  * Normalises an addon's stream entry.
  *
@@ -76,9 +82,17 @@ fun StremioStreamDto.toPlayable(addon: Addon, index: Int): PlayableStream {
     return when {
         !url.isNullOrBlank() -> base.copy(url = url, externalUrl = url, kind = StreamKind.DIRECT)
 
+        // No URL: `StreamsRepository` gives it the torrent engine's, when there is one.
         !infoHash.isNullOrBlank() -> base.copy(
             externalUrl = magnet(infoHash!!, headline),
             kind = StreamKind.TORRENT,
+            infoHash = infoHash!!.lowercase(),
+            fileIndex = fileIdx,
+            trackers = sources.orEmpty().filter { it.startsWith("tracker:") }.map { it.removePrefix("tracker:") },
+            seeders = SEEDERS.find(label + " " + description.orEmpty())?.groupValues?.get(1)?.toIntOrNull(),
+            // Whatever the label says: a torrent with no debrid in front is played from
+            // its swarm, and nothing cached it.
+            readiness = SourceReadiness.PEER_TO_PEER,
         )
 
         else -> base.copy(
@@ -103,20 +117,40 @@ fun StremioStreamDto.toPlayable(addon: Addon, index: Int): PlayableStream {
  * Only ever a reordering inside one resolution, and only when [runtimeMinutes]
  * makes the bitrate knowable — a file past the line still plays if nothing else
  * does.
+ *
+ * Torrents played from their swarm are first ordered by what decides whether they
+ * play at all: whether the file fits in [torrentRoomBytes], since a torrent keeps
+ * what it downloads and stops where the disk runs out, then whether the swarm has
+ * [HEALTHY_SEEDERS]. Resolution and bitrate then apply as to any link, and the
+ * most seeders break a tie.
  */
-fun List<PlayableStream>.rankForPlayback(runtimeMinutes: Int? = null): List<PlayableStream> {
+fun List<PlayableStream>.rankForPlayback(
+    runtimeMinutes: Int? = null,
+    torrentRoomBytes: Long? = null,
+): List<PlayableStream> {
     val seen = mutableSetOf<String>()
     return this
         .filter { it.playable }
         .filter { seen.add(it.url!!) }
         .sortedWith(
             compareBy<PlayableStream> { it.readiness }
+                .thenBy { it.peerToPeer && !it.fitsIn(torrentRoomBytes) }
+                .thenBy { it.peerToPeer && (it.seeders ?: 0) < HEALTHY_SEEDERS }
                 .thenBy { stream ->
                     stream.quality?.let(QUALITY_ORDER::indexOf)?.takeIf { it >= 0 } ?: QUALITY_ORDER.size
                 }
                 .thenBy { it.exceedsComfortableBitrate(runtimeMinutes) }
+                .thenByDescending { if (it.peerToPeer) it.seeders ?: 0 else 0 }
                 .thenByDescending { it.sizeBytes ?: 0L }
         )
+}
+
+private val PlayableStream.peerToPeer: Boolean get() = readiness == SourceReadiness.PEER_TO_PEER
+
+/** Unknown sizes and unknown room count as fitting: nothing to judge them by. */
+private fun PlayableStream.fitsIn(roomBytes: Long?): Boolean {
+    val bytes = sizeBytes ?: return true
+    return roomBytes == null || bytes <= roomBytes
 }
 
 private fun PlayableStream.exceedsComfortableBitrate(runtimeMinutes: Int?): Boolean {

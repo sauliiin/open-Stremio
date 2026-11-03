@@ -5,10 +5,13 @@ import kotlinx.serialization.Serializable
 /** Why a stream can or cannot reach the player. */
 @Serializable
 enum class StreamKind {
-    /** A URL ExoPlayer can open directly — the only kind this app plays. */
+    /** A URL ExoPlayer can open directly. */
     DIRECT,
 
-    /** An `infoHash` with no debrid resolution behind it. */
+    /**
+     * An `infoHash` with no debrid resolution behind it, played through the app's own
+     * torrent engine: its [PlayableStream.url] is a loopback address that engine serves.
+     */
     TORRENT,
 
     /** The addon pointed at a web page, not a media file. */
@@ -25,7 +28,20 @@ enum class StreamKind {
  * a placeholder clip or a connection that trickles.
  */
 @Serializable
-enum class SourceReadiness { CACHED_REAL_DEBRID, CACHED_DEBRID, UNKNOWN, NOT_CACHED }
+enum class SourceReadiness {
+    CACHED_REAL_DEBRID,
+    CACHED_DEBRID,
+    UNKNOWN,
+
+    /**
+     * A torrent played from its swarm, with no debrid service. After every link a
+     * server already holds, because a swarm is slower and less certain than any of
+     * them, and before an uncached debrid link, which plays nothing but a notice until
+     * the service has fetched the file.
+     */
+    PEER_TO_PEER,
+    NOT_CACHED,
+}
 
 /**
  * A source offered by an installed Stremio addon.
@@ -62,8 +78,16 @@ data class PlayableStream(
      */
     val headers: Map<String, String> = emptyMap(),
     val readiness: SourceReadiness = SourceReadiness.UNKNOWN,
+    /** For a [StreamKind.TORRENT]: lowercase hex v1 info hash. */
+    val infoHash: String? = null,
+    /** For a [StreamKind.TORRENT]: the addon's `fileIdx`, the file to play. */
+    val fileIndex: Int? = null,
+    /** For a [StreamKind.TORRENT]: the addon's `sources`, as tracker URLs. */
+    val trackers: List<String> = emptyList(),
+    /** Seeders the addon's label reported, for a torrent. Its swarm's health, roughly. */
+    val seeders: Int? = null,
 ) {
-    val playable: Boolean get() = kind == StreamKind.DIRECT && !url.isNullOrBlank()
+    val playable: Boolean get() = kind != StreamKind.EXTERNAL && !url.isNullOrBlank()
 
     /**
      * Advertised size in bytes — what the probe checks a mirror's real response

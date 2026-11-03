@@ -12,7 +12,10 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.mdblisthub.tv.core.model.PlayableStream
 import com.mdblisthub.tv.core.model.PlaybackHint
+import com.mdblisthub.tv.core.model.SourceReadiness
+import com.mdblisthub.tv.core.model.StreamKind
 import com.mdblisthub.tv.core.network.HttpClients
+import com.mdblisthub.tv.torrent.TorrentStreaming
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +48,10 @@ class StallLabDeviceTest {
 
     private val name = args.getString("lab_name") ?: "scenario"
     private val runtimeMinutes = intArg("lab_runtime_min") ?: 8
+    private val readiness = args.getString("lab_readiness")?.let(SourceReadiness::valueOf) ?: SourceReadiness.UNKNOWN
+
+    /** `<info hash>,<tracker>,<file name>` from `torrent_seeder.py`: plays that torrent instead of `lab_url`. */
+    private val torrent = args.getString("lab_torrent")?.split(',')
 
     private val frameThread = HandlerThread("lab-frames").apply { start() }
     private val frames = ImageReader.newInstance(1280, 720, ImageFormat.PRIVATE, 4).apply {
@@ -63,6 +70,7 @@ class StallLabDeviceTest {
 
         // A previous scenario's spans would serve this one from disk.
         File(context.cacheDir, "media").deleteRecursively()
+        if (torrent != null) TorrentStreaming.install(context)
 
         // This process has none of the app's own heap: Compose, Coil, the artwork
         // bitmaps. Without standing in for them a memory figure reads better than it is.
@@ -83,20 +91,40 @@ class StallLabDeviceTest {
     }
 
     private fun openPlayer() = instrumentation.runOnMainSync {
-        controller = PlaybackController(context, scope, HttpClients.playback(HttpClients.metadata(context)))
+        controller = PlaybackController(
+            context,
+            scope,
+            HttpClients.playback(HttpClients.metadata(context)),
+            onSourceOpened = { TorrentStreaming.keepOnly(it?.infoHash) },
+        )
         controller.player.setVideoSurface(frames.surface)
     }
 
     private fun play(urls: List<String>, startMs: Long? = null) = instrumentation.runOnMainSync {
         controller.play(
             candidates = urls.mapIndexed { index, link ->
-                PlayableStream(
-                    key = "lab$index",
-                    addon = "lab",
-                    title = name,
-                    url = link,
-                    filename = "$name-${link.hashCode()}.bin",
-                )
+                val swarm = torrent?.takeIf { index == 0 && link == args.getString("lab_url") }
+                if (swarm != null) {
+                    PlayableStream(
+                        key = "lab$index",
+                        addon = "lab",
+                        title = name,
+                        url = TorrentStreaming.url(swarm[0], 0, listOf(swarm[1]), swarm[2]),
+                        kind = StreamKind.TORRENT,
+                        infoHash = swarm[0],
+                        filename = swarm[2],
+                        readiness = SourceReadiness.PEER_TO_PEER,
+                    )
+                } else {
+                    PlayableStream(
+                        key = "lab$index",
+                        addon = "lab",
+                        title = name,
+                        url = link,
+                        filename = "$name-${link.hashCode()}.bin",
+                        readiness = readiness,
+                    )
+                }
             }.asFlow(),
             expectedRuntimeMinutes = runtimeMinutes,
             hint = startMs?.let { PlaybackHint(it, runtimeMinutes * 60_000L, null) },
@@ -214,7 +242,7 @@ class StallLabDeviceTest {
         return "first_frame=${firstFrameAt}ms failed_at=${failedAt}ms final_pos=${end.positionMs}ms " +
             "freezes=$freezes longest_freeze=${longestFrozenMs}ms total_frozen=${totalFrozenMs}ms " +
             "longest_picture_freeze=${longestPictureFrozenMs}ms skipped=${skippedMs}ms " +
-            "dropped=${end.dropped} phase=${end.phase} source=${end.source}"
+            "dropped=${end.dropped} phase=${end.phase} source=${end.source} error=${end.error}"
     }
 
     private fun sample(): Sample {
@@ -233,6 +261,7 @@ class StallLabDeviceTest {
                 dropped = counters?.droppedBufferCount ?: 0,
                 phase = state.phase.name,
                 source = state.activeStream?.key,
+                error = state.error?.let { it::class.simpleName },
             )
         }
         return sample
@@ -257,6 +286,7 @@ class StallLabDeviceTest {
         val dropped: Int,
         val phase: String,
         val source: String?,
+        val error: String?,
     )
 
     private companion object {

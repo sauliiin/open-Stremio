@@ -261,9 +261,10 @@
         toujours au moins un.
     -->
     <plurals name="player_error_all_failed">
-        <item quantity="one" tools:ignore="ImpliedQuantity">La seule source disponible a été essayée deux fois, sans succès.</item>
-        <item quantity="other">Les %1$d sources disponibles ont été essayées deux fois, sans succès.</item>
+        <item quantity="one" tools:ignore="ImpliedQuantity">La seule source disponible ne s’est pas ouverte, même en réessayant.</item>
+        <item quantity="other">Aucune des %1$d sources disponibles ne s’est ouverte, même en réessayant.</item>
     </plurals>
+    <string name="player_error_not_cached">Aucune source de ce titre n’est prête sur votre service debrid. En ouvrir une lance le téléchargement : réessayez plus tard.</string>
     <string name="player_error_manual_no_link">Cette source ne contient aucun lien lisible.</string>
     <string name="player_error_manual_unresponsive">Cette source n’a pas répondu. Choisissez-en une autre dans la liste.</string>
     <string name="player_error_manual_failed">Cette source ne s’est pas ouverte. Choisissez-en une autre dans la liste.</string>

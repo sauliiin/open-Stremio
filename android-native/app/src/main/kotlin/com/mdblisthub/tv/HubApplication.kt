@@ -20,6 +20,7 @@ import com.mdblisthub.tv.core.model.HubThemeVariant
 import com.mdblisthub.tv.core.network.ApiConfig
 import com.mdblisthub.tv.core.network.ApiCredentials
 import com.mdblisthub.tv.core.ui.theme.HubColors
+import com.mdblisthub.tv.torrent.TorrentStreaming
 import com.mdblisthub.tv.ui.player.PlaybackCompletionNotifier
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -39,6 +40,7 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
 
     override fun onCreate() {
         super.onCreate()
+        TorrentStreaming.install(this)
         graph = DataGraph(this)
         ApiConfig.configure(
             ApiCredentials(

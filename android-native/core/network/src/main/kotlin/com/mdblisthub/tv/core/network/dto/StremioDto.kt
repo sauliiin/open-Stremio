@@ -107,6 +107,10 @@ data class StremioStreamDto(
     val url: String? = null,
     val ytId: String? = null,
     val infoHash: String? = null,
+    /** Which file of the torrent [infoHash] names. */
+    val fileIdx: Int? = null,
+    /** Where to find peers for [infoHash]: `tracker:<url>` and `dht:<hash>`. */
+    val sources: List<String>? = null,
     val externalUrl: String? = null,
     val behaviorHints: StremioStreamHintsDto? = null,
 )

@@ -19,6 +19,8 @@ dependencies {
     api(projects.core.model)
     api(projects.core.network)
     api(projects.core.database)
+    // A torrent without debrid gets its playable link from the torrent engine.
+    implementation(projects.torrent)
     api(libs.work.runtime)
     api(libs.datastore.preferences)
     implementation(libs.androidx.core.ktx)

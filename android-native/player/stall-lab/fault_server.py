@@ -26,9 +26,19 @@ URL it plays and the server holds no scenario state beyond "did it fire yet":
   no_range=1         ignores Range, and always sends the file from its first byte
   cold_s=S           no answer at all until S seconds after the first request, as a
                      debrid link preparing its file upstream behaves
+  busy_s=S           every request in the S seconds after the first is answered
+  busy_code=N        with this status (503 by default): a host too busy to serve, then fine
   outage_after=S     S seconds after the first request, the whole host goes
   outage_secs=S      quiet for this long: no bytes on any connection, old or new
   run=ID             keys the one-shot faults; a new ID arms them again
+
+A path under /resolve/ is an addon's resolve link instead of the file: it answers a
+302 to the file on the --cdn-port listener, as Torrentio sends a debrid link to the
+debrid CDN. Every other parameter rides along to the file.
+
+  resolve_ms=N       how long resolving takes, every time it is asked
+  resolve_burst=N    an nginx limit_req in front of it: N requests at once, then
+  resolve_rps=R      R per second, and 429 for everything above that
 
 Faults that fire "once" model a single bad connection: the next request gets a
 healthy one, which is what a viewer's skip button reaches on a real CDN.
@@ -52,6 +62,20 @@ fired = set()
 fired_lock = threading.Lock()
 active = {}
 active_lock = threading.Lock()
+buckets = {}
+CDN_PORT = 8766
+RESOLVE_PARAMS = ("resolve_ms", "resolve_burst", "resolve_rps")
+
+
+def take_token(run, burst, rps):
+    """A token bucket per run, the shape nginx's limit_req gives a resolve route."""
+    with fired_lock:
+        now = time.monotonic()
+        tokens, then = buckets.get(run, (float(burst), now))
+        tokens = min(float(burst), tokens + (now - then) * rps)
+        allowed = tokens >= 1
+        buckets[run] = (tokens - 1 if allowed else tokens, now)
+        return allowed
 
 
 def outage_remaining(run, after, secs):
@@ -95,6 +119,10 @@ class Handler(BaseHTTPRequestHandler):
         run = q.get("run", "default")
         self.conn_id = f"{threading.get_ident() % 10000:04d}"
 
+        if url.path.startswith("/resolve/"):
+            self.resolve(url, q, run)
+            return
+
         self.path_to_file = os.path.join(self.directory, os.path.basename(url.path))
         if not os.path.isfile(self.path_to_file):
             self.send_response(404)
@@ -118,6 +146,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
+
+        busy_s = num("busy_s")
+        if busy_s is not None:
+            began = first_seen.setdefault((run, "busy"), time.monotonic())
+            if time.monotonic() - began < busy_s:
+                code = num("busy_code") or 503
+                self.say(f"busy ({code}) range={start}-")
+                self.send_response(code)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
 
         cold_s = num("cold_s")
         if cold_s is not None:
@@ -171,6 +211,28 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             with active_lock:
                 active[run] -= 1
+
+    def resolve(self, url, q, run):
+        burst = q.get("resolve_burst")
+        if burst is not None and not take_token(run, int(burst), float(q.get("resolve_rps", "1"))):
+            self.say(f"RESOLVE 429 run={run}")
+            body = b"<html><head><title>429 Too Many Requests</title></head></html>"
+            self.send_response(429)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if "resolve_ms" in q:
+            time.sleep(int(q["resolve_ms"]) / 1000)
+        rest = "&".join(f"{k}={v}" for k, v in q.items() if k not in RESOLVE_PARAMS)
+        host = self.headers.get("Host", "127.0.0.1").rsplit(":", 1)[0]
+        target = f"http://{host}:{CDN_PORT}/{os.path.basename(url.path)}?{rest}"
+        self.say(f"RESOLVE 302 run={run} range={self.headers.get('Range')}")
+        self.send_response(302)
+        self.send_header("Location", target)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def pump(self, start, end, q, num, run):
         blackhole_at = num("blackhole_at")
@@ -283,12 +345,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("directory")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--cdn-port", type=int, default=CDN_PORT)
     args = parser.parse_args()
     Handler.directory = args.directory
-    server = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
-    server.daemon_threads = True
-    print(f"serving {args.directory} on :{args.port}", flush=True)
-    server.serve_forever()
+    globals()["CDN_PORT"] = args.cdn_port
+    servers = [ThreadingHTTPServer(("0.0.0.0", port), Handler) for port in (args.port, args.cdn_port)]
+    for server in servers:
+        server.daemon_threads = True
+    threading.Thread(target=servers[1].serve_forever, daemon=True).start()
+    print(f"serving {args.directory} on :{args.port}, resolved links on :{args.cdn_port}", flush=True)
+    servers[0].serve_forever()
 
 
 if __name__ == "__main__":

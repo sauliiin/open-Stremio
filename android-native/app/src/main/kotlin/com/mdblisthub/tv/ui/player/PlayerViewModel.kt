@@ -20,6 +20,7 @@ import com.mdblisthub.tv.core.model.WikipediaLookup
 import com.mdblisthub.tv.player.NO_TRACK
 import com.mdblisthub.tv.player.PlaybackController
 import com.mdblisthub.tv.player.PlaybackPhase
+import com.mdblisthub.tv.torrent.TorrentStreaming
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -141,6 +142,7 @@ class PlayerViewModel(
         // Same connection pool the mirror probe used, so the handshake it paid
         // for is reused rather than repeated — see `HttpClients.playback`.
         callFactory = graph.network.playbackClient,
+        onSourceOpened = { stream -> TorrentStreaming.keepOnly(stream?.infoHash) },
     )
 
     init {

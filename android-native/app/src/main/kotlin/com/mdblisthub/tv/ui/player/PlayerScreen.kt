@@ -2686,6 +2686,7 @@ private fun PlaybackFailure.message(): String = when (this) {
     PlaybackFailure.NoCandidates -> stringResource(R.string.player_error_no_candidates)
     is PlaybackFailure.AllCandidatesFailed ->
         pluralStringResource(R.plurals.player_error_all_failed, count, count)
+    PlaybackFailure.NotCachedYet -> stringResource(R.string.player_error_not_cached)
     PlaybackFailure.ManualNoLink -> stringResource(R.string.player_error_manual_no_link)
     PlaybackFailure.ManualUnresponsive ->
         stringResource(R.string.player_error_manual_unresponsive)

@@ -62,6 +62,7 @@ dependencies {
     // The real playback client rather than a copy of its settings: its timeouts
     // and protocols are part of what `StallLabDeviceTest` is measuring.
     androidTestImplementation(projects.core.network)
+    androidTestImplementation(projects.torrent)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.junit)
 }

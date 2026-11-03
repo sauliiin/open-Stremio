@@ -23,4 +23,5 @@ dependencies {
     implementation(libs.serialization.json)
     implementation(libs.okhttp.logging)
     implementation(libs.coroutines.android)
+    testImplementation(libs.junit)
 }

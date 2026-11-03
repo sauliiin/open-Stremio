@@ -11,6 +11,11 @@ available to test against. See [What is still unproven](#what-is-still-unproven)
 symptom comes back, the first thing to do is get `adb logcat -s Playback` from the TV and
 read it with [Reading the log](#reading-the-log).
 
+**After v.1.1.35:** live addons on the emulator showed two more problems, both in
+debrid resolve links: every request for a film resolved it again (cause 16), and the
+opening probes flooded the addon until it answered 429. See **Opening** under
+[How it works now](#how-it-works-now).
+
 ## The symptom
 
 On the TV, on some films and not others, the picture stops mid-film and stays stopped.
@@ -38,8 +43,10 @@ Each row was measured in the lab or read in the Media3 1.11 source, as noted.
 | 13 | **Windows laid end to end let a burst hide what came after it.** A connection delivering 10s of film in 1.5s and then dying passed that window as healthy, and was noticed a window later, after the film had run out. A backed-off window could also keep a dead socket unnoticed for up to 64s. | Lab `flaky-silent`: frozen 29s of 180s. `flaky-slow`: 20s of 180s. | `StallTracker` judges the trailing window at every poll, and silence is never backed off from. |
 | 14 | **A host answering an error status was treated like a silent one.** It got the whole escalation, about 2 minutes frozen, with a healthy candidate waiting. An error page sent as a 200 fared little better: the load fails with `ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE`, which nothing recognised. | Lab `unavailable` (503): frozen >104s. `decoy`: 23s. | With somewhere else to go, the first reopen goes to the cascade instead. A missing position counts as a dead link. |
 | 15 | **A link given up on during opening could still commit.** The third error before a first frame is fatal, but with samples already queued no error reaches the player. With nothing left to load, the engine goes READY, with a clock that cannot move, and READY is what commits a source. So the queue was never tried. | Lab `damage-start` with a healthy candidate: first frame at 11s on the damaged source, saved only by the `clock frozen` flush and a skip. | `onReady` sends such a link to the next candidate, if there is one. First frame at 3s. |
+| 16 | **Every request for a debrid film went through the addon again.** A Torrentio link is a resolve URL that answers a 302 to Real-Debrid. OkHttp follows it inside each call and Media3 always asks the URL it was given, so the header, the index, every seek, every reconnect and every 16MB read-ahead chunk was resolved again: about a second each on Torrentio, two or more through AIOStreams, which redirects twice. Torrentio's resolve route sits behind an nginx `limit_req` per public IP, so a seek could meet a 429 and stop the film. | Live, on the emulator: `429 Too Many Requests` from `nginx/1.27.5` behind Cloudflare, on Torrentio's resolve route. Lab `resolver` (1s per resolve): 75 resolves in 150s. `resolver-limited` with a seek every 20s: a seek met a 429 and the picture stopped for 20s. The lab limiter's numbers are a model, not Torrentio's. | `ResolvedLinks` keeps where a resolve led, for every request after it. |
 
-Why only some films: causes 1, 9, 10, 11, 12 and 15 depend on the file. The rest depend on the
+Why only some films: causes 1, 9, 10, 11, 12 and 15 depend on the file. Cause 16 depends on
+the addon, and on what else in the house is using it. The rest depend on the
 mirror serving it at that moment, and they hurt in proportion to the bitrate.
 
 ### What it was not
@@ -125,12 +132,58 @@ stall watch decides when to give up. Exceptions:
   gets all of its time. With samples queued the error never surfaces and the player goes READY
   instead, so `onReady` checks for it (cause 15).
 
-**Ranking** (`rankForPlayback`). Real-Debrid cached, other debrid cached, unknown, not
-cached. Then resolution. Then files at or under 50Mbps before those above, within one
+**Opening** (`StreamsRepository.candidates`). Every addon is asked at once. Whatever has answered after
+1.5s is ranked, and the best is handed to the player unprobed. The rest are probed with a
+two-byte range request and handed over best-first, and a link that fails the probe moves to
+the end of its batch. The player walks them in that order (`tryAdvance`).
+
+A probe of a debrid link is the addon resolving it with the debrid service, so `ProbeGate`
+allows two at a time per host, and eight per host per title. Past that the cascade reaching a
+link is its test. Links the debrid service has not fetched are never probed, and a 429 from
+the addon counts as no answer, not as a broken link.
+
+`ResolvedLinks`, an interceptor on both the probe client and the playback client, keeps where
+a resolve led: a successful answer from another origin, at least 8MB, for 6 hours, which is
+Torrentio's own `max-age` on the redirect. Every later request goes to the CDN. A link the
+probe resolved is opened by the player without asking the addon again. A kept link that
+fails in any way is forgotten and the request goes through the addon once more, so an
+expired one costs a request, never an error.
+
+Nothing leaves the queue for its rank or for a failed probe. The cascade fails only once every
+link has failed twice **and** 60s have passed since play (`PERSIST_MS`). A short queue, which
+is what a little-known film often has, is walked again after a pause of 2s doubling to 15s, so
+a single link refused for a while still plays. Notices and damaged files are never opened
+twice. When every link was one the debrid service had not fetched, each opened as its
+notice, and the error says so (`NotCachedYet`) instead of "none opened".
+
+**Ranking** (`rankForPlayback`). Real-Debrid cached, other debrid cached, unknown, a torrent
+from its swarm, not cached. Then resolution. Then files at or under 50Mbps before those above, within one
 resolution only. Then size. Readiness is read from labels: `[RD+]`, `[RD download]`,
 `[RD⚡]`, `[RD⏳]`, `[RD⬇️]`, `⚡️`, `⏳`, `Not Cached`, `Not Ready`, `Instant`, taken from the
 sources of Torrentio, AIOStreams, Comet and MediaFusion. A new addon format lands in
 `UNKNOWN`, which is safe but gets no preference.
+
+**Torrents without debrid** (`:torrent`). A link that is only an `infoHash` used to be
+dropped, so a viewer with no debrid service had almost nothing to watch.
+`TorrentStreaming.url` now gives it a loopback address that `LocalTorrentServer` answers
+like any file host, ranges included. Each read waits for the pieces it needs, and that wait,
+`TorrentEngine.awaitPiece`, is what steers libtorrent: deadlines on the next 8 pieces,
+sequential order for the rest, and after a jump nothing wanted behind it but the two ends of
+the file. The player is not told it is a torrent, so the cascade, the stall watch, seeking
+and resuming are the same code. What differs:
+
+- Never probed: probing would start the download.
+- Never read ahead into the disk cache: the torrent is on disk already.
+- Ranked after every link a server holds and before an uncached debrid link. Among
+  torrents, a file that fits in free space first, then a swarm of 10 seeders or more.
+- One torrent at a time, removed with its data when the player opens another source or
+  closes. A folder per process, and the others are deleted at start.
+- Upload on, capped at 2 Mbps, nothing seeded after: a peer that never uploads is served
+  last.
+- POSIX disk I/O: libtorrent 2 maps files into memory by default, and a 20GB film does not
+  fit in a 32-bit TV's address space.
+- With no peer at all, the trackers and the DHT are asked again every 15s, at most.
+  libtorrent's own minimum between announces is five minutes.
 
 ## Rules that must keep holding
 
@@ -170,6 +223,29 @@ Each of these was broken at some point, with the result given.
 - **Never touch `player` from `getRetryDelayMsFor`.** It runs on the playback thread and
   crashes the app with "Player is accessed on the wrong thread". This happened while
   adding a log line.
+- **Do not raise the probes per host to start faster.** With sixteen at once, Torrentio
+  answered 429 to most of the next twenty and Real-Debrid answered some with Torrentio's
+  `failed_unavailable` video, so working links went to the back. The player's own request,
+  sent alongside, meets the same limit. The limit is per public IP, shared with every
+  device in the house. Measured live.
+- **Do not probe a link that is not cached.** Resolving it tells the debrid service to
+  start downloading the torrent.
+- **A 429 says nothing about the link.**
+- **`ResolvedLinks` must stay on both clients** (cause 16). Never keep a redirect to the
+  addon's own host, or to a file far smaller than a film: those are the addon's notices.
+- **Do not fail a short queue in seconds.** Two passes over one link take 4s when its host
+  answers 429 or 503, and a host doing that is usually back seconds later.
+- **A read of either end of a torrent's file is not the playhead.** The player reads the
+  header and the index there. Moving the focus there marked the whole film unwanted, the
+  torrent counted as finished, dropped its seeds, and stalled a minute until libtorrent
+  called them again. Measured.
+- **A finished torrent keeps its seeds** (`close_redundant_connections` off), for the same
+  minute after a seek back.
+- **Every call on a torrent handle goes through `Torrent.use`.** A removed torrent's handle
+  throws, and a reader can still be mid-piece when the film closes. In the lab that
+  exception ended the app.
+- **A torrent is added unpaused and not auto-managed.** libtorrent adds it paused for its
+  queue to start; without the queue it never starts.
 - **Do not reintroduce HTTP/2 for playback.** A new request must mean a new socket. The
   probe client must use the same protocols, or the warmed connection is never reused.
 
@@ -248,6 +324,84 @@ would be the next step, and it conflicts with "a committed source is never swapp
 place makes `MatroskaExtractor` read a huge element length and jump about 57s with no error at
 all. It does not freeze, but the film skips and we cannot see it.
 
+### Debrid resolve links
+
+The same rig, through a `/resolve/` path that answers a 302 to the file on another port after
+1s, as Torrentio's links do. `resolver-limited` adds a limit of 10 at once, then 0.5 a
+second, answering 429 above it. "Before" is v.1.1.35 and "after" adds `ResolvedLinks`.
+
+| Scenario | Before | After |
+|---|---|---|
+| `resolver` | First frame 4.0s, 75 resolves in 150s | 2.0s, 1 resolve |
+| `resolver-limited` | First frame 4.0s, 0 / 0. 70 resolves, and 52 more requests answered 429 | 2.0s, 0 / 0. 1 resolve, no 429 |
+| `resolver-limited`, seek every 20s | 83 resolves, 22 answered 429. Each seek 1.2s, and one met a 429: **18s / 19s** | 1 resolve. Each seek 0.06s to 0.41s, 1s / 1s |
+| `resolver-expired`, fallback in queue | - | 1s / 1s, as `expired` |
+| `resolver-blackhole` | - | 0 / 0, as `blackhole` |
+| `resolver-corrupt` | - | 0 / 0, skips 3.8s, as `corrupt` |
+
+Live, on 2026-11-03: The Nun II (2023), with Torrentio (Real-Debrid) and AIOStreams
+(ElfHosted). Only the source picker was opened, so nothing played. Two runs before, one after:
+
+| | Before | After |
+|---|---|---|
+| Torrentio links probed | 35, 17 of them not cached | 8, all cached |
+| Answered 429 by Torrentio | 24, 15 | 0 |
+| A cached link answered with Torrentio's `failed` video | 2, 4 | 0 |
+| AIOStreams links probed | 58, 59, with 15 over the 3.5s timeout each time | 8, 1 broken |
+
+### Few sources
+
+One candidate, nothing to fall back to: a little-known film. `busy-<status>-<seconds>` refuses
+every request with that status for that long, then serves the file. "Before" is v.1.1.35.
+
+| Scenario | Before | After |
+|---|---|---|
+| `busy-429-20` | Error at 4s | First frame 21s |
+| `busy-503-45` | Error at 4s | First frame 54s |
+| `dead-host` | Error at 4s | Error at 72s, the price of the rest of this table |
+| Only a notice (`healthy`, `LAB_RUNTIME_MIN=100`, `LAB_READINESS=NOT_CACHED`) | Error at 1s, "none opened" | Error at 1s, `NotCachedYet` |
+
+Unchanged, rerun on the same build: `healthy` 0 / 0; `dead-host`, `decoy` and `expired` with a
+fallback, first frame 3s, 1s / 1s and 1s / 1s; `damage-hopeless` alone, error at 33s.
+
+### Torrents without debrid
+
+`torrent_seeder.py` on this machine: one seeder, its tracker, the same 32Mbps film (4MB/s).
+`--rate` caps the swarm. The final build unless noted, libtorrent4j 2.1.0-35.
+
+| Scenario | Result |
+|---|---|
+| Unlimited swarm, 6 runs | First frame 5s to 7s, 0 / 0, one run 1s / 1s |
+| Swarm at 6MB/s, 1.5 times the film | First frame 8s, 0 / 0 |
+| Swarm at 3MB/s, 0.75 times the film | 13s / 38s in 150s: the physical limit, as `slow-link` |
+| Seek every 20s, unlimited | 1s / 2s |
+| Seek every 20s, 6MB/s | 5s / 24s: each seek waits for its pieces |
+| Resume at 4 min | First frame 6s, 0 / 0 |
+| The whole film, twice | Reaches ENDED, 0 / 0, heap peak 224MB, torrent removed after |
+| Swarm leaves at 40s, fallback in queue | 11s / 11s, then plays on the fallback |
+| Swarm leaves at 40s, alone (build before the edge fix) | Waits for it: 91s frozen at 150s |
+| Nobody seeding, fallback in queue (build before the edge fix) | First frame 39s on the fallback |
+| A real swarm, twice: Big Buck Bunny (CC BY) from archive.org | Metadata 3.1s, the `.mp4` picked by name from 12 files, first frame 14s, 1s / 1s, about 200KB/s from one seed |
+
+`skipped` in the seek runs is the test's own forward seeks: the HTTP seek runs show the same
+1.5s to 3.3s.
+
+What the lab caught on the way, each a bug in this code and not in the seeder:
+
+| Mistake | How it showed |
+|---|---|
+| Added paused: libtorrent leaves that to its queue, which was turned off | No peer ever, no frame in 90s |
+| The index read at the end taken for the playhead: everything else unwanted, torrent "finished", seeds dropped | A minute frozen right after the first frame, in 2 of 3 runs |
+| A removed torrent's handle used by a reader still mid-piece | `invalid torrent handle used`: the app crashed |
+| A swarm that left answered with silence, so the player kept reopening it | 93s frozen with a working fallback queued |
+| The wedge detector read the server's "what has arrived, then wait" as cause 9 | 5s of film skipped after a reopen |
+
+`--start-after 30`, a swarm that is empty when the film opens and arrives later, still fails
+in the lab: the tracker is only asked again 90s later, whatever its `min interval` says.
+Forcing it past that is how an IP gets banned from public trackers, so it is not done. The
+DHT is asked every 15s while there is no peer, and on the real swarm above that is where
+the peers came from.
+
 ## RAM and disk
 
 The question was whether to double both. **Disk yes, RAM no.**
@@ -300,6 +454,14 @@ HTTP/1.1 choice, the timeout and the fatal codes came from.
 | Line | Meaning |
 |---|---|
 | `buffer budget XMB from heap ... disk cache YMB` | What this box was given. Small `YMB` means little free storage |
+| `addon X answered in Yms with N links` | One per addon. Past 1.5s it missed the first ranking and its links come after |
+| `probed N links in Xms: ...` | One per batch. `REFUSED` is the addon answering 429, `UNTESTED` is a link not probed |
+| `queue of N walked K times by +Xms, again in Yms` | A short queue being retried. Many of them and then an error mean the links are really dead |
+| `torrent X metadata after Yms: file n of m, ...` | The swarm answered. Missing means nobody is seeding it, or nobody was found |
+| `torrent X: AKB/s down, BKB/s up, N peers (S seeds), P% of the file` | Every 10s while a torrent plays. A download under the film's bitrate is the swarm, not the app |
+| `torrent X has no peers, asking the trackers and the DHT again` | An empty swarm being looked for |
+| `torrent read gave up waiting for piece N` | That piece did not arrive in 20s. The player reconnects and asks again |
+| `torrent X failed, file: ...` | Usually the disk is full. That torrent is not tried again in this process |
 | `open #n/m ... CACHED_REAL_DEBRID` | Which candidate and how ready. `NOT_CACHED` on the first attempt means nothing better was offered |
 | `reconnecting at P: buffer edge B, state S` | A poor connection was replaced. `state 3` means nobody saw it. Many in a row mean a slow link, not a bad socket |
 | `rebuffer at P with Xms buffered, A/BMB allocated, loading=` | The picture stopped. `loading=false` here is a deadlock, not a slow link |
@@ -329,7 +491,7 @@ is skipped unless given a `lab_url`, so normal test runs ignore it.
 player/stall-lab/make_fixtures.sh <dir>
 
 emulator -avd Television_4K -no-window -no-audio -no-boot-anim -no-snapshot -gpu swiftshader_indirect
-python3 player/stall-lab/fault_server.py <dir>
+python3 player/stall-lab/fault_server.py <dir>   # also :8766, where its /resolve/ links lead
 ./gradlew :player:assembleDebugAndroidTest
 adb install -r -t player/build/outputs/apk/androidTest/debug/player-debug-androidTest.apk
 
@@ -339,6 +501,11 @@ LAB_SECONDS=150 player/stall-lab/run.sh <out> healthy blackhole corrupt slow-con
 # as a decoy.
 LAB_SECONDS=120 LAB_RUNTIME_MIN=3 player/stall-lab/run.sh <out> corrupt@nocues.mkv
 LAB_SECONDS=120 LAB_FALLBACK=1 player/stall-lab/run.sh <out> expired
+
+# A torrent: a seeder and its tracker on this machine. It prints LAB_TORRENT, which replaces
+# lab_url as the first candidate. --rate, --start-after, --die-after shape the swarm.
+python3 player/stall-lab/torrent_seeder.py <dir>/movie.mkv --rate 6000000
+LAB_TORRENT=<printed value> LAB_SECONDS=150 player/stall-lab/run.sh <out> healthy
 ```
 
 Runtimes in minutes: `movie.mkv` 8, `movie.mp4`, `fast.mp4` and `low.mkv` 5, `interleaved.mkv`
@@ -350,6 +517,7 @@ Every scenario is listed in `run.sh`, and every fault in `fault_server.py`'s doc
 |---|---|
 | `LAB_SECONDS` | How long to watch |
 | `LAB_RUNTIME_MIN` | The runtime the app is told to expect |
+| `LAB_READINESS` | Labels every candidate, `NOT_CACHED` for example |
 | `LAB_FALLBACK=1` | Queues a healthy second candidate |
 | `LAB_FORWARD_AT_S` | Presses forward |
 | `LAB_PAUSE_AT_S`, `LAB_PAUSE_FOR_S` | Pauses |
@@ -395,10 +563,18 @@ behaviour that the comments here contradicted.
   and the picture stopped has no detection here: `StallLabDeviceTest` reports it as
   `longest_picture_freeze`, it was seen once, for 1s (`corrupt@fast.mp4`), and a detector with
   no reproduction risks flushing static scenes for nothing.
-- **Label parsing against live addons.** The formats come from their sources. One live list was
-  looked at on the emulator (Torrentio with Real-Debrid): 1080p, 720p, no resolution, then 1080p
-  again. Going back up in resolution only fits a split by readiness, but the screen does not
-  show it, so this is indirect. `open #n/m` in the log shows the real value.
+- **Label parsing against live addons** holds for Torrentio: The Nun II read as 18 cached on
+  Real-Debrid and 18 not cached. AIOStreams (ElfHosted) read as 58 cached on another debrid
+  service, though its links lead to Real-Debrid, so they get no Real-Debrid preference.
+- **Torrentio's real limits** are unknown. Sixteen at once once got through and once did
+  not, depending on what else was using the connection.
+- **Torrents on the TV.** Only the x86 emulator ran the engine. The TV's `armeabi-v7a` build
+  of libtorrent, its memory on 2GB of RAM, and a swarm over its Wi-Fi are unmeasured.
+- **A disk that fills mid-film.** The ranking prefers files that fit, and libtorrent's file
+  error is turned into a failed source, but no run filled a disk.
+- **Torrents in the release build.** R8 keeps `org.libtorrent4j` intact (checked in the
+  dex), but the lab runs a debug build, and the release app was never given a torrent: no
+  addon on the test account returns one.
 - **A real link was never played from the lab.** Playing sends a scrobble `start` at once, with
   no minimum, so a test on a signed-in account writes to its history. That is the reason, not
   an oversight: the first real numbers have to come from a film someone actually wants to watch.

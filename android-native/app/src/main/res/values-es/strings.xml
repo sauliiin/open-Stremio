@@ -259,10 +259,11 @@
     <!-- Player: motivos de falla -->
     <string name="player_error_no_candidates">Ningún addon devolvió un enlace reproducible para este título.</string>
     <plurals name="player_error_all_failed">
-        <item quantity="one">Se intentó la única fuente disponible, dos veces, y no abrió.</item>
-        <item quantity="many">Se intentaron las %1$d fuentes disponibles, dos veces, y ninguna abrió.</item>
-        <item quantity="other">Se intentaron las %1$d fuentes disponibles, dos veces, y ninguna abrió.</item>
+        <item quantity="one">La única fuente disponible no abrió, ni al reintentar.</item>
+        <item quantity="many">Ninguna de las %1$d fuentes disponibles abrió, ni al reintentar.</item>
+        <item quantity="other">Ninguna de las %1$d fuentes disponibles abrió, ni al reintentar.</item>
     </plurals>
+    <string name="player_error_not_cached">Ninguna fuente de este título está lista en tu servicio de debrid. Abrir una pide la descarga: vuelve a intentarlo más tarde.</string>
     <string name="player_error_manual_no_link">Esa fuente no tiene un enlace reproducible.</string>
     <string name="player_error_manual_unresponsive">Esa fuente no respondió. Elige otra de la lista.</string>
     <string name="player_error_manual_failed">Esa fuente no abrió. Elige otra de la lista.</string>

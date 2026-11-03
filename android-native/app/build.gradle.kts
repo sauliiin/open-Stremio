@@ -31,8 +31,8 @@ android {
         applicationId = "mdblist_hub.apk.S84"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 64
-        versionName = "1.1.35"
+        versionCode = 65
+        versionName = "1.1.36"
 
         // Credentials live outside version control. They are still public to
         // anyone reverse-engineering a client APK, so quota-bearing services
@@ -110,6 +110,7 @@ dependencies {
     implementation(projects.core.data)
     implementation(projects.core.ui)
     implementation(projects.player)
+    implementation(projects.torrent)
     implementation(files("../player/libs/media3-decoder-ffmpeg-1.11.0.aar"))
 
     implementation(libs.androidx.core.ktx)

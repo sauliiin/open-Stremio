@@ -16,6 +16,12 @@ sealed interface PlaybackFailure {
     /** The whole queue was walked twice. [count] is how long the queue was. */
     data class AllCandidatesFailed(val count: Int) : PlaybackFailure
 
+    /**
+     * Every link was one the debrid service has not fetched yet, so each opened as its
+     * notice. Opening it is what asks the service to start, so trying later can work.
+     */
+    data object NotCachedYet : PlaybackFailure
+
     /** The source the user picked by hand has no URL to open. */
     data object ManualNoLink : PlaybackFailure
 

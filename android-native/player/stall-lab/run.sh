@@ -47,6 +47,9 @@ query_for() {
     dead-host)      echo "" ;;
     # cold-<seconds> before the host answers anything.
     cold-*)         echo "cold_s=${1#cold-}" ;;
+    # busy-<status>-<seconds>: every request refused with that status, then served.
+    busy-*)         IFS=- read -r _ code secs <<< "$1"
+                    echo "busy_code=$code&busy_s=$secs" ;;
     # corrupt-<offset MB>-<length KB>
     corrupt-*)      IFS=- read -r _ at len <<< "$1"
                     echo "corrupt_at=$((at * MB))&corrupt_len=$((len * 1024))" ;;
@@ -60,6 +63,15 @@ query_for() {
                     echo "corrupt_at=$marks&corrupt_len=1024" ;;
     # In the first bytes, before anything has played.
     damage-start)   echo "corrupt_at=$((1 * MB))&corrupt_len=$((4 * MB))" ;;
+    # Through an addon's resolve link, as Torrentio's are: every request is a 302 that
+    # takes a second. Limited adds the nginx limit_req Torrentio has in front of it.
+    resolver)       echo "resolve_ms=1000" ;;
+    resolver-limited) echo "resolve_ms=1000&resolve_burst=10&resolve_rps=0.5" ;;
+    # The faults above, on the CDN a resolve link led to: the link the player keeps going
+    # back to is the one that fails.
+    resolver-expired)   echo "resolve_ms=1000&deny_at=$FAULT_AT" ;;
+    resolver-blackhole) echo "resolve_ms=1000&blackhole_at=$FAULT_AT" ;;
+    resolver-corrupt)   echo "resolve_ms=1000&corrupt_at=$FAULT_AT&corrupt_len=$((4 * MB))" ;;
     *) echo "unknown scenario $1" >&2; exit 2 ;;
   esac
 }
@@ -73,6 +85,7 @@ for entry in "$@"; do
   stamp=$(date +%s)
   url="http://$HOST/$file?run=$name-$stamp&$query"
   [ "$scenario" = dead-host ] && url="http://${HOST%:*}:9/$file"
+  case "$scenario" in resolver*) url="http://$HOST/resolve/$file?run=$name-$stamp&$query" ;; esac
   seconds=${LAB_SECONDS:-150}
   echo "=== $name ($seconds s)"
   adb -s "$SERIAL" logcat -c
@@ -82,6 +95,8 @@ for entry in "$@"; do
   adb -s "$SERIAL" shell am instrument -w \
     -e class "$CLASS" -e lab_name "$name" -e lab_seconds "$seconds" \
     ${LAB_RUNTIME_MIN:+-e lab_runtime_min "$LAB_RUNTIME_MIN"} \
+    ${LAB_READINESS:+-e lab_readiness "$LAB_READINESS"} \
+    ${LAB_TORRENT:+-e lab_torrent "'$LAB_TORRENT'"} \
     ${LAB_FORWARD_AT_S:+-e lab_forward_at_s "$LAB_FORWARD_AT_S"} \
     ${LAB_PAUSE_AT_S:+-e lab_pause_at_s "$LAB_PAUSE_AT_S"} \
     ${LAB_PAUSE_FOR_S:+-e lab_pause_for_s "$LAB_PAUSE_FOR_S"} \

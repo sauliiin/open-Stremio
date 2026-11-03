@@ -157,6 +157,9 @@ object HttpClients {
      * Short timeouts cost little, because a load that times out resumes from the
      * byte it had reached. A cold debrid link that needs longer is simply asked
      * again, up to the attempt cap in `PlaybackController`.
+     *
+     * [ResolvedLinks] sends every request after the first straight to the CDN a
+     * debrid addon redirected to, instead of through the addon again.
      */
     fun playback(base: OkHttpClient): OkHttpClient = base.newBuilder()
         .cache(null)
@@ -165,6 +168,7 @@ object HttpClients {
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .retryOnConnectionFailure(true)
+        .addInterceptor(ResolvedLinks)
         .build()
 
     /**

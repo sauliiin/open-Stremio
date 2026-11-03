@@ -254,9 +254,10 @@
     <!-- Player: failure reasons -->
     <string name="player_error_no_candidates">No addon returned a playable link for this title.</string>
     <plurals name="player_error_all_failed">
-        <item quantity="one">Tried the only available source, twice, and it would not open.</item>
-        <item quantity="other">Tried all %1$d available sources, twice, and none of them opened.</item>
+        <item quantity="one">The only available source would not open, even after retrying.</item>
+        <item quantity="other">None of the %1$d available sources would open, even after retrying.</item>
     </plurals>
+    <string name="player_error_not_cached">No source for this title is ready on your debrid service yet. Opening one asks it to download the file: try again later.</string>
     <string name="player_error_manual_no_link">That source has no playable link.</string>
     <string name="player_error_manual_unresponsive">That source did not respond. Pick another from the list.</string>
     <string name="player_error_manual_failed">That source would not open. Pick another from the list.</string>
