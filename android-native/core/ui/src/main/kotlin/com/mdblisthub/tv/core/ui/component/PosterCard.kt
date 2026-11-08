@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.animateFloat
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
@@ -99,6 +101,17 @@ fun PosterCard(
      */
     expansionTrigger: Boolean? = null,
     expansionDelayMillis: Long = HubMotion.FocusedCardDelayMillis,
+    /**
+     * False when the row paints a fixed focus frame of its own (Primefly) —
+     * the card then only brightens its title and leaves the ring to the row.
+     */
+    drawFocusBorder: Boolean = true,
+    /**
+     * Told the artwork's width, frame by frame, for as long as this card holds
+     * focus — the row's fixed focus frame follows it as a poster widens into
+     * its landscape preview.
+     */
+    onFocusedArtworkWidth: ((Dp) -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
@@ -126,7 +139,11 @@ fun PosterCard(
         animationSpec = tween(HubMotion.Content, easing = HubMotion.StandardEasing),
         label = "poster-preview-width",
     )
-    val targetBorderWidth = if (focused) {
+    LaunchedEffect(focused, onFocusedArtworkWidth) {
+        val report = onFocusedArtworkWidth
+        if (focused && report != null) snapshotFlow { animatedWidth }.collect { report(it) }
+    }
+    val targetBorderWidth = if (focused && drawFocusBorder) {
         if (HubColors.isCyberpunk) 4.5.dp else 2.5.dp
     } else 0.dp
     val borderWidth by animateDpAsState(
@@ -175,7 +192,7 @@ fun PosterCard(
         modifier = modifier.width(animatedWidth),
         verticalArrangement = Arrangement.spacedBy(if (HubColors.isPrimefly) 4.dp else 8.dp),
     ) {
-        val cornerRadius = if (HubColors.isCyberpunk) 0.dp else HubShapes.Card
+        val cornerRadius = HubShapes.ShelfCard
         Box(
             Modifier
                 .width(animatedWidth)

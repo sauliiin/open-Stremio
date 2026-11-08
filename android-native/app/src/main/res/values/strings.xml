@@ -10,7 +10,7 @@
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
     <string name="menu_settings">Configurações</string>
-    <string name="menu_exit">Sair</string>
+    <string name="menu_exit">Sair da conta</string>
     <string name="home_empty_title">Você está conectado ao Google</string>
     <string name="home_empty_desc">Você pode configurar seus addons agora. A MDBList é opcional e pode ser vinculada depois.</string>
     <string name="home_empty_button">Abrir Addons</string>
@@ -42,6 +42,9 @@
     <string name="settings_clock_scope_both">Ambos</string>
     <string name="settings_clock_scope_none">Nenhum</string>
     <string name="settings_interface_appearance">Aparência</string>
+    <string name="settings_focus_style">Foco</string>
+    <string name="settings_focus_fixed_frame">Frame fixo</string>
+    <string name="settings_focus_moving">Foco móvel</string>
     <string name="settings_clock_position">Posição</string>
     <string name="settings_clock_position_left">Esquerda</string>
     <string name="settings_clock_position_center">Centro</string>
@@ -187,7 +190,7 @@
     <string name="home_hours_minutes">%1$d hs %2$d min</string>
     <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
     <string name="home_episode_code">S%1$02dE%2$02d</string>
-    <string name="home_exit_question">Deseja realmente sair?</string>
+    <string name="home_exit_question">Deseja realmente sair da conta?</string>
     <string name="home_no_visible_rows">Nenhuma fileira está visível</string>
     <string name="home_no_lists">Nenhuma lista disponível</string>
     <string name="home_no_visible_rows_desc">Abra a edição para restaurar uma fileira oculta ou reorganizar suas listas.</string>

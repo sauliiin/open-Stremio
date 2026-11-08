@@ -1,7 +1,15 @@
 package com.mdblisthub.tv.core.ui.component
 
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
@@ -18,13 +26,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mdblisthub.tv.core.ui.R
 import androidx.tv.material3.IconButton
@@ -44,6 +59,7 @@ import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.ui.theme.HubMotion
+import com.mdblisthub.tv.core.ui.theme.HubShapes
 import kotlin.math.abs
 
 /**
@@ -100,6 +116,21 @@ private class LeadingColumnScroll(
         return offset - insetPx
     }
 }
+
+/**
+ * Told which cards sit either side of the one just focused in any row, so a
+ * screen can ready what it will need for them before the next press. The home
+ * screen uses it to warm its hero; the default does nothing.
+ */
+val LocalRowFocusNeighbors = staticCompositionLocalOf<(List<MediaItem>) -> Unit> { {} }
+
+/**
+ * The focus style of the themes that pin focus to the first column (Primefly,
+ * Netflixy and their trailer twins), from the interface settings: true paints one ring
+ * fixed over the first column; false leaves the ring on the focused card, which
+ * then slides into that column with it. The slide itself is the same either way.
+ */
+val LocalFixedFocusFrame = staticCompositionLocalOf { true }
 
 /**
  * A list, rendered as a row of posters.
@@ -196,15 +227,38 @@ fun MediaRow(
         }
     }
 
+    val focusNeighbors = LocalRowFocusNeighbors.current
     val horizontalInsetPx = with(LocalDensity.current) {
         HubDimens.ScreenPaddingHorizontal.toPx()
     }
-    val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant) {
+    val fixedFrameChosen = LocalFixedFocusFrame.current
+    val horizontalScrollSpec = remember(horizontalInsetPx, HubColors.variant, fixedFrameChosen) {
+        fun glide(stiffness: Float) = spring<Float>(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = stiffness,
+        )
         when {
-            HubColors.isNetflixLayout -> LeadingColumnScroll(horizontalInsetPx)
+            // Under the fixed frame the slide *is* the focus change, so it is
+            // paced — a little brisker than Primefly's. With the ring riding
+            // on the card it is quicker still, but not the stock snap.
+            HubColors.isNetflixLayout -> LeadingColumnScroll(
+                horizontalInsetPx,
+                slide = glide(
+                    if (fixedFrameChosen) NETFLIX_FRAME_SLIDE_STIFFNESS else NETFLIX_MOVING_SLIDE_STIFFNESS,
+                ),
+            )
+            // Slower, so the card is still settling into the fixed frame as
+            // the hero above begins to dissolve to it (the hero follows
+            // ~0.5 s after the press) — one movement, not two.
+            //
+            // A spring, not a longer tween: bring-into-view re-aims its
+            // animation every frame as the target moves, and a tween restarts
+            // its easing on each re-aim. With an ease-in start that restart
+            // never gets past the slow part — the row crawled for well over a
+            // second. A spring carries its velocity through the re-aim.
             HubColors.isPrimefly -> LeadingColumnScroll(
                 horizontalInsetPx,
-                slide = tween(HubMotion.Content, easing = HubMotion.EmphasizedDecelerate),
+                slide = glide(PRIMEFLY_SLIDE_STIFFNESS),
             )
             else -> SafeHorizontalScroll(horizontalInsetPx)
         }
@@ -303,57 +357,123 @@ fun MediaRow(
             }
         }
 
-        CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalScrollSpec) {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(HubDimens.CardSpacing),
-                contentPadding = PaddingValues(horizontal = HubDimens.ScreenPaddingHorizontal),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .let { if (rowFocusRequester != null) it.focusRequester(rowFocusRequester) else it }
-                    .focusProperties {
-                        onEnter = {
-                            itemFocusRequesters
-                                .getOrNull(lastFocusedIndex.intValue)
-                                ?.requestFocus() == true
-                        }
-                    },
-            ) {
-                itemsIndexed(items, key = key) { index, item ->
-                    PosterCard(
-                        item = item,
-                        // The first item is the initial screen entry target;
-                        // later returns are handled by this row's restorer.
-                        initialFocusRequester = firstItemFocusRequester.takeIf { index == 0 },
-                        onClick = {
-                            onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
+        // Prime Video's fixed focus frame. The ring is not part of
+        // any card — it is painted once, over the first column, and stays put
+        // while LeadingColumnScroll slides each newly focused card in under it.
+        // A per-card border would visibly hop one card to the right on every
+        // press and then ride the row back, which is the opposite of the look.
+        //
+        // Netflixy and CyberFlix pin the focused card to the first column the
+        // same way, so the same ring works there; it only has to follow the
+        // poster's width as it widens into its landscape preview.
+        val fixedFocusFrame = (HubColors.isPrimefly || HubColors.isNetflixLayout) &&
+            fixedFrameChosen && !isEditMode
+        val focusedArtworkWidth = remember { mutableStateOf(HubDimens.PosterWidth) }
+        var rowHasFocus by remember { mutableStateOf(false) }
+        val frameAlpha by animateFloatAsState(
+            targetValue = if (fixedFocusFrame && rowHasFocus) 1f else 0f,
+            animationSpec = tween(HubMotion.Focus, easing = HubMotion.StandardEasing),
+            label = "fixed-focus-frame-alpha",
+        )
+
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            // Without room past the last card the list stops scrolling before the
+            // final few can reach the first column, and focus would walk out of
+            // the frame. Enough trailing space for the last card to sit in it.
+            val trailingPadding = if (fixedFocusFrame) {
+                (maxWidth - HubDimens.ScreenPaddingHorizontal - HubDimens.PosterWidth)
+                    .coerceAtLeast(HubDimens.ScreenPaddingHorizontal)
+            } else {
+                HubDimens.ScreenPaddingHorizontal
+            }
+            CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalScrollSpec) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(HubDimens.CardSpacing),
+                    contentPadding = PaddingValues(
+                        start = HubDimens.ScreenPaddingHorizontal,
+                        end = trailingPadding,
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { rowHasFocus = it.hasFocus }
+                        .let { if (rowFocusRequester != null) it.focusRequester(rowFocusRequester) else it }
+                        .focusProperties {
+                            onEnter = {
+                                itemFocusRequesters
+                                    .getOrNull(lastFocusedIndex.intValue)
+                                    ?.requestFocus() == true
+                            }
                         },
-                        onFocused = { focused ->
-                            lastFocusedIndex.intValue = index
-                            onItemFocusedIndexed?.invoke(index, focused) ?: onItemFocused(focused)
-                            // Paging off focus rather than off scroll position:
-                            // on a remote the two are the same thing, and focus
-                            // is the one that fires exactly once per card.
-                            if (focused.key == items.lastOrNull()?.key) onReachedEnd()
-                        },
-                        progressPercent = progressPercent?.invoke(index, item),
-                        isWatched = isWatched?.invoke(index, item) ?: false,
-                        onLongClick = onItemLongClickIndexed?.let { handler ->
-                            { handler(index, item) }
-                        },
-                        expandOnFocus = expandCardsOnFocus && !isEditMode,
-                        expansionTrigger = if (synchronizeCardExpansion) {
-                            expandedItemKey?.value == item.key
-                        } else {
-                            null
-                        },
-                        modifier = Modifier
-                            .focusRequester(itemFocusRequesters[index])
-                            .focusProperties { canFocus = !isEditMode },
-                    )
+                ) {
+                    itemsIndexed(items, key = key) { index, item ->
+                        PosterCard(
+                            item = item,
+                            // The first item is the initial screen entry target;
+                            // later returns are handled by this row's restorer.
+                            initialFocusRequester = firstItemFocusRequester.takeIf { index == 0 },
+                            onClick = {
+                                onItemClickIndexed?.invoke(index, item) ?: onItemClick(item)
+                            },
+                            onFocused = { focused ->
+                                lastFocusedIndex.intValue = index
+                                onItemFocusedIndexed?.invoke(index, focused) ?: onItemFocused(focused)
+                                // Paging off focus rather than off scroll position:
+                                // on a remote the two are the same thing, and focus
+                                // is the one that fires exactly once per card.
+                                if (focused.key == items.lastOrNull()?.key) onReachedEnd()
+                                focusNeighbors(
+                                    listOfNotNull(items.getOrNull(index + 1), items.getOrNull(index - 1)),
+                                )
+                            },
+                            progressPercent = progressPercent?.invoke(index, item),
+                            isWatched = isWatched?.invoke(index, item) ?: false,
+                            onLongClick = onItemLongClickIndexed?.let { handler ->
+                                { handler(index, item) }
+                            },
+                            expandOnFocus = expandCardsOnFocus && !isEditMode,
+                            drawFocusBorder = !fixedFocusFrame,
+                            onFocusedArtworkWidth = if (fixedFocusFrame) {
+                                { width -> focusedArtworkWidth.value = width }
+                            } else {
+                                null
+                            },
+                            expansionTrigger = if (synchronizeCardExpansion) {
+                                expandedItemKey?.value == item.key
+                            } else {
+                                null
+                            },
+                            modifier = Modifier
+                                .focusRequester(itemFocusRequesters[index])
+                                .focusProperties { canFocus = !isEditMode },
+                        )
+                    }
                 }
+            }
+            if (fixedFocusFrame) {
+                FixedFocusFrame(width = focusedArtworkWidth, alpha = { frameAlpha })
             }
         }
     }
+}
+
+/**
+ * The fixed focus ring itself. Drawing only — never focusable, never measured
+ * into the row — and its own composable so that following a widening poster
+ * frame by frame recomposes this box alone rather than the whole row.
+ */
+@Composable
+private fun FixedFocusFrame(width: State<Dp>, alpha: () -> Float) {
+    Box(
+        Modifier
+            .padding(start = HubDimens.ScreenPaddingHorizontal)
+            .size(width.value, HubDimens.PosterHeight)
+            .graphicsLayer { this.alpha = alpha() }
+            .border(
+                width = 2.5.dp,
+                color = HubColors.Accent,
+                shape = RoundedCornerShape(HubShapes.ShelfCard),
+            ),
+    )
 }
 
 @Composable
@@ -362,3 +482,23 @@ private fun editIconColors() = androidx.tv.material3.IconButtonDefaults.colors(
     focusedContentColor = HubColors.Text,
     contentColor = HubColors.TextFaint,
 )
+
+/**
+ * Primefly's row slide, timed to meet the hero's change of title: critically
+ * damped at this stiffness it settles in a little over half a second.
+ */
+private const val PRIMEFLY_SLIDE_STIFFNESS = 110f
+
+/**
+ * Netflixy's slide under the fixed frame: the middle ground between its quick
+ * default and Primefly's glide — about a third of a second. Settle time goes
+ * with 1/√stiffness, so doubling it takes roughly 30% off.
+ */
+private const val NETFLIX_FRAME_SLIDE_STIFFNESS = 220f
+
+/**
+ * Netflixy's slide with the moving focus: a touch slower than the stock
+ * bring-into-view spring (stiffness 1500, ~0.15 s) — about a quarter second —
+ * and still quicker than the fixed frame's.
+ */
+private const val NETFLIX_MOVING_SLIDE_STIFFNESS = 450f

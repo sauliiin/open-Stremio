@@ -3,10 +3,19 @@ package com.mdblisthub.tv.ui.home
 import androidx.compose.ui.draw.clipToBounds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import com.mdblisthub.tv.core.ui.component.LocalRowFocusNeighbors
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.async
+import androidx.compose.runtime.MutableState
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.foundation.verticalScroll
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.AnimationSpec
@@ -54,6 +63,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.State
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -102,7 +112,9 @@ import com.mdblisthub.tv.core.ui.theme.HubDimens
 import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.HubThemeVariant
+import coil3.SingletonImageLoader
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import com.mdblisthub.tv.ui.component.AnimatedOpenStreamTitle
 import com.mdblisthub.tv.ui.component.HubButton
 import com.mdblisthub.tv.ui.component.MediaOptionsDialog
@@ -435,6 +447,11 @@ fun HomeScreen(
     val spotlightExitState = remember(HubColors.variant) { mutableStateOf(false) }
     var spotlightExitPending by spotlightExitState
     val usesFocusedShelfHero = HubColors.isNetflixLayout || HubColors.isPrimefly
+    // Remembered: a fresh function reference per recomposition would change
+    // the composition local below and recompose every row under it.
+    val warmHeroNeighbors = remember(viewModel, usesFocusedShelfHero) {
+        if (usesFocusedShelfHero) viewModel::warmHeroNeighbors else { _: List<MediaItem> -> }
+    }
     val showFocusedHeroForRows = hasSpotlightHero &&
         usesFocusedShelfHero &&
         browsingRowsWithFocusedHero
@@ -1283,8 +1300,19 @@ fun HomeScreen(
                         // transition, and the block's left ramp is cut wide
                         // enough (see `HeroArt`) that the artwork has already
                         // faded out by the time it reaches them.
+                        // The gate decides *when* the hero changes title;
+                        // the art and the text both read what it decided.
+                        val heroTarget = remember { mutableStateOf<HeroPanelSnapshot?>(null) }
+                        val heroShown = remember { mutableStateOf<HeroPanelSnapshot?>(null) }
+                        SettledHeroGate(viewModel, heroTarget, heroShown)
                         HeroArtBlock(
                             viewModel = viewModel,
+                            target = heroTarget,
+                            onBackdropRevealed = { url ->
+                                heroTarget.value
+                                    ?.takeIf { it.backdropUrl == url }
+                                    ?.let { heroShown.value = it }
+                            },
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .fillMaxHeight()
@@ -1299,11 +1327,14 @@ fun HomeScreen(
                                     transformOrigin = TransformOrigin(1f, 0f)
                                 },
                         )
-                        HeroPanel(viewModel)
+                        SettledHeroPanel(heroShown, viewModel)
                     }
                 }
 
-                CompositionLocalProvider(LocalBringIntoViewSpec provides rowPivotScroll) {
+                CompositionLocalProvider(
+                    LocalBringIntoViewSpec provides rowPivotScroll,
+                    LocalRowFocusNeighbors provides warmHeroNeighbors,
+                ) {
                     LazyColumn(
                         state = homeListState,
                         modifier = when {
@@ -1984,8 +2015,15 @@ private fun FocusedBackdrop(viewModel: HomeViewModel) {
  * `ExoPlayer` with it.
  */
 @Composable
-private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier) {
-    val backdropUrl by viewModel.focusedBackdropUrl.collectAsStateWithLifecycle()
+private fun HeroArtBlock(
+    viewModel: HomeViewModel,
+    target: State<HeroPanelSnapshot?>,
+    onBackdropRevealed: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // From the gate rather than `focusedBackdropUrl`, so the picture changes
+    // exactly when the title text does — see [SettledHeroGate].
+    val backdropUrl = target.value?.backdropUrl
     val trailerUrl by viewModel.focusedTrailerUrl.collectAsStateWithLifecycle()
     val focused by viewModel.focused.collectAsStateWithLifecycle()
     val miniPlayerActive by MiniPlayerCoordinator.session.collectAsStateWithLifecycle()
@@ -2004,6 +2042,7 @@ private fun HeroArtBlock(viewModel: HomeViewModel, modifier: Modifier = Modifier
         },
         trailerItemKey = focused?.key,
         onTrailerPlaybackChanged = viewModel::onTrailerPlaybackChanged,
+        onBackdropRevealed = onBackdropRevealed,
         modifier = modifier,
         // Aloud, the way the streaming apps this theme is named after do it:
         // an auto-preview is meant to be a preview, and a silent one is just a
@@ -2054,6 +2093,151 @@ private fun HeroPanel(viewModel: HomeViewModel) {
     val resumedEpisode by viewModel.focusedEpisode.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     HeroPanelContent(item, itemDetail, resumedEpisode, language)
+}
+
+/** One title's complete hero — text and backdrop — captured so the outgoing one can fade on its own data. */
+private data class HeroPanelSnapshot(
+    val item: MediaItem,
+    val detail: MediaDetail?,
+    val episode: com.mdblisthub.tv.core.model.Episode?,
+    val backdropUrl: String?,
+)
+
+/**
+ * Decides when the focused-shelf hero changes title, so that its clearlogo,
+ * text and backdrop change together, the way Prime Video's does.
+ *
+ * Left to themselves the pieces arrive at different times: the backdrop and
+ * the clearlogo are two separate downloads, both only possible once the
+ * title's detail has been fetched, and each used to fade in on its own as soon
+ * as it happened to land — so the logo trailed the art by a beat, sometimes
+ * by much more. Here nothing changes until the incoming title is whole:
+ *
+ * 1. focus has settled ([HERO_SETTLE_MS]; a held key passes cards faster),
+ * 2. the title's own detail is in (bounded by [HERO_DETAIL_WAIT_MS]),
+ * 3. its logo and backdrop are fetched *in parallel* (bounded by
+ *    [HERO_IMAGE_WAIT_MS]).
+ *
+ * Only then does [target] — what the backdrop draws — move to it. [shown] —
+ * what the text draws — follows on [HeroArt]'s own report that the new picture
+ * has started to dissolve in, so the text cannot get ahead of the art even
+ * when decoding it takes a moment longer on a slow box. The rows warm their
+ * neighbouring cards ([HomeViewModel.warmHeroNeighbors]), which is what makes
+ * all of this usually finish within the settle itself.
+ */
+@Composable
+private fun SettledHeroGate(
+    viewModel: HomeViewModel,
+    target: MutableState<HeroPanelSnapshot?>,
+    shown: MutableState<HeroPanelSnapshot?>,
+) {
+    val item by viewModel.focused.collectAsStateWithLifecycle()
+    val episode by viewModel.focusedEpisode.collectAsStateWithLifecycle()
+    val currentEpisode by rememberUpdatedState(episode)
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(item?.key, item?.tmdbId) {
+        val focusedItem = item
+        if (focusedItem == null) {
+            target.value = null
+            shown.value = null
+            return@LaunchedEffect
+        }
+        // Nothing on screen yet means nothing to protect: no settle.
+        if (target.value != null) delay(HERO_SETTLE_MS)
+
+        suspend fun publish(detail: MediaDetail?) {
+            val backdrop = runCatching { viewModel.heroBackdropFor(focusedItem, detail) }.getOrNull()
+            withTimeoutOrNull(HERO_IMAGE_WAIT_MS) {
+                coroutineScope {
+                    listOfNotNull(detail?.logoUrl, backdrop)
+                        .map { url -> async { preloadHeroImage(context, url) } }
+                        .awaitAll()
+                }
+            }
+            val snapshot = HeroPanelSnapshot(
+                item = focusedItem,
+                detail = detail,
+                episode = currentEpisode?.takeIf(viewModel::isCurrentEpisode),
+                backdropUrl = backdrop,
+            )
+            target.value = snapshot
+            if (backdrop == null || backdrop == shown.value?.backdropUrl) {
+                // No new picture to wait for: the text can go now.
+                shown.value = snapshot
+            } else {
+                // Normally [HeroArt] reveals it first; this only covers a
+                // picture that never decodes at all.
+                launch {
+                    delay(HERO_REVEAL_FALLBACK_MS)
+                    if (target.value === snapshot && shown.value?.item?.key != focusedItem.key) {
+                        shown.value = snapshot
+                    }
+                }
+            }
+        }
+
+        val details = viewModel.heroDetail(focusedItem)
+        val first = if (focusedItem.tmdbId > 0) {
+            withTimeoutOrNull(HERO_DETAIL_WAIT_MS) { details.filterNotNull().first() }
+        } else {
+            null
+        }
+        publish(first)
+        // Later refinements of the same title — a detail that arrived after
+        // the wait, or a refreshed one — go through the same gate.
+        details.filterNotNull().collect { detail ->
+            if (detail != target.value?.detail) publish(detail)
+        }
+    }
+
+    // The resumed episode's own date lands a little later for "Continuar
+    // assistindo"; it refines the title already up rather than replacing it.
+    LaunchedEffect(episode) {
+        val current = target.value ?: return@LaunchedEffect
+        if (current.item.key != item?.key) return@LaunchedEffect
+        val matching = episode?.takeIf(viewModel::isCurrentEpisode)
+        if (matching == current.episode) return@LaunchedEffect
+        val refreshed = current.copy(episode = matching)
+        target.value = refreshed
+        if (shown.value?.item?.key == refreshed.item.key) shown.value = refreshed
+    }
+}
+
+/** Fetches and decodes [url] into Coil's caches, without drawing it anywhere. */
+private suspend fun preloadHeroImage(context: android.content.Context, url: String) {
+    val metrics = context.resources.displayMetrics
+    SingletonImageLoader.get(context).execute(
+        ImageRequest.Builder(context)
+            .data(url)
+            // Never larger than the screen: fanart.tv originals can be 4K.
+            .size(metrics.widthPixels, metrics.heightPixels)
+            // Inexact, or Coil *upscales* a w1280 backdrop to the full 4K
+            // screen — slow, and a bitmap the hero's own `AsyncImage` (itself
+            // inexact) then can't reuse, so it decoded everything twice. This
+            // keeps the source size, which that request takes straight from
+            // the memory cache.
+            .precision(coil3.size.Precision.INEXACT)
+            .build(),
+    )
+}
+
+/**
+ * The focused-shelf hero's text: clearlogo, metadata and synopsis as one
+ * block, dissolving into the next title's in step with the backdrop behind
+ * it. When it changes is decided by [SettledHeroGate].
+ */
+@Composable
+private fun SettledHeroPanel(shown: State<HeroPanelSnapshot?>, viewModel: HomeViewModel) {
+    val language by viewModel.language.collectAsStateWithLifecycle()
+    Crossfade(
+        targetState = shown.value,
+        animationSpec = tween(HERO_PANEL_FADE_MS, easing = HubMotion.StandardEasing),
+        label = "hero-panel-title-crossfade",
+        modifier = Modifier.fillMaxSize(),
+    ) { snapshot ->
+        HeroPanelContent(snapshot?.item, snapshot?.detail, snapshot?.episode, language)
+    }
 }
 
 @Composable
@@ -2275,6 +2459,25 @@ private const val POLL_MS = 1_000L
  * never waits on an empty screen.
  */
 private const val HERO_EXIT_MS = 220
+
+/** The hero text's change of title; a touch quicker than the backdrop's dissolve. */
+private const val HERO_PANEL_FADE_MS = 400
+
+/**
+ * How long focus must rest on a card before the hero follows it. Key repeat
+ * passes a card every 50–100 ms, so this skips a sweep without being felt on
+ * a single press.
+ */
+private const val HERO_SETTLE_MS = 200L
+
+/** How long the outgoing title waits for the incoming one's detail before giving way. */
+private const val HERO_DETAIL_WAIT_MS = 1_500L
+
+/** How long it then waits for the logo and backdrop, fetched together. */
+private const val HERO_IMAGE_WAIT_MS = 1_200L
+
+/** Text goes anyway if the new backdrop never manages to decode. */
+private const val HERO_REVEAL_FALLBACK_MS = 1_500L
 private const val HERO_ENTER_MS = 420
 
 /**

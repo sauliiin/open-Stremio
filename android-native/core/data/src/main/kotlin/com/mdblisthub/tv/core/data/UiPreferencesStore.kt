@@ -121,6 +121,19 @@ class UiPreferencesStore(context: Context) {
         store.edit { it[KEY_POSTER_LANDSCAPE_TRANSFORMATION] = enabled }
     }
 
+    /**
+     * Primefly's and Netflixy's focus style: a ring fixed over the first column that the
+     * cards slide under (true, the default), or the ring riding on the
+     * focused card itself as it slides there (false).
+     */
+    val fixedFocusFrame: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_FIXED_FOCUS_FRAME] ?: true
+    }
+
+    suspend fun saveFixedFocusFrame(enabled: Boolean) {
+        store.edit { it[KEY_FIXED_FOCUS_FRAME] = enabled }
+    }
+
     /** Whether the bundled opening video is shown when the app starts. */
     val introEnabled: Flow<Boolean> = store.data.map { prefs ->
         prefs[KEY_INTRO_ENABLED] ?: true
@@ -356,6 +369,7 @@ class UiPreferencesStore(context: Context) {
         val KEY_POSTER_LANDSCAPE_TRANSFORMATION =
             booleanPreferencesKey("poster_landscape_transformation")
         val KEY_INTRO_ENABLED = booleanPreferencesKey("intro_enabled")
+        val KEY_FIXED_FOCUS_FRAME = booleanPreferencesKey("fixed_focus_frame")
         val KEY_SPOTLIGHT_HERO = booleanPreferencesKey("spotlight_hero")
         val KEY_LIBRARY_PROVIDER = stringPreferencesKey("library_provider")
         /** Superseded by [KEY_CLOCK_SCOPE]; still read to migrate an existing box. */

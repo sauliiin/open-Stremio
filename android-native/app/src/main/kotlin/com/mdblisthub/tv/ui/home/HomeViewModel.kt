@@ -781,6 +781,56 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     }
 
     /**
+     * One title's own detail, straight from Room — unlike [focusedDetail],
+     * which is settled and keyed to whatever happens to be focused. The
+     * focused-shelf hero pairs this with the exact card it was asked for, so
+     * a late detail can never be drawn under the wrong title.
+     */
+    fun heroDetail(item: MediaItem): Flow<com.mdblisthub.tv.core.model.MediaDetail?> =
+        if (item.tmdbId <= 0) flowOf(null) else graph.media.observeDetail(item.type, item.tmdbId)
+
+    /** The same backdrop choice as [focusedBackdropUrl], for one known title. */
+    suspend fun heroBackdropFor(
+        item: MediaItem,
+        detail: com.mdblisthub.tv.core.model.MediaDetail?,
+    ): String? = detail?.backdropUrl
+        ?: item.backdropUrl
+        ?: if (item.tmdbId > 0) graph.media.getFanartBackdropUrl(item.type, item.tmdbId) else null
+
+    /** Whether [episode] is the one the focused "Continuar assistindo" card resumes. */
+    fun isCurrentEpisode(episode: com.mdblisthub.tv.core.model.Episode): Boolean =
+        _focusedResume.value?.let {
+            it.season == episode.seasonNumber && it.episode == episode.episodeNumber
+        } == true
+
+    private var heroNeighborWarm: Job? = null
+
+    /**
+     * Readies the cards either side of the one just focused — detail, then
+     * clearlogo and backdrop — so the next press finds the whole hero already
+     * cached and can change the moment focus settles, instead of starting a
+     * metadata round trip and two downloads only then.
+     *
+     * Only once the viewer has actually stopped ([HERO_NEIGHBOR_SETTLE_MS],
+     * cancelled by every move): a sweep along a row warms nothing, which is
+     * the same courtesy to mdblist's rate limit the prefetcher extends.
+     */
+    fun warmHeroNeighbors(items: List<MediaItem>) {
+        heroNeighborWarm?.cancel()
+        if (items.isEmpty()) return
+        heroNeighborWarm = viewModelScope.launch {
+            delay(HERO_NEIGHBOR_SETTLE_MS)
+            for (item in items) {
+                if (item.tmdbId <= 0) continue
+                graph.media.ensureDetail(item.type, item.tmdbId)
+                val detail = graph.media.cachedDetail(item.type, item.tmdbId)
+                val urls = listOfNotNull(detail?.logoUrl, detail?.backdropUrl ?: item.backdropUrl)
+                if (urls.isNotEmpty()) graph.imageWarmer.warm(urls)
+            }
+        }
+    }
+
+    /**
      * Focus went back up to the spotlight, so nothing below it is focused.
      *
      * Worth saying out loud rather than leaving [_focused] pointing at the
@@ -961,6 +1011,9 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
          * fallback flashing first.
          */
         const val FANART_SETTLE_MS = 350L
+
+        /** Just past the prefetcher's own settle, so the focused title's fetch goes first. */
+        const val HERO_NEIGHBOR_SETTLE_MS = 450L
 
         /**
          * The settle for the first card focused after the spotlight.

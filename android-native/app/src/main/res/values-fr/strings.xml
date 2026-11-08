@@ -10,7 +10,7 @@
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
     <string name="menu_settings">Paramètres</string>
-    <string name="menu_exit">Quitter</string>
+    <string name="menu_exit">Se déconnecter</string>
     <string name="home_empty_title">Vous êtes connecté à Google</string>
     <string name="home_empty_desc">Vous pouvez maintenant configurer vos addons. MDBList est facultatif et peut être associé plus tard.</string>
     <string name="home_empty_button">Ouvrir les addons</string>
@@ -42,6 +42,9 @@
     <string name="settings_clock_scope_both">Les deux</string>
     <string name="settings_clock_scope_none">Aucun</string>
     <string name="settings_interface_appearance">Apparence</string>
+    <string name="settings_focus_style">Focus</string>
+    <string name="settings_focus_fixed_frame">Cadre fixe</string>
+    <string name="settings_focus_moving">Focus mobile</string>
     <string name="settings_clock_position">Position</string>
     <string name="settings_clock_position_left">Gauche</string>
     <string name="settings_clock_position_center">Centre</string>

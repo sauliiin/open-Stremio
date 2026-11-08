@@ -10,7 +10,7 @@
     <string name="menu_theme_netflixy">Netflixy</string>
     <string name="menu_theme_primefly">Primefly</string>
     <string name="menu_settings">Settings</string>
-    <string name="menu_exit">Exit</string>
+    <string name="menu_exit">Log out</string>
     <string name="home_empty_title">You are connected to Google</string>
     <string name="home_empty_desc">You can configure your addons now. MDBList is optional and can be linked later.</string>
     <string name="home_empty_button">Open Addons</string>
@@ -42,6 +42,9 @@
     <string name="settings_clock_scope_both">Both</string>
     <string name="settings_clock_scope_none">None</string>
     <string name="settings_interface_appearance">Appearance</string>
+    <string name="settings_focus_style">Focus</string>
+    <string name="settings_focus_fixed_frame">Fixed frame</string>
+    <string name="settings_focus_moving">Moving focus</string>
     <string name="settings_clock_position">Position</string>
     <string name="settings_clock_position_left">Left</string>
     <string name="settings_clock_position_center">Center</string>
@@ -187,7 +190,7 @@
     <string name="home_hours_minutes">%1$d h %2$d min</string>
     <!-- e.g. "S05E03"; kept ASCII-safe, no locale variance needed. -->
     <string name="home_episode_code">S%1$02dE%2$02d</string>
-    <string name="home_exit_question">Sign out?</string>
+    <string name="home_exit_question">Log out?</string>
     <string name="home_no_visible_rows">No rows are visible</string>
     <string name="home_no_lists">No lists available</string>
     <string name="home_no_visible_rows_desc">Open editing to restore a hidden row or rearrange your lists.</string>

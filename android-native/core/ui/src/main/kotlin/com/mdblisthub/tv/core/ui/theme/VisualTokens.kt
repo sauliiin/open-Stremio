@@ -44,6 +44,19 @@ object HubShapes {
     val Field = 14.dp
     val Control = 14.dp
     val Card = 16.dp
+
+    /**
+     * A shelf card's corners, and so its focus ring's — the per-card border
+     * and the fixed frame alike, which must match the card they outline.
+     * Tighter on the streaming-service themes (Primefly, Netflixy and their
+     * trailer twins), where 16 dp read as too round and 8 dp as too sharp; Cyberpunk is
+     * square by design.
+     */
+    val ShelfCard get() = when {
+        HubColors.isCyberpunk -> 0.dp
+        HubColors.isPrimefly || HubColors.isNetflixLayout -> 12.dp
+        else -> Card
+    }
     val Panel = 22.dp
     val Dialog = 24.dp
     val Pill = 999.dp

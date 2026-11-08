@@ -1,7 +1,6 @@
 package com.mdblisthub.tv.ui.home
 
 import androidx.annotation.OptIn
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -10,9 +9,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -38,6 +41,7 @@ import com.mdblisthub.tv.R
 import com.mdblisthub.tv.core.ui.theme.HubColors
 import com.mdblisthub.tv.core.ui.theme.HubMotion
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * The hero artwork block: a backdrop that gives way to an autoplaying trailer.
@@ -72,6 +76,12 @@ fun HeroArt(
     trailerItemKey: String? = null,
     /** Reports the first real video frame, rather than URL resolution or buffering. */
     onTrailerPlaybackChanged: (String?, Boolean) -> Unit = { _, _ -> },
+    /**
+     * The instant a backdrop starts dissolving in — its image decoded, not
+     * merely requested. The home hero changes its text on this, so the two
+     * move as one.
+     */
+    onBackdropRevealed: (String) -> Unit = {},
 ) {
     var trailerPlaying by remember(trailerUrl) { mutableStateOf(false) }
     DisposableEffect(trailerUrl, trailerItemKey) {
@@ -116,27 +126,13 @@ fun HeroArt(
                     transformOrigin = TransformOrigin(1f, 0f)
                 },
         ) {
-            Crossfade(
-                targetState = backdropUrl,
-                animationSpec = tween(
-                    durationMillis = HubMotion.Scene,
-                    easing = HubMotion.StandardEasing,
-                ),
-                label = "hero-backdrop-crossfade",
-                modifier = Modifier.matchParentSize(),
-            ) { currentBackdrop ->
-                if (currentBackdrop != null) {
-                    AsyncImage(
-                        model = currentBackdrop,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        alignment = androidx.compose.ui.Alignment.TopStart,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .alpha(1f - trailerAlpha),
-                    )
-                }
-            }
+            BackdropDissolve(
+                url = backdropUrl,
+                onRevealed = onBackdropRevealed,
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = 1f - trailerAlpha },
+            )
 
             // The backdrop owns its own veil because its footprint is smaller
             // than the trailer's. This keeps the reduced still from retaining
@@ -176,6 +172,108 @@ fun HeroArt(
             }
         }
     }
+}
+
+/**
+ * The backdrop's change of title: a true dissolve, the way Prime Video's TV
+ * hero does it.
+ *
+ * Not a `Crossfade` over `AsyncImage`, which is what this used to be: that
+ * starts fading the old picture out the instant the URL changes, while the new
+ * one is still being fetched, so every move dipped to the bare page background
+ * and the new art then popped in. Here each URL is its own layer stacked on
+ * top of the last; the new layer stays invisible until its image has actually
+ * decoded, only then fades in *over* the old one, and the layers beneath are
+ * dropped once it is fully opaque. The old picture is therefore on screen
+ * until the new one completely covers it.
+ *
+ * Layers are `key`ed by URL so a layer that finishes its fade keeps its
+ * already-decoded `AsyncImage` instead of being re-requested on promotion.
+ */
+@Composable
+private fun BackdropDissolve(
+    url: String?,
+    modifier: Modifier = Modifier,
+    onRevealed: (String) -> Unit = {},
+) {
+    val layers = remember { mutableStateListOf<BackdropLayer>() }
+    val currentOnRevealed by rememberUpdatedState(onRevealed)
+    val scope = rememberCoroutineScope()
+    val fade = tween<Float>(durationMillis = BACKDROP_DISSOLVE_MS, easing = HubMotion.StandardEasing)
+
+    LaunchedEffect(url) {
+        if (url == null) {
+            // Nothing to show: let whatever is up fade away rather than cut.
+            layers.toList().forEach { layer ->
+                scope.launch {
+                    layer.alpha.animateTo(0f, fade)
+                    layers.remove(layer)
+                }
+            }
+            return@LaunchedEffect
+        }
+        val existing = layers.firstOrNull { it.url == url }
+        if (existing != null) {
+            // Back to a picture still in the stack (A → B → A inside one
+            // fade): fade out everything over it instead of reloading it.
+            val index = layers.indexOf(existing)
+            layers.drop(index + 1).forEach { above ->
+                scope.launch {
+                    above.alpha.animateTo(0f, fade)
+                    layers.remove(above)
+                }
+            }
+            if (existing.loaded) {
+                currentOnRevealed(url)
+                scope.launch { existing.alpha.animateTo(1f, fade) }
+            }
+            return@LaunchedEffect
+        }
+        // Layers that never got as far as showing anything are not worth
+        // decoding any more: the viewer has already moved past them.
+        layers.removeAll { !it.loaded && it.alpha.value == 0f }
+        layers.add(BackdropLayer(url))
+    }
+
+    Box(modifier) {
+        layers.forEach { layer ->
+            key(layer.url) {
+                AsyncImage(
+                    model = layer.url,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    alignment = androidx.compose.ui.Alignment.TopStart,
+                    // A failed image reveals too: the old title's art must not
+                    // linger behind the new title's text.
+                    onState = { state ->
+                        val settled = state is coil3.compose.AsyncImagePainter.State.Success ||
+                            state is coil3.compose.AsyncImagePainter.State.Error
+                        if (settled && !layer.loaded) {
+                            layer.loaded = true
+                            currentOnRevealed(layer.url)
+                            scope.launch {
+                                // The first picture of all has nothing to
+                                // dissolve from and simply fades up.
+                                layer.alpha.animateTo(1f, fade)
+                                val index = layers.indexOf(layer)
+                                if (index > 0 && layers.lastOrNull() == layer) {
+                                    layers.removeRange(0, index)
+                                }
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = layer.alpha.value },
+                )
+            }
+        }
+    }
+}
+
+private class BackdropLayer(val url: String) {
+    val alpha = Animatable(0f)
+    var loaded = false
 }
 
 /**
@@ -264,6 +362,9 @@ private fun TrailerSurface(
 private const val TRAILER_VOLUME = 0.65f
 
 private const val CROSSFADE_MS = 900
+
+/** One title's backdrop dissolving into the next's. */
+private const val BACKDROP_DISSOLVE_MS = 500
 
 /** Backdrop-only reduction; the autoplay trailer remains full-size. */
 private const val BACKDROP_SCALE = 0.9f

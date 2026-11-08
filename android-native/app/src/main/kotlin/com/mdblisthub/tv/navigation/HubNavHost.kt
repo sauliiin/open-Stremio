@@ -30,6 +30,8 @@ import com.mdblisthub.tv.core.model.ResumePoint
 import com.mdblisthub.tv.core.ui.component.LandscapeArtworkLoader
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
 import com.mdblisthub.tv.core.ui.component.LocalLandscapeArtworkLoader
+import com.mdblisthub.tv.core.ui.component.LocalFixedFocusFrame
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdblisthub.tv.core.ui.theme.HubMotion
 import com.mdblisthub.tv.ui.addons.AddonsScreen
 import com.mdblisthub.tv.ui.detail.DetailScreen
@@ -190,7 +192,13 @@ fun HubNavHost(graph: DataGraph) {
         )
     }
 
-    CompositionLocalProvider(LocalLandscapeArtworkLoader provides artworkLoader) {
+    val fixedFocusFrame by graph.uiPreferences.fixedFocusFrame
+        .collectAsStateWithLifecycle(initialValue = true)
+
+    CompositionLocalProvider(
+        LocalLandscapeArtworkLoader provides artworkLoader,
+        LocalFixedFocusFrame provides fixedFocusFrame,
+    ) {
         Box {
             NavHost(
                 navController = navController,

@@ -132,6 +132,8 @@ data class SettingsUiState(
     val language: String = "en",
     val autotrailer: Boolean = false,
     val posterLandscapeTransformation: Boolean = true,
+    /** Primefly's focus style; see `UiPreferencesStore.fixedFocusFrame`. */
+    val fixedFocusFrame: Boolean = true,
     val introEnabled: Boolean = true,
     /** Defaults to on, matching `UiPreferencesStore.spotlightHero`. */
     val spotlightHero: Boolean = true,
@@ -225,6 +227,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.posterLandscapeTransformation) { partial, enabled ->
                     partial.copy(posterLandscapeTransformation = enabled)
+                }
+                .combine(graph.uiPreferences.fixedFocusFrame) { partial, fixed ->
+                    partial.copy(fixedFocusFrame = fixed)
                 }
                 .combine(graph.uiPreferences.theme) { partial, theme ->
                     partial.copy(theme = theme)
@@ -351,6 +356,10 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
         graph.uiPreferences.savePosterLandscapeTransformation(
             !_state.value.posterLandscapeTransformation,
         )
+    }
+
+    fun setFixedFocusFrame(fixed: Boolean) = viewModelScope.launch {
+        graph.uiPreferences.saveFixedFocusFrame(fixed)
     }
 
     fun toggleIntro() = viewModelScope.launch {
@@ -782,6 +791,26 @@ private fun InterfaceSettingsContent(state: SettingsUiState, viewModel: Settings
                             state.posterLandscapeTransformation,
                             viewModel::togglePosterLandscapeTransformation,
                         )
+                    }
+                    // Only the themes with the fixed ring have a choice to make.
+                    if (
+                        state.theme == HubThemeVariant.PRIMEFLY ||
+                        state.theme == HubThemeVariant.OPTIMUS_PRIME ||
+                        state.theme == HubThemeVariant.NETFLIXY ||
+                        state.theme == HubThemeVariant.CYBERFLIX
+                    ) {
+                        SettingsGroupLine(stringResource(R.string.settings_focus_style)) {
+                            listOf(
+                                true to R.string.settings_focus_fixed_frame,
+                                false to R.string.settings_focus_moving,
+                            ).forEach { (fixed, label) ->
+                                HubButton(
+                                    text = stringResource(label),
+                                    primary = state.fixedFocusFrame == fixed,
+                                    onClick = { viewModel.setFixedFocusFrame(fixed) },
+                                )
+                            }
+                        }
                     }
                     SettingsGroupLine(stringResource(R.string.settings_spotlight_hero)) {
                         OnOffButton(state.spotlightHero, viewModel::toggleSpotlightHero)
