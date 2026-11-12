@@ -307,7 +307,15 @@ class AddonsRepository(
      * Makes this device's list exactly `next` — the "Baixar" action, which is
      * what lets a removal made elsewhere actually land here.
      */
-    suspend fun replaceAll(next: List<AddonEntity>) = dao.replaceAll(next)
+    suspend fun replaceAll(next: List<AddonEntity>) {
+        // The cloud copy is re-read every time Home comes back on screen, and
+        // it is almost always what this device already has. Rewriting the
+        // table anyway invalidates every query that watches it. Compared in
+        // order, because rows that share an `addedAt` sort by insertion, so
+        // only an identical list in an identical order is a true no-op.
+        if (dao.addons() == next) return
+        dao.replaceAll(next)
+    }
 
     suspend fun importCollection(entries: List<StremioCollectionEntryDto>): StremioImportReport {
         val imported = mutableListOf<AddonEntity>()

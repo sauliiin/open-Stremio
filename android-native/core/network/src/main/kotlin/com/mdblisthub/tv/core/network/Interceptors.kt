@@ -6,6 +6,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 internal object UserAgentInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -19,6 +21,51 @@ internal object UserAgentInterceptor : Interceptor {
             // body reaches the JSON parser still compressed and every request
             // in the app fails with `Expected start of the object '{'`.
             .build()
+        return chain.proceed(request)
+    }
+}
+
+/**
+ * How many requests this device has sent that change the viewer's account.
+ *
+ * Home re-reads the account's rows when it comes back on screen, and most of
+ * those returns follow nothing more than a look at a title. This is what lets
+ * it tell the two apart without every screen having to report what it did: a
+ * scrobble, a watchlist toggle, a "mark as watched" all pass through here, so
+ * a revision that has moved means the rows may be out of date — and one that
+ * has not means the last read still stands.
+ */
+object AccountWrites {
+    private val counter = AtomicLong()
+
+    val revision: Long get() = counter.get()
+
+    internal fun record() {
+        counter.incrementAndGet()
+    }
+}
+
+/**
+ * Feeds [AccountWrites]. Counted when the request is sent rather than when it
+ * succeeds: a write that failed still leaves the account in a state worth
+ * re-reading, and erring that way only ever costs a refresh.
+ *
+ * Limited to the library providers on purpose. Plenty of read-only calls are
+ * POSTs — IMDb's GraphQL, the subtitle download, sign-in — and counting those
+ * would report a change on every title the viewer merely looked at.
+ */
+internal object AccountWriteInterceptor : Interceptor {
+    private val accountHosts = listOf(
+        ApiConfig.MDBLIST_BASE,
+        ApiConfig.TRAKT_API_BASE,
+        ApiConfig.SIMKL_API_BASE,
+    ).mapTo(mutableSetOf()) { it.toHttpUrl().host }
+
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (request.method != "GET" && request.method != "HEAD" && request.url.host in accountHosts) {
+            AccountWrites.record()
+        }
         return chain.proceed(request)
     }
 }

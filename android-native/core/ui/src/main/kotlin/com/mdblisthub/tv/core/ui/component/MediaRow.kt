@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +30,8 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -204,6 +207,17 @@ fun MediaRow(
      * row above showing at the pivot, is the row above.
      */
     rowFocusRequester: FocusRequester? = null,
+    /**
+     * Asks this row to take focus back on the card it last held it on.
+     *
+     * For the screen coming back into composition — returning from a title's
+     * details or the player — where nothing holds focus any more and the
+     * `FocusRequester`s the screen kept have all been rebuilt. The card index
+     * and the row's scroll both survive that trip as saved state, so the row
+     * itself is the only thing that still knows which card it was.
+     */
+    restoreFocus: Boolean = false,
+    onFocusRestored: () -> Unit = {},
     /** Enables the modern poster-to-backdrop preview while keeping this row's data and focus model unchanged. */
     expandCardsOnFocus: Boolean = true,
     /** The card whose inline trailer has rendered its first frame. */
@@ -219,11 +233,34 @@ fun MediaRow(
     val itemFocusRequesters = remember(items.size) {
         List(items.size) { FocusRequester() }
     }
-    val lastFocusedIndex = remember(items.size) { androidx.compose.runtime.mutableIntStateOf(0) }
+    // Saveable, not just remembered: leaving for another screen disposes this
+    // row, and the index is what `restoreFocus` aims at on the way back.
+    val lastFocusedIndex = rememberSaveable(items.size) {
+        androidx.compose.runtime.mutableIntStateOf(0)
+    }
+    val rowListState = rememberLazyListState()
     val firstItemFocusRequester = itemFocusRequesters.firstOrNull()
     LaunchedEffect(requestInitialFocus) {
         if (requestInitialFocus && firstItemFocusRequester?.requestFocus() == true) {
             onInitialFocusHandled()
+        }
+    }
+    LaunchedEffect(restoreFocus, items.size) {
+        if (!restoreFocus) return@LaunchedEffect
+        val index = lastFocusedIndex.intValue.coerceIn(0, items.lastIndex)
+        val requester = itemFocusRequesters.getOrNull(index) ?: return@LaunchedEffect
+        // A frame first: before the row's first layout nothing is "visible",
+        // and scrolling then would throw away the restored scroll offset.
+        withFrameNanos { }
+        if (rowListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+            rowListState.scrollToItem(index)
+        }
+        repeat(RESTORE_FOCUS_ATTEMPTS) {
+            if (runCatching { requester.requestFocus() }.getOrDefault(false)) {
+                onFocusRestored()
+                return@LaunchedEffect
+            }
+            withFrameNanos { }
         }
     }
 
@@ -388,6 +425,7 @@ fun MediaRow(
             }
             CompositionLocalProvider(LocalBringIntoViewSpec provides horizontalScrollSpec) {
                 LazyRow(
+                    state = rowListState,
                     horizontalArrangement = Arrangement.spacedBy(HubDimens.CardSpacing),
                     contentPadding = PaddingValues(
                         start = HubDimens.ScreenPaddingHorizontal,
@@ -455,6 +493,9 @@ fun MediaRow(
         }
     }
 }
+
+/** Frames to keep trying while a returning row's card is still being composed. */
+private const val RESTORE_FOCUS_ATTEMPTS = 30
 
 /**
  * The fixed focus ring itself. Drawing only — never focusable, never measured

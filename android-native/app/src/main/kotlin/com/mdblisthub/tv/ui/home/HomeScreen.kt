@@ -59,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateOf
@@ -367,6 +368,12 @@ fun HomeScreen(
     onPlay: (MediaItem, Int?, Int?) -> Unit,
     onChooseSource: (MediaItem, Int?, Int?) -> Unit,
     onSignOut: () -> Unit,
+    /**
+     * Whether the trip away from Home was one that may have changed the rows
+     * — the app went to the background, or the viewer went somewhere other
+     * than a title or the search. Reading it clears it.
+     */
+    consumeForcedRefresh: () -> Boolean = { false },
 ) {
     val viewModel = hubViewModel { HomeViewModel(graph) }
     val lists by viewModel.lists.collectAsStateWithLifecycle()
@@ -408,6 +415,35 @@ fun HomeScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val isNormalTheme = HubColors.variant == HubThemeVariant.NORMAL
     var initialNormalFocusPending by remember { mutableStateOf(false) }
+    /**
+     * The row focus was last on, kept across a trip to another screen.
+     *
+     * Opening a title disposes this whole composable, and everything it only
+     * `remember`s goes with it — including which card the viewer was on. Coming
+     * back then ran the *arrival* path again and parked focus on the hero or
+     * the first card, which read as "it jumped to a different film". The row's
+     * `LazyColumn` key is enough to find it again; the row keeps its own card
+     * index the same way (see `MediaRow.restoreFocus`).
+     *
+     * Null while the spotlight holds focus, which the arrival path already
+     * returns to correctly.
+     */
+    var returnFocusRowKey by rememberSaveable { mutableStateOf<String?>(null) }
+    /** True from recomposition until the saved row has taken focus back. */
+    var returnFocusPending by remember { mutableStateOf(returnFocusRowKey != null) }
+    val onReturnFocusRestored = { returnFocusPending = false }
+    /**
+     * Whether anything at all on this screen holds focus.
+     *
+     * Read from the root, so it covers the rail and the content alike. It
+     * exists for the one state that leaves a television unusable: every row
+     * resolving empty — an expired MDBList key, a quota the account has
+     * already spent, the network down — renders a screen with no focusable on
+     * it, and a D-pad press then has no origin to search from. The key event
+     * goes unhandled, the launcher takes it, and the app simply disappears
+     * with no way back into Settings to fix the cause. See the effect below.
+     */
+    var screenHasFocus by remember { mutableStateOf(false) }
 
     // Hoisted so the reorder-reveal below can convert a row index into a
     // `LazyColumn` index. These two decide how many fixed items sit above the
@@ -443,8 +479,16 @@ fun HomeScreen(
     var lastFocusedListItemIndex by remember { mutableStateOf<Int?>(null) }
     val heroPrimaryFocusRequester = remember { FocusRequester() }
     var lastContentFocusWasSpotlight by remember { mutableStateOf(false) }
-    var browsingRowsWithFocusedHero by remember(HubColors.variant) { mutableStateOf(false) }
-    val spotlightExitState = remember(HubColors.variant) { mutableStateOf(false) }
+    // Saveable so that coming back from a title lands on the same layout it
+    // left — the focused-title hero over its shelf strip — instead of replaying
+    // the spotlight's exit under the card that is taking focus back.
+    var browsingRowsWithFocusedHero by rememberSaveable(HubColors.variant) { mutableStateOf(false) }
+    // Seeded from the flag above rather than saved itself: saved mid-exit it
+    // would come back already at zero alpha, with no animation left to finish
+    // and so nothing to ever raise `browsingRowsWithFocusedHero`.
+    val spotlightExitState = remember(HubColors.variant) {
+        mutableStateOf(browsingRowsWithFocusedHero)
+    }
     var spotlightExitPending by spotlightExitState
     val usesFocusedShelfHero = HubColors.isNetflixLayout || HubColors.isPrimefly
     // Remembered: a fresh function reference per recomposition would change
@@ -541,14 +585,35 @@ fun HomeScreen(
     // focusable was a row card. Now every theme opens on the hero, and the
     // hero is where focus should start on every one of them.
     LaunchedEffect(isNormalTheme, hasSpotlightHero) {
+        initialNormalFocusPending = (isNormalTheme || hasSpotlightHero) && !returnFocusPending
+    }
+
+    // The saved row may be gone by the time the screen is back — deleted,
+    // hidden, emptied by a sync. Give up on it and fall back to an ordinary
+    // arrival rather than leaving the screen with nothing focused.
+    LaunchedEffect(Unit) {
+        if (!returnFocusPending) return@LaunchedEffect
+        delay(RETURN_FOCUS_TIMEOUT_MS)
+        if (!returnFocusPending) return@LaunchedEffect
+        returnFocusPending = false
+        returnFocusRowKey = null
+        browsingRowsWithFocusedHero = false
+        spotlightExitPending = false
+        homeListState.scrollToItem(0)
         initialNormalFocusPending = isNormalTheme || hasSpotlightHero
     }
 
     DisposableEffect(lifecycleOwner, viewModel, isNormalTheme, hasSpotlightHero) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refreshDynamicRows()
-                if (isNormalTheme || hasSpotlightHero) initialNormalFocusPending = true
+                viewModel.refreshDynamicRows(force = consumeForcedRefresh())
+                // A resume is an arrival only when nothing is focused yet.
+                // It also fires on the way back from a title, a beat after
+                // the row has taken its card back, and re-arming the opening
+                // focus there is what moved it to the hero.
+                if ((isNormalTheme || hasSpotlightHero) && !returnFocusPending && !screenHasFocus) {
+                    initialNormalFocusPending = true
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -649,18 +714,6 @@ fun HomeScreen(
     val emptyStateFocusRequester = remember { FocusRequester() }
     val railFocusRequester = remember { FocusRequester() }
     val contentFocusRequester = remember { FocusRequester() }
-    /**
-     * Whether anything at all on this screen holds focus.
-     *
-     * Read from the root, so it covers the rail and the content alike. It
-     * exists for the one state that leaves a television unusable: every row
-     * resolving empty — an expired MDBList key, a quota the account has
-     * already spent, the network down — renders a screen with no focusable on
-     * it, and a D-pad press then has no origin to search from. The key event
-     * goes unhandled, the launcher takes it, and the app simply disappears
-     * with no way back into Settings to fix the cause. See the effect below.
-     */
-    var screenHasFocus by remember { mutableStateOf(false) }
     /**
      * Holds the row list still across a trip to the side rail.
      *
@@ -1434,6 +1487,7 @@ fun HomeScreen(
                                         .onFocusChanged { focus ->
                                             if (focus.hasFocus) {
                                                 lastContentFocusWasSpotlight = true
+                                                returnFocusRowKey = null
                                                 spotlightExitPending = false
                                                 // Nothing below is focused any
                                                 // more, and the hero that reads
@@ -1459,7 +1513,7 @@ fun HomeScreen(
                         }
 
                 if (hasResumeItem) {
-                    item(key = "resume") {
+                    item(key = RESUME_ROW_KEY) {
                         val resumeRowFocus = remember { FocusRequester() }
                         DisposableEffect(Unit) {
                             onDispose { if (lastFocusedRow === resumeRowFocus) lastFocusedRow = null }
@@ -1484,10 +1538,14 @@ fun HomeScreen(
                             onItemFocusedIndexed = { index, focusedItem ->
                                 viewModel.onFocused(focusedItem, resumePoints.getOrNull(index))
                                 lastFocusedRow = resumeRowFocus
+                                returnFocusRowKey = RESUME_ROW_KEY
                                 lastFocusedListItemIndex = shelfLeadingItemCount
                                 onShelfItemFocused()
                             },
                             rowFocusRequester = resumeRowFocus,
+                            restoreFocus = returnFocusPending &&
+                                returnFocusRowKey == RESUME_ROW_KEY,
+                            onFocusRestored = onReturnFocusRestored,
                             key = { index, item -> resumePoints.getOrNull(index)?.key ?: item.key },
                             onItemClickIndexed = { index, _ ->
                                 val point = resumePoints.getOrNull(index)
@@ -1531,16 +1589,9 @@ fun HomeScreen(
                     }
                 }
 
-                itemsIndexed(
-                    homeRows,
-                    key = { _, row ->
-                        when (row) {
-                            is HomeMediaRow.Mdblist -> "mdblist-${row.list.id}"
-                            is HomeMediaRow.Feed -> row.feed.key
-                            is HomeMediaRow.Stremio -> "addon-catalog-${catalogRowIdentity(row.catalog)}"
-                        }
-                    },
-                ) { index, row ->
+                itemsIndexed(homeRows, key = { _, row -> row.listKey }) { index, row ->
+                    val rowKey = row.listKey
+                    val restoreFocus = returnFocusPending && returnFocusRowKey == rowKey
                     val requestInitialFocus = isNormalTheme &&
                         initialNormalFocusPending &&
                         !isEditMode &&
@@ -1551,6 +1602,7 @@ fun HomeScreen(
                     val trackFocus: (MediaItem) -> Unit = {
                         viewModel.onFocused(it)
                         lastFocusedRow = rowFocus
+                        returnFocusRowKey = rowKey
                         lastFocusedListItemIndex = homeRowsStartIndex + index
                         onShelfItemFocused()
                     }
@@ -1592,6 +1644,8 @@ fun HomeScreen(
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                restoreFocus = restoreFocus,
+                                onFocusRestored = onReturnFocusRestored,
                                 expandCardsOnFocus = posterLandscapeTransformation,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
@@ -1647,6 +1701,8 @@ fun HomeScreen(
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                restoreFocus = restoreFocus,
+                                onFocusRestored = onReturnFocusRestored,
                                 expandCardsOnFocus = posterLandscapeTransformation,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
@@ -1727,12 +1783,15 @@ fun HomeScreen(
                                         feed.items.getOrNull(itemIndex)?.toResumePoint(),
                                     )
                                     lastFocusedRow = rowFocus
+                                    returnFocusRowKey = rowKey
                                     lastFocusedListItemIndex = homeRowsStartIndex + index
                                     onShelfItemFocused()
                                 },
                                 requestInitialFocus = requestInitialFocus,
                                 onInitialFocusHandled = onInitialNormalFocusHandled,
                                 rowFocusRequester = rowFocus,
+                                restoreFocus = restoreFocus,
+                                onFocusRestored = onReturnFocusRestored,
                                 expandCardsOnFocus = posterLandscapeTransformation,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
@@ -1748,6 +1807,7 @@ fun HomeScreen(
                         becauseYouWatched,
                         key = { _, row -> "byw-${row.seedTitle}" },
                     ) { index, row ->
+                        val bywRowKey = "byw-${row.seedTitle}"
                         val bywRowFocus = remember { FocusRequester() }
                         DisposableEffect(Unit) {
                             onDispose { if (lastFocusedRow === bywRowFocus) lastFocusedRow = null }
@@ -1763,10 +1823,13 @@ fun HomeScreen(
                             onItemFocused = {
                                 viewModel.onFocused(it)
                                 lastFocusedRow = bywRowFocus
+                                returnFocusRowKey = bywRowKey
                                 lastFocusedListItemIndex = becauseYouWatchedStartIndex + index
                                 onShelfItemFocused()
                             },
                             rowFocusRequester = bywRowFocus,
+                            restoreFocus = returnFocusPending && returnFocusRowKey == bywRowKey,
+                            onFocusRestored = onReturnFocusRestored,
                             isWatched = { _, item -> watchedIds.contains(item.tmdbId) },
                             requestInitialFocus = isNormalTheme &&
                                 initialNormalFocusPending &&
@@ -1811,6 +1874,8 @@ private fun AddonCatalogRow(
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
+    restoreFocus: Boolean = false,
+    onFocusRestored: () -> Unit = {},
     expandCardsOnFocus: Boolean = true,
     expandedItemKey: State<String?>? = null,
     synchronizeCardExpansion: Boolean = false,
@@ -1867,6 +1932,8 @@ private fun AddonCatalogRow(
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         rowFocusRequester = rowFocusRequester,
+        restoreFocus = restoreFocus,
+        onFocusRestored = onFocusRestored,
         expandCardsOnFocus = expandCardsOnFocus,
         expandedItemKey = expandedItemKey,
         synchronizeCardExpansion = synchronizeCardExpansion,
@@ -1877,6 +1944,14 @@ private const val MDBLIST_CATALOG_HOST = "stremio-mdblist.baby-beamup.club"
 
 private fun catalogRowIdentity(catalog: AddonCatalog): String =
     "${catalog.addonBase.trimEnd('/')}|${catalog.key}"
+
+/** This row's `LazyColumn` key — also what the screen saves to find the row again after a trip away. */
+private val HomeMediaRow.listKey: String
+    get() = when (this) {
+        is HomeMediaRow.Mdblist -> "mdblist-${list.id}"
+        is HomeMediaRow.Feed -> feed.key
+        is HomeMediaRow.Stremio -> "addon-catalog-${catalogRowIdentity(catalog)}"
+    }
 
 /** Returns the source MDBList id only for manifests generated by its catalog bridge. */
 private fun AddonCatalog.mdblistMirrorListId(): Long? {
@@ -1918,6 +1993,8 @@ private fun ListRow(
     requestInitialFocus: Boolean = false,
     onInitialFocusHandled: () -> Unit = {},
     rowFocusRequester: FocusRequester? = null,
+    restoreFocus: Boolean = false,
+    onFocusRestored: () -> Unit = {},
     expandCardsOnFocus: Boolean = true,
     expandedItemKey: State<String?>? = null,
     synchronizeCardExpansion: Boolean = false,
@@ -1947,6 +2024,8 @@ private fun ListRow(
         requestInitialFocus = requestInitialFocus,
         onInitialFocusHandled = onInitialFocusHandled,
         rowFocusRequester = rowFocusRequester,
+        restoreFocus = restoreFocus,
+        onFocusRestored = onFocusRestored,
         expandCardsOnFocus = expandCardsOnFocus,
         expandedItemKey = expandedItemKey,
         synchronizeCardExpansion = synchronizeCardExpansion,
@@ -2438,6 +2517,12 @@ private const val RAIL_EXPAND_MS = 250L
 
 /** Steady-state cadence once real content holds focus — cheap, two boolean reads. */
 private const val POLL_MS = 1_000L
+
+/** How long a returning screen waits for its saved row before treating the visit as a fresh arrival. */
+private const val RETURN_FOCUS_TIMEOUT_MS = 2_000L
+
+private const val RESUME_ROW_KEY = "resume"
+
 
 /**
  * The handover between the opening spotlight and the focused shelf hero.

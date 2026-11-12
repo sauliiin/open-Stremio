@@ -82,6 +82,9 @@ object HttpClients {
             .callTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor(UserAgentInterceptor)
+            // On the base client so every client derived from it — Trakt's
+            // and Simkl's included — reports its writes too.
+            .addInterceptor(AccountWriteInterceptor)
             // Response-side, so it rewrites what gets *stored*: TMDB and
             // mdblist both answer `no-cache`, which would make the disk cache
             // above inert. Room is still the source of truth — this layer is

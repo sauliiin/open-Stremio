@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.mdblisthub.tv.core.network.AccountWrites
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +78,10 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
     private val exhaustedLists = mutableSetOf<Long>()
     private val moveMutex = Mutex()
     private var dynamicRefreshJob: Job? = null
+    /** When the last account refresh started; null until one has, or after one that failed. */
+    private var lastDynamicRefreshNanos: Long? = null
+    /** [AccountWrites.revision] as it stood when that refresh started. */
+    private var refreshedAccountRevision = -1L
 
     /**
      * The row a reorder just moved, for the screen to scroll back into view.
@@ -711,13 +716,38 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         return 0
     }
 
-    /** Refreshes account activity whenever Home becomes visible again. */
-    fun refreshDynamicRows() {
+    /**
+     * Refreshes account activity when Home becomes visible again.
+     *
+     * Not on *every* return, which is what this used to do: opening a title
+     * and coming straight back re-read the list index, every feed, the resume
+     * points and the cloud addon list, and downloaded every visited addon
+     * catalog again — for an account nothing had happened to. A return within
+     * [DYNAMIC_REFRESH_MIN_INTERVAL_NANOS] of the last refresh is now skipped,
+     * unless something says the rows may really have changed:
+     *
+     * - [force], which the screen raises when the app itself came back from
+     *   the background, or when the trip away went anywhere other than a
+     *   title or the search — the player, Settings, Addons, sign-in;
+     * - this device having written to the account since ([AccountWrites]);
+     * - the last refresh having failed.
+     *
+     * What is left to wait out the window is only a change made on *another*
+     * device while this one was being browsed.
+     */
+    fun refreshDynamicRows(force: Boolean = false) {
+        val accountRevision = AccountWrites.revision
+        val refreshedRecently = lastDynamicRefreshNanos
+            ?.let { System.nanoTime() - it < DYNAMIC_REFRESH_MIN_INTERVAL_NANOS } == true
+        if (!force && refreshedRecently && accountRevision == refreshedAccountRevision) return
+
         // A previously exhausted page may have gained items while Home was in
         // the background. It is allowed one new end-of-row probe on return.
         exhaustedLists.clear()
         refreshLoadedCatalogs(allAddonCatalogs.value)
         if (dynamicRefreshJob?.isActive == true) return
+        lastDynamicRefreshNanos = System.nanoTime()
+        refreshedAccountRevision = accountRevision
         dynamicRefreshJob = viewModelScope.launch {
             try {
                 kotlinx.coroutines.coroutineScope {
@@ -725,7 +755,14 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
                     // same single-flight refresh as the activity feeds makes a
                     // list created on MDBList appear as soon as Home resumes,
                     // without racing an identical startup request.
-                    launch { graph.lists.refreshLists(force = true) }
+                    launch {
+                        // The index stands in for "the network answered". A
+                        // box that woke before its Wi-Fi must not then sit out
+                        // the window with nothing loaded.
+                        if (graph.lists.refreshLists(force = true).isFailure) {
+                            lastDynamicRefreshNanos = null
+                        }
+                    }
                     launch { graph.homeFeeds.refresh() }
                     launch { graph.playback.refreshResumePoints() }
                     launch { graph.library.refresh(com.mdblisthub.tv.core.model.LibraryBucket.WATCHED) }
@@ -1063,3 +1100,10 @@ private const val SHOW_IMDB_BAR = 70
  * first. See `openingIndex`.
  */
 private const val OPENING_CANDIDATES = 3
+
+/**
+ * How long a Home refresh stands for a plain return — from a title or the
+ * search. Short on purpose: it exists to absorb browsing (open, back, open,
+ * back), not to make the rows any less live than they were.
+ */
+private val DYNAMIC_REFRESH_MIN_INTERVAL_NANOS = java.util.concurrent.TimeUnit.SECONDS.toNanos(60)

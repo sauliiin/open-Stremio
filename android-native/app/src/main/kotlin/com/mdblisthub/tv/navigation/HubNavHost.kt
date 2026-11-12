@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -17,6 +18,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -195,6 +199,37 @@ fun HubNavHost(graph: DataGraph) {
     val fixedFocusFrame by graph.uiPreferences.fixedFocusFrame
         .collectAsStateWithLifecycle(initialValue = true)
 
+    /**
+     * Raised by anything that can leave Home's rows out of date, and cleared
+     * by Home when it reads it on its way back on screen.
+     *
+     * Home skips its account refresh on a return that follows close behind the
+     * last one (see `HomeViewModel.refreshDynamicRows`), which is right for
+     * looking at a title and coming back and wrong for everything else: the
+     * player moves progress and "watched", Settings can switch the library
+     * provider, Addons changes the catalog rows. So any destination other than
+     * a title or the search raises this — including one reached *through* a
+     * title, like the player — and so does the app going to the background,
+     * where anything at all may have happened on another device.
+     */
+    val forceHomeRefresh = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    LaunchedEffect(navController) {
+        navController.currentBackStackEntryFlow.collect { entry ->
+            when (entry.destination.route) {
+                Routes.HOME, Routes.DETAIL, Routes.SEARCH -> Unit
+                else -> forceHomeRefresh.set(true)
+            }
+        }
+    }
+    val activityLifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(activityLifecycle) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) forceHomeRefresh.set(true)
+        }
+        activityLifecycle.addObserver(observer)
+        onDispose { activityLifecycle.removeObserver(observer) }
+    }
+
     CompositionLocalProvider(
         LocalLandscapeArtworkLoader provides artworkLoader,
         LocalFixedFocusFrame provides fixedFocusFrame,
@@ -272,6 +307,7 @@ fun HubNavHost(graph: DataGraph) {
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
                 },
+                consumeForcedRefresh = { forceHomeRefresh.getAndSet(false) },
             )
         }
 
