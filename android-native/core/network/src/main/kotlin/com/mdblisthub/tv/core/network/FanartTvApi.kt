@@ -10,6 +10,8 @@ data class FanartTvImage(
     val id: String? = null,
     val url: String? = null,
     val likes: String? = null,
+    /** ISO 639-1 of any text on the image; `00` when it has none. */
+    val lang: String? = null,
 )
 
 @Serializable

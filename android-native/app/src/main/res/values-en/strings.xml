@@ -33,6 +33,7 @@
     <string name="settings_theme_autotrailer">Autotrailer on Netflixy and Primefly</string>
     <string name="settings_language">App Language</string>
     <string name="settings_poster_landscape_transformation">Expand posters to landscape</string>
+    <string name="settings_trailer_card_landscape">Turn the card landscape when the trailer starts</string>
     <string name="settings_intro">Play intro when opening the app</string>
     <string name="settings_spotlight_hero">Spotlight hero</string>
     <string name="settings_clock">Clock</string>

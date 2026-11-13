@@ -33,6 +33,7 @@
     <string name="settings_theme_autotrailer">Bande-annonce automatique sur Netflixy et Primefly</string>
     <string name="settings_language">Langue de l’application</string>
     <string name="settings_poster_landscape_transformation">Agrandir les affiches au format paysage</string>
+    <string name="settings_trailer_card_landscape">Passer la carte en paysage au lancement de la bande-annonce</string>
     <string name="settings_intro">Lire l’introduction au démarrage</string>
     <string name="settings_spotlight_hero">Mise en avant Spotlight</string>
     <string name="settings_clock">Horloge</string>

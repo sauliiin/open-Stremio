@@ -122,6 +122,21 @@ class UiPreferencesStore(context: Context) {
     }
 
     /**
+     * Whether a focused portrait card turns landscape the moment its trailer
+     * starts — the hero-trailer themes' version of the expansion. Separate
+     * from [posterLandscapeTransformation], which keeps governing the
+     * timed expansion everywhere else. On by default, which is what the
+     * trailer themes always did.
+     */
+    val trailerCardLandscape: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_TRAILER_CARD_LANDSCAPE] ?: true
+    }
+
+    suspend fun saveTrailerCardLandscape(enabled: Boolean) {
+        store.edit { it[KEY_TRAILER_CARD_LANDSCAPE] = enabled }
+    }
+
+    /**
      * Primefly's and Netflixy's focus style: a ring fixed over the first column that the
      * cards slide under (true, the default), or the ring riding on the
      * focused card itself as it slides there (false).
@@ -380,6 +395,7 @@ class UiPreferencesStore(context: Context) {
         val KEY_AUTOTRAILER = booleanPreferencesKey("autotrailer")
         val KEY_POSTER_LANDSCAPE_TRANSFORMATION =
             booleanPreferencesKey("poster_landscape_transformation")
+        val KEY_TRAILER_CARD_LANDSCAPE = booleanPreferencesKey("trailer_card_landscape")
         val KEY_INTRO_ENABLED = booleanPreferencesKey("intro_enabled")
         val KEY_FIXED_FOCUS_FRAME = booleanPreferencesKey("fixed_focus_frame")
         val KEY_SPOTLIGHT_HERO = booleanPreferencesKey("spotlight_hero")

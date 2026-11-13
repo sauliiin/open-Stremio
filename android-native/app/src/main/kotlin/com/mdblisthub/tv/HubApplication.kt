@@ -111,9 +111,18 @@ class HubApplication : Application(), Configuration.Provider, SingletonImageLoad
         // English option produced an English interface wrapped around
         // Portuguese synopses, titles and certifications — the metadata layer
         // never heard about the setting at all.
+        //
+        // A real change also forgets what was cached in the old language:
+        // logos, posters, titles and card art are all chosen per language, and
+        // a week-long detail cache would otherwise keep showing the old ones.
         graph.scope.launch {
+            var previous: String? = null
             graph.uiPreferences.language.collect { tag ->
                 ApiConfig.LANGUAGE = ApiConfig.metadataLanguageFor(tag)
+                if (previous != null && previous != tag) {
+                    runCatching { graph.media.forgetLocalizedMetadata() }
+                }
+                previous = tag
             }
         }
 

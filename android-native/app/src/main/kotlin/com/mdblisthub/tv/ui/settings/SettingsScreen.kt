@@ -132,6 +132,8 @@ data class SettingsUiState(
     val language: String = "en",
     val autotrailer: Boolean = false,
     val posterLandscapeTransformation: Boolean = true,
+    /** See `UiPreferencesStore.trailerCardLandscape`. */
+    val trailerCardLandscape: Boolean = true,
     /** Primefly's focus style; see `UiPreferencesStore.fixedFocusFrame`. */
     val fixedFocusFrame: Boolean = true,
     val introEnabled: Boolean = true,
@@ -231,6 +233,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.posterLandscapeTransformation) { partial, enabled ->
                     partial.copy(posterLandscapeTransformation = enabled)
+                }
+                .combine(graph.uiPreferences.trailerCardLandscape) { partial, enabled ->
+                    partial.copy(trailerCardLandscape = enabled)
                 }
                 .combine(graph.uiPreferences.fixedFocusFrame) { partial, fixed ->
                     partial.copy(fixedFocusFrame = fixed)
@@ -360,6 +365,10 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
         graph.uiPreferences.savePosterLandscapeTransformation(
             !_state.value.posterLandscapeTransformation,
         )
+    }
+
+    fun toggleTrailerCardLandscape() = viewModelScope.launch {
+        graph.uiPreferences.saveTrailerCardLandscape(!_state.value.trailerCardLandscape)
     }
 
     fun setFixedFocusFrame(fixed: Boolean) = viewModelScope.launch {
@@ -627,8 +636,10 @@ fun SettingsScreen(
                             SettingsSection.THEMES -> ThemeSettingsContent(
                                 theme = state.theme,
                                 autotrailer = state.autotrailer,
+                                trailerCardLandscape = state.trailerCardLandscape,
                                 onSelect = viewModel::setTheme,
                                 onToggleAutotrailer = viewModel::toggleAutotrailer,
+                                onToggleTrailerCardLandscape = viewModel::toggleTrailerCardLandscape,
                             )
                             SettingsSection.LIBRARY -> LibrarySettingsContent(state, viewModel)
                             SettingsSection.SUBTITLES -> SubtitleSettingsContent(
@@ -792,13 +803,19 @@ private fun InterfaceSettingsContent(state: SettingsUiState, viewModel: Settings
                 // line each, and a stack of one-line panels reads as a longer
                 // list of unrelated things than it actually is.
                 SettingsGroup(label = stringResource(R.string.settings_interface_appearance)) {
-                    SettingsGroupLine(
-                        stringResource(R.string.settings_poster_landscape_transformation),
+                    // Primefly's cards are landscape already, so the switch
+                    // would do nothing there.
+                    if (state.theme != HubThemeVariant.PRIMEFLY &&
+                        state.theme != HubThemeVariant.OPTIMUS_PRIME
                     ) {
-                        OnOffButton(
-                            state.posterLandscapeTransformation,
-                            viewModel::togglePosterLandscapeTransformation,
-                        )
+                        SettingsGroupLine(
+                            stringResource(R.string.settings_poster_landscape_transformation),
+                        ) {
+                            OnOffButton(
+                                state.posterLandscapeTransformation,
+                                viewModel::togglePosterLandscapeTransformation,
+                            )
+                        }
                     }
                     // Only the themes with the fixed ring have a choice to make.
                     if (
@@ -979,8 +996,10 @@ private fun InterfaceLanguageDropdown(
 private fun ThemeSettingsContent(
     theme: HubThemeVariant,
     autotrailer: Boolean,
+    trailerCardLandscape: Boolean,
     onSelect: (HubThemeVariant) -> Unit,
     onToggleAutotrailer: () -> Unit,
+    onToggleTrailerCardLandscape: () -> Unit,
 ) {
     // CyberFlix and Optimus Prime are playback modes, not additional visual
     // themes: they are Netflixy and Primefly with the compatible autotrailer
@@ -1021,6 +1040,16 @@ private fun ThemeSettingsContent(
                     enabled = autotrailer,
                     onToggle = onToggleAutotrailer,
                 )
+                // Right under the autotrailer it depends on, and only where it
+                // means something: CyberFlix is the one trailer theme with
+                // portrait cards — Optimus Prime's are landscape already.
+                if (theme == HubThemeVariant.CYBERFLIX) {
+                    ToggleSettingsRow(
+                        label = stringResource(R.string.settings_trailer_card_landscape),
+                        enabled = trailerCardLandscape,
+                        onToggle = onToggleTrailerCardLandscape,
+                    )
+                }
             }
         }
     }

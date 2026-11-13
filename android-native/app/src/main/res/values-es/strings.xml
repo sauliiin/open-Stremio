@@ -33,6 +33,7 @@
     <string name="settings_theme_autotrailer">Autotráiler en Netflixy y Primefly</string>
     <string name="settings_language">Idioma de la app</string>
     <string name="settings_poster_landscape_transformation">Expandir pósteres a formato horizontal</string>
+    <string name="settings_trailer_card_landscape">Convertir la tarjeta en horizontal cuando empiece el tráiler</string>
     <string name="settings_intro">Reproducir introducción al abrir la app</string>
     <string name="settings_spotlight_hero">Hero de destacados</string>
     <string name="settings_clock">Reloj</string>

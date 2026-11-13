@@ -28,12 +28,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.mdblisthub.tv.core.data.DataGraph
-import com.mdblisthub.tv.core.model.LandscapeArtwork
+import com.mdblisthub.tv.core.model.CardArtwork
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.ResumePoint
-import com.mdblisthub.tv.core.ui.component.LandscapeArtworkLoader
+import com.mdblisthub.tv.core.ui.component.CardArtworkLoader
 import com.mdblisthub.tv.core.ui.component.LoadingScreen
-import com.mdblisthub.tv.core.ui.component.LocalLandscapeArtworkLoader
+import com.mdblisthub.tv.core.ui.component.LocalCardArtworkLoader
 import com.mdblisthub.tv.core.ui.component.LocalFixedFocusFrame
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.mdblisthub.tv.core.ui.theme.HubMotion
@@ -160,9 +160,8 @@ fun HubNavHost(graph: DataGraph) {
      * a `SnapshotStateMap` records every read against the map as a whole, so a
      * card reading *its own* key subscribed to every other key too. With a
      * screenful of cards each resolving its artwork, every answer that landed
-     * invalidated every visible card — quadratic recomposition on exactly the
-     * themes (Primefly, Optimus) that use this at all, while a row was being
-     * swept.
+     * invalidated every visible card — quadratic recomposition while a row
+     * was being swept.
      *
      * The outer map is deliberately plain: it is only ever grown, and only
      * from the main thread — composition reads through [artworkStateFor], and
@@ -170,16 +169,20 @@ fun HubNavHost(graph: DataGraph) {
      * [rememberCoroutineScope]. Only the per-title `MutableState` inside it is
      * observable, so a resolved poster now recomposes the one card waiting on
      * it.
+     *
+     * Keyed on the locale generation: a change of interface language empties
+     * the Room cache, and these per-session answers must start over with it.
      */
-    val artworkStates = remember { mutableMapOf<String, MutableState<LandscapeArtwork?>>() }
-    val artworkStateFor: (String) -> MutableState<LandscapeArtwork?> = remember {
+    val localeGeneration by graph.media.localeGeneration.collectAsStateWithLifecycle()
+    val artworkStates = remember(localeGeneration) { mutableMapOf<String, MutableState<CardArtwork?>>() }
+    val artworkStateFor: (String) -> MutableState<CardArtwork?> = remember(artworkStates) {
         { key -> artworkStates.getOrPut(key) { mutableStateOf(null) } }
     }
-    val artworkRequests = remember { mutableSetOf<String>() }
+    val artworkRequests = remember(localeGeneration) { mutableSetOf<String>() }
     val artworkPermits = remember { Semaphore(16) }
     val artworkScope = rememberCoroutineScope()
-    val artworkLoader = remember(graph, artworkScope) {
-        LandscapeArtworkLoader(
+    val artworkLoader = remember(graph, artworkScope, artworkStateFor, artworkRequests) {
+        CardArtworkLoader(
             artworkFor = { item -> artworkStateFor(item.key).value },
             request = { item ->
                 // All calls happen from a card effect on the main thread. The
@@ -187,7 +190,7 @@ fun HubNavHost(graph: DataGraph) {
                 if (artworkRequests.add(item.key)) {
                     artworkScope.launch {
                         val artwork = artworkPermits.withPermit {
-                            graph.media.resolveLandscapeArtwork(item)
+                            graph.media.resolveCardArtwork(item)
                         }
                         artworkStateFor(item.key).value = artwork
                     }
@@ -231,7 +234,7 @@ fun HubNavHost(graph: DataGraph) {
     }
 
     CompositionLocalProvider(
-        LocalLandscapeArtworkLoader provides artworkLoader,
+        LocalCardArtworkLoader provides artworkLoader,
         LocalFixedFocusFrame provides fixedFocusFrame,
     ) {
         Box {

@@ -161,27 +161,35 @@ fun PosterCard(
         animationSpec = posterFocusTween(),
         label = "poster-title-color",
     )
-    val displayTitle = if (HubColors.isPrimefly && item.year != null &&
-        !item.title.endsWith("(${item.year})")
-    ) {
-        "${item.title} (${item.year})"
-    } else {
-        item.title
-    }
-    val landscapeArtworkLoader = LocalLandscapeArtworkLoader.current
-    // Only the landscape themes consult this, and only they should *subscribe*
-    // to it: reading it unconditionally attached every card in every theme to
-    // an artwork cache that four of the five themes never write to. Both uses
-    // below already sit behind the same check, so nothing is lost.
-    val resolvedArtwork = if (HubColors.isPrimefly) landscapeArtworkLoader.artworkFor(item) else null
+    val cardArtworkLoader = LocalCardArtworkLoader.current
+    // Every theme reads this now: besides Primefly's landscape art it carries
+    // the title and poster in the interface language (English as fallback),
+    // which lists and addons almost always hand out in English only. Each
+    // card subscribes to its own slot alone — see `HubNavHost`.
+    val resolvedArtwork = cardArtworkLoader.artworkFor(item)
 
     // LazyRow only composes the visible cards (plus its small layout buffer),
     // so composition is the precise signal to start every image on screen.
-    // Focus remains a navigation concern and no longer gates artwork.
-    LaunchedEffect(HubColors.isPrimefly, item.key, item.landscapeUrl) {
-        if (HubColors.isPrimefly && item.landscapeUrl == null && resolvedArtwork == null) {
-            landscapeArtworkLoader.request(item)
-        }
+    // Focus remains a navigation concern and no longer gates artwork. The
+    // loader drops repeats, and a title already in Room answers without a
+    // request.
+    LaunchedEffect(item.key) {
+        if (resolvedArtwork == null) cardArtworkLoader.request(item)
+    }
+
+    val baseTitle = resolvedArtwork?.title?.takeUnless { item.titleIsLabel } ?: item.title
+    // Primefly and the Netflix-layout themes (Netflixy, CyberFlix) always show
+    // the year — though not after an Up Next "Série • T2 E5" label, where it
+    // would read as the episode's. Elsewhere it stays only if the source's own
+    // name carried it, so swapping in the localized name never drops it.
+    val sourceHadYear = item.year != null && item.title.trimEnd().endsWith("(${item.year})")
+    val themeShowsYear = HubColors.isPrimefly || (HubColors.isNetflixLayout && !item.titleIsLabel)
+    val displayTitle = if ((themeShowsYear || sourceHadYear) && item.year != null &&
+        !baseTitle.endsWith("(${item.year})")
+    ) {
+        "$baseTitle (${item.year})"
+    } else {
+        baseTitle
     }
 
     LaunchedEffect(focused) {
@@ -232,8 +240,13 @@ fun PosterCard(
                     }
                 },
         ) {
+            val posterUrl = resolvedArtwork?.posterUrl ?: item.posterUrl
             val artworkUrl = if (backdropExpanded) {
-                item.landscapeUrl ?: item.backdropUrl ?: item.posterUrl
+                resolvedArtwork?.landscapeUrl
+                    ?: item.landscapeUrl
+                    ?: resolvedArtwork?.backdropUrl
+                    ?: item.backdropUrl
+                    ?: posterUrl
             } else if (HubColors.isPrimefly) {
                 // Never crop a portrait poster into a landscape card.
                 resolvedArtwork?.landscapeUrl
@@ -241,7 +254,7 @@ fun PosterCard(
                     ?: resolvedArtwork?.backdropUrl
                     ?: item.backdropUrl
             } else {
-                item.posterUrl
+                posterUrl
             }
             Crossfade(
                 targetState = artworkUrl,

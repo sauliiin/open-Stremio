@@ -154,24 +154,22 @@ fun buildDetailEntity(
         RatingsMapper.fromOmdb(omdb),
     )
 
-    // A logo with no text baked in reads best over fanart, and TMDB ranks its
-    // artwork by votes — so the best-voted Portuguese or English one wins.
-    val logo = tmdb.images?.logos
-        ?.sortedByDescending { it.voteAverage }
-        ?.firstOrNull { it.language == "pt" || it.language == "en" || it.language == null }
+    // Logo, poster and title all follow the interface language with English
+    // as the fallback — see `LocalizedArtwork.kt`.
+    val logoPath = localizedLogoPath(tmdb.images)
 
     return MediaDetailEntity(
         tmdbId = tmdbId,
         type = type.mdblist,
         imdbId = tmdb.externalIds?.imdbId,
-        title = tmdb.displayTitle,
+        title = localizedTitle(tmdb),
         originalTitle = tmdb.displayOriginalTitle,
         tagline = tmdb.tagline?.takeIf { it.isNotBlank() },
         overview = tmdb.overview?.takeIf { it.isNotBlank() } ?: omdb?.plot.orNullIfNA(),
-        posterUrl = TmdbImages.url(tmdb.posterPath, TmdbImages.POSTER_LARGE),
+        posterUrl = TmdbImages.url(localizedPosterPath(tmdb), TmdbImages.POSTER_LARGE),
         landscapeUrl = null,
         backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART),
-        logoUrl = TmdbImages.url(logo?.filePath, TmdbImages.LOGO),
+        logoUrl = TmdbImages.url(logoPath, TmdbImages.LOGO),
         year = date?.take(4)?.toIntOrNull(),
         releaseDate = date,
         runtimeMinutes = tmdb.minutes,

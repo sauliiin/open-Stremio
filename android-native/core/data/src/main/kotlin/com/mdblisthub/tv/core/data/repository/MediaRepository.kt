@@ -3,12 +3,16 @@ package com.mdblisthub.tv.core.data.repository
 import com.mdblisthub.tv.core.data.CachePolicy
 import com.mdblisthub.tv.core.data.SessionStore
 import com.mdblisthub.tv.core.data.mapper.buildDetailEntity
+import com.mdblisthub.tv.core.data.mapper.localizedFanartUrl
+import com.mdblisthub.tv.core.data.mapper.localizedPosterPath
+import com.mdblisthub.tv.core.data.mapper.localizedTitle
+import com.mdblisthub.tv.core.data.mapper.localizedTmdbLandscapeUrl
 import com.mdblisthub.tv.core.data.mapper.toDomain
 import com.mdblisthub.tv.core.data.mapper.toEntity
 import com.mdblisthub.tv.core.database.HubDatabase
 import com.mdblisthub.tv.core.model.AppError
 import com.mdblisthub.tv.core.model.Episode
-import com.mdblisthub.tv.core.model.LandscapeArtwork
+import com.mdblisthub.tv.core.model.CardArtwork
 import com.mdblisthub.tv.core.model.MediaDetail
 import com.mdblisthub.tv.core.model.MediaItem
 import com.mdblisthub.tv.core.model.MediaType
@@ -21,10 +25,15 @@ import com.mdblisthub.tv.core.network.MdblistApi
 import com.mdblisthub.tv.core.network.OmdbApi
 import com.mdblisthub.tv.core.network.TmdbApi
 import com.mdblisthub.tv.core.network.TraktApi
+import androidx.room.withTransaction
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 
 /**
  * One title, assembled from several APIs and kept in Room.
@@ -66,26 +75,27 @@ class MediaRepository(
         mediaDao.detail(tmdbId, type.mdblist)?.toDomain()
 
     /**
-     * Resolves only what a visible Primefly card needs.
+     * Resolves only what a visible card needs: its title, poster and
+     * landscape art in the interface language, English as the fallback.
      *
      * This deliberately avoids MDBList, OMDb, cast, reviews and the rest of
      * full detail hydration. Every composed card can call it immediately
      * without focus turning a row of artwork into a serial metadata crawl.
+     * A detail row already chosen under the current language rules answers
+     * from Room with no request at all.
      */
-    suspend fun resolveLandscapeArtwork(item: MediaItem): LandscapeArtwork {
-        item.landscapeUrl?.let { return LandscapeArtwork(it, item.backdropUrl) }
-
+    suspend fun resolveCardArtwork(item: MediaItem): CardArtwork {
         val resolvedTmdbId = item.tmdbId.takeIf { it > 0 }
             ?: item.imdbId?.let { resolveImdb(item.type, it).getOrNull() }
-            ?: return LandscapeArtwork(backdropUrl = item.backdropUrl)
+            ?: return CardArtwork(landscapeUrl = item.landscapeUrl, backdropUrl = item.backdropUrl)
 
         val cached = mediaDao.detail(resolvedTmdbId, item.type.mdblist)
-        if (cached?.landscapeUrl != null ||
-            cached != null && cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS
-        ) {
-            return LandscapeArtwork(
+        if (cached != null && cached.fetchedAt >= LOCALIZED_ARTWORK_V1_MS) {
+            return CardArtwork(
                 landscapeUrl = cached.landscapeUrl,
                 backdropUrl = cached.backdropUrl ?: item.backdropUrl,
+                title = cached.title.takeIf { it.isNotBlank() },
+                posterUrl = TmdbImages.upscale(cached.posterUrl),
             )
         }
 
@@ -96,21 +106,23 @@ class MediaRepository(
                 apiKey = ApiConfig.TMDB_KEY,
                 language = ApiConfig.LANGUAGE,
                 append = ARTWORK_APPEND,
-                imageLanguage = TmdbApi.IMAGE_LANGUAGES,
+                imageLanguage = TmdbApi.imageLanguages(),
                 videoLanguage = TmdbApi.VIDEO_LANGUAGES,
             )
-            val tmdbLandscape = bestTmdbLandscape(tmdb.images)
+            val tmdbLandscape = localizedTmdbLandscapeUrl(tmdb.images)
             val fanartId = if (item.type == MediaType.SHOW) tmdb.externalIds?.tvdbId else resolvedTmdbId
             val fanartLandscape = if (tmdbLandscape == null) {
                 fanartId?.takeIf { it > 0 }?.let { getFanartLandscapeUrl(item.type, it) }
             } else {
                 null
             }
-            val artwork = LandscapeArtwork(
+            val artwork = CardArtwork(
                 landscapeUrl = tmdbLandscape ?: fanartLandscape,
                 backdropUrl = TmdbImages.url(tmdb.backdropPath, TmdbImages.BACKDROP_FANART)
                     ?: cached?.backdropUrl
                     ?: item.backdropUrl,
+                title = localizedTitle(tmdb).takeIf { it.isNotBlank() },
+                posterUrl = TmdbImages.url(localizedPosterPath(tmdb), TmdbImages.POSTER_CARD),
             )
             mediaDao.updateArtwork(
                 resolvedTmdbId,
@@ -126,12 +138,34 @@ class MediaRepository(
             )
             artwork
         }.getOrElse {
-            LandscapeArtwork(
-                landscapeUrl = cached?.landscapeUrl,
+            CardArtwork(
+                landscapeUrl = cached?.landscapeUrl ?: item.landscapeUrl,
                 backdropUrl = cached?.backdropUrl ?: item.backdropUrl,
             )
         }
     }
+
+    /**
+     * Drops everything cached in the previous interface language — titles,
+     * synopses, posters, logos and card art — so the next screen asks TMDB
+     * again in the new one.
+     */
+    suspend fun forgetLocalizedMetadata() {
+        database.withTransaction {
+            mediaDao.clearDetails()
+            mediaDao.clearEpisodes()
+            mediaDao.clearLandscapeArtwork()
+        }
+        _localeGeneration.update { it + 1 }
+    }
+
+    private val _localeGeneration = MutableStateFlow(0)
+
+    /**
+     * Bumped after [forgetLocalizedMetadata], so in-memory card caches built
+     * in the previous language know to start over.
+     */
+    val localeGeneration: StateFlow<Int> = _localeGeneration.asStateFlow()
 
     fun observeEpisodes(showTmdbId: Int, seasonNumber: Int): Flow<List<Episode>> =
         mediaDao.observeEpisodes(showTmdbId, seasonNumber).map { rows -> rows.map { it.toDomain() } }
@@ -160,7 +194,7 @@ class MediaRepository(
         val mediaTypeStr = if (type == MediaType.SHOW) "tv" else "movies"
         val response = fanartTvApi.getArt(mediaTypeStr, fanartId)
         val thumbs = if (type == MediaType.SHOW) response.tvthumb else response.moviethumb
-        bestFanartUrl(thumbs)
+        localizedFanartUrl(thumbs)
     }.getOrNull()
 
     /** Resolves Stremio catalog cards, which are commonly identified only by IMDb ID. */
@@ -204,6 +238,7 @@ class MediaRepository(
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
             cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
             cached.fetchedAt >= TRAKT_DIRECT_REVIEWS_V1_MS &&
+            cached.fetchedAt >= LOCALIZED_ARTWORK_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, maxAge)
         ) {
             return@runCatching
@@ -227,6 +262,7 @@ class MediaRepository(
             cached.fetchedAt >= LANDSCAPE_ART_SELECTION_V2_MS &&
             cached.fetchedAt >= TMDB_EDITORIAL_METADATA_V1_MS &&
             cached.fetchedAt >= TRAKT_DIRECT_REVIEWS_V1_MS &&
+            cached.fetchedAt >= LOCALIZED_ARTWORK_V1_MS &&
             !CachePolicy.isStale(cached.fetchedAt, CachePolicy.DETAIL_MS)
         ) {
             return@runCatching
@@ -250,7 +286,7 @@ class MediaRepository(
             apiKey = ApiConfig.TMDB_KEY,
             language = ApiConfig.LANGUAGE,
             append = TmdbApi.DETAIL_APPEND,
-            imageLanguage = TmdbApi.IMAGE_LANGUAGES,
+            imageLanguage = TmdbApi.imageLanguages(),
             videoLanguage = TmdbApi.VIDEO_LANGUAGES,
         )
 
@@ -297,7 +333,7 @@ class MediaRepository(
         // A language-tagged TMDB backdrop generally carries the movie's title
         // or campaign treatment and works as card art. Untagged imagery is a
         // plain backdrop and therefore belongs only to the final fallback.
-        val tmdbLandscape = bestTmdbLandscape(tmdb.images)
+        val tmdbLandscape = localizedTmdbLandscapeUrl(tmdb.images)
 
         val entity = buildDetailEntity(
             type = type,
@@ -337,23 +373,15 @@ private const val TMDB_EDITORIAL_METADATA_V1_MS = 1_787_356_800_000L
 /** Refreshes cached details once to source Trakt reviews from Trakt itself. */
 private const val TRAKT_DIRECT_REVIEWS_V1_MS = 1_791_244_800_000L
 /**
+ * Re-chooses logo, poster, title and card art once under the interface-
+ * language-then-English rule; older rows were picked with Portuguese and
+ * English hard-coded, whatever the interface said.
+ */
+private const val LOCALIZED_ARTWORK_V1_MS = 1_794_528_000_000L
+/**
  * Comments fetched per title, before spoilers and one-liners are dropped.
  * Trakt pages default to ten, which would often leave nothing after filtering.
  */
 private const val TRAKT_COMMENTS_LIMIT = 40
-private const val ARTWORK_APPEND = "external_ids,images"
-
-private fun bestTmdbLandscape(
-    images: com.mdblisthub.tv.core.network.dto.TmdbImagesDto?,
-): String? = listOf("pt", "en").firstNotNullOfOrNull { language ->
-    images?.backdrops
-        ?.filter { it.filePath.isNotBlank() && it.language == language }
-        ?.maxByOrNull { it.voteAverage }
-        ?.let { TmdbImages.url(it.filePath, TmdbImages.BACKDROP_FANART) }
-}
-
-private fun bestFanartUrl(images: List<com.mdblisthub.tv.core.network.FanartTvImage>?): String? =
-    images
-        ?.filter { it.url?.startsWith("http") == true }
-        ?.maxByOrNull { it.likes?.toIntOrNull() ?: 0 }
-        ?.url
+/** `translations` carries the English title fallback; see `localizedTitle`. */
+private const val ARTWORK_APPEND = "external_ids,images,translations"

@@ -136,6 +136,20 @@ object ApiConfig {
     const val DEFAULT_LANGUAGE = "en-US"
 
     /**
+     * ISO 639-1 codes the artwork and titles are chosen in, most preferred
+     * first: the interface language, then English as the fallback. Read per
+     * call, like [LANGUAGE], so a change in Settings applies to the very next
+     * request.
+     */
+    fun artworkLanguages(): List<String> =
+        listOf(LANGUAGE.substringBefore('-').lowercase(), FALLBACK_ARTWORK_LANGUAGE).distinct()
+
+    /** The region half of [LANGUAGE] (`BR` in `pt-BR`), or null when it has none. */
+    fun metadataRegion(): String? = LANGUAGE.substringAfter('-', "").uppercase().takeIf { it.isNotBlank() }
+
+    const val FALLBACK_ARTWORK_LANGUAGE = "en"
+
+    /**
      * Turns an interface language tag into the region-qualified one TMDB
      * expects. `pt` alone returns European Portuguese metadata, which is not
      * what a `pt` interface setting means for this app's audience.

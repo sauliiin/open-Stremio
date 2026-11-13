@@ -10,6 +10,7 @@ data class TmdbDetailDto(
     val name: String? = null,
     @SerialName("original_title") val originalTitle: String? = null,
     @SerialName("original_name") val originalName: String? = null,
+    @SerialName("original_language") val originalLanguage: String? = null,
     val overview: String? = null,
     val tagline: String? = null,
     @SerialName("backdrop_path") val backdropPath: String? = null,
@@ -37,6 +38,7 @@ data class TmdbDetailDto(
     @SerialName("content_ratings") val contentRatings: TmdbContentRatingsDto? = null,
     @SerialName("release_dates") val releaseDates: TmdbReleaseDatesDto? = null,
     val reviews: TmdbReviewsDto? = null,
+    val translations: TmdbTranslationsDto? = null,
 ) {
     val displayTitle: String get() = title ?: name ?: ""
     val displayOriginalTitle: String? get() = originalTitle ?: originalName
@@ -126,7 +128,28 @@ data class TmdbImagesDto(
     val logos: List<TmdbImageDto> = emptyList(),
     /** Full landscape collection; the highest-voted image feeds Primefly cards. */
     val backdrops: List<TmdbImageDto> = emptyList(),
+    /** Portrait collection, so the card poster can follow the interface language. */
+    val posters: List<TmdbImageDto> = emptyList(),
 )
+
+@Serializable
+data class TmdbTranslationsDto(val translations: List<TmdbTranslationDto> = emptyList())
+
+@Serializable
+data class TmdbTranslationDto(
+    @SerialName("iso_639_1") val language: String = "",
+    @SerialName("iso_3166_1") val country: String = "",
+    val data: TmdbTranslationDataDto? = null,
+)
+
+/** Films carry `title`, series `name`; a blank one means "not translated". */
+@Serializable
+data class TmdbTranslationDataDto(
+    val title: String? = null,
+    val name: String? = null,
+) {
+    val displayTitle: String? get() = title?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() }
+}
 
 @Serializable
 data class TmdbImageDto(

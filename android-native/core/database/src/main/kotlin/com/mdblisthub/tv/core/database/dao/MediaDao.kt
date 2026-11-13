@@ -77,15 +77,20 @@ interface MediaDao {
     @Query("SELECT tmdbId FROM media WHERE imdbId = :imdbId AND type = :type LIMIT 1")
     suspend fun tmdbIdForImdb(imdbId: String, type: String): Int?
 
+    /**
+     * A list's cards. Title and poster come from the detail row when there is
+     * one — those are chosen in the interface language, where MDBList's are
+     * always English — with the poster rewritten to the card's size.
+     */
     @Query(
         """
         SELECT
             m.tmdbId,
             m.type,
             m.imdbId,
-            m.title,
+            COALESCE(NULLIF(d.title, ''), m.title) AS title,
             m.year,
-            m.posterUrl,
+            COALESCE(REPLACE(d.posterUrl, '/t/p/w500/', '/t/p/w185/'), m.posterUrl) AS posterUrl,
             COALESCE(d.landscapeUrl, m.landscapeUrl) AS landscapeUrl,
             COALESCE(m.backdropUrl, d.backdropUrl) AS backdropUrl,
             m.genres,
@@ -166,4 +171,8 @@ interface MediaDao {
 
     @Query("DELETE FROM media")
     suspend fun clearMedia()
+
+    /** Card art is chosen per interface language; the rest of the card is not. */
+    @Query("UPDATE media SET landscapeUrl = NULL")
+    suspend fun clearLandscapeArtwork()
 }

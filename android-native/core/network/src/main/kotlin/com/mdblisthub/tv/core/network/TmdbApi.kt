@@ -121,11 +121,21 @@ interface TmdbApi {
     ): TmdbPageDto
 
     companion object {
+        /**
+         * `translations` is what gives the title its English fallback: TMDB's
+         * own `title` falls back to the original-language name, which for an
+         * untranslated Japanese or Korean title is a script the viewer may not
+         * read at all.
+         */
         const val DETAIL_APPEND =
-            "credits,aggregate_credits,external_ids,videos,recommendations,images,content_ratings,release_dates,reviews"
+            "credits,aggregate_credits,external_ids,videos,recommendations,images,content_ratings,release_dates,reviews,translations"
 
-        /** `null` is TMDB's spelling for "artwork with no text on it". */
-        const val IMAGE_LANGUAGES = "pt,en,null"
+        /**
+         * The interface language, English, and `null` — TMDB's spelling for
+         * "artwork with no text on it". Follows [ApiConfig.LANGUAGE], so a
+         * Spanish or French interface is actually offered its own artwork.
+         */
+        fun imageLanguages(): String = (ApiConfig.artworkLanguages() + "null").joinToString(",")
 
         const val VIDEO_LANGUAGES = "pt,en,null"
     }

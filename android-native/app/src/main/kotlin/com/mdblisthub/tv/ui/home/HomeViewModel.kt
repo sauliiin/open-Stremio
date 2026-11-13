@@ -155,6 +155,10 @@ class HomeViewModel(private val graph: DataGraph) : ViewModel() {
         graph.uiPreferences.posterLandscapeTransformation
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
+    val trailerCardLandscape: StateFlow<Boolean> =
+        graph.uiPreferences.trailerCardLandscape
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
     /**
      * The clock overlay's three settings, read here rather than inside the
      * clock itself so the home can decide whether to compose it at all —

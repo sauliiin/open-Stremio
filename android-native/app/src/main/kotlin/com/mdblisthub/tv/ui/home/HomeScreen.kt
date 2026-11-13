@@ -398,6 +398,14 @@ fun HomeScreen(
     val spotlightEnabled by viewModel.spotlightEnabled.collectAsStateWithLifecycle()
     val posterLandscapeTransformation by
         viewModel.posterLandscapeTransformation.collectAsStateWithLifecycle()
+    val trailerCardLandscape by viewModel.trailerCardLandscape.collectAsStateWithLifecycle()
+    // In the hero-trailer themes the card turns landscape on the trailer's
+    // first frame, and that effect has its own switch under Themes.
+    val rowCardExpansion = if (HubColors.hasHeroTrailer) {
+        trailerCardLandscape
+    } else {
+        posterLandscapeTransformation
+    }
     val clockEnabled by viewModel.clockEnabled.collectAsStateWithLifecycle()
     val clockPosition by viewModel.clockPosition.collectAsStateWithLifecycle()
     val clockHomeAutoHide by viewModel.clockHomeAutoHide.collectAsStateWithLifecycle()
@@ -1582,7 +1590,7 @@ fun HomeScreen(
                                 !isEditMode &&
                                 !hasSpotlightHero,
                             onInitialFocusHandled = onInitialNormalFocusHandled,
-                            expandCardsOnFocus = posterLandscapeTransformation,
+                            expandCardsOnFocus = rowCardExpansion,
                             expandedItemKey = trailerPlayingItemKey,
                             synchronizeCardExpansion = HubColors.hasHeroTrailer,
                         )
@@ -1646,7 +1654,7 @@ fun HomeScreen(
                                 rowFocusRequester = rowFocus,
                                 restoreFocus = restoreFocus,
                                 onFocusRestored = onReturnFocusRestored,
-                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandCardsOnFocus = rowCardExpansion,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
@@ -1703,7 +1711,7 @@ fun HomeScreen(
                                 rowFocusRequester = rowFocus,
                                 restoreFocus = restoreFocus,
                                 onFocusRestored = onReturnFocusRestored,
-                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandCardsOnFocus = rowCardExpansion,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
@@ -1792,7 +1800,7 @@ fun HomeScreen(
                                 rowFocusRequester = rowFocus,
                                 restoreFocus = restoreFocus,
                                 onFocusRestored = onReturnFocusRestored,
-                                expandCardsOnFocus = posterLandscapeTransformation,
+                                expandCardsOnFocus = rowCardExpansion,
                                 expandedItemKey = trailerPlayingItemKey,
                                 synchronizeCardExpansion = HubColors.hasHeroTrailer,
                             )
@@ -1838,7 +1846,7 @@ fun HomeScreen(
                                 homeRows.isEmpty() &&
                                 index == 0,
                             onInitialFocusHandled = onInitialNormalFocusHandled,
-                            expandCardsOnFocus = posterLandscapeTransformation,
+                            expandCardsOnFocus = rowCardExpansion,
                             expandedItemKey = trailerPlayingItemKey,
                             synchronizeCardExpansion = HubColors.hasHeroTrailer,
                         )

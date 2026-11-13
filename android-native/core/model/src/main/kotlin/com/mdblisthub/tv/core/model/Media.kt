@@ -38,18 +38,32 @@ data class MediaItem(
     val runtimeMinutes: Int? = null,
     /** Best available score, 0–100, for the corner badge on the card. */
     val score: Int? = null,
+    /**
+     * True when [title] is a composed label — an Up Next "Série • T2 E5" —
+     * rather than the title's name, so a card must not swap it for the
+     * localized name it resolves.
+     */
+    val titleIsLabel: Boolean = false,
 ) {
     /** Stable identity across lists, used as the Compose list key. */
     val key: String get() = "${type.mdblist}:${tmdbId.takeIf { it > 0 } ?: imdbId.orEmpty()}"
 }
 
-/** Artwork resolved lazily for a landscape card without hydrating all metadata. */
+/**
+ * What a shelf card shows, resolved lazily without hydrating all metadata:
+ * each field in the interface language, English as the fallback. Null means
+ * "keep what the card's source sent".
+ */
 @Serializable
-data class LandscapeArtwork(
+data class CardArtwork(
     /** Purpose-made horizontal artwork: TMDB campaign art, then Fanart thumb. */
     val landscapeUrl: String? = null,
     /** Generic scene backdrop, used only when purpose-made artwork does not exist. */
     val backdropUrl: String? = null,
+    /** Localized title; lists and addons usually hand out the English one. */
+    val title: String? = null,
+    /** Localized poster, already sized for a card. */
+    val posterUrl: String? = null,
 )
 
 @Serializable
