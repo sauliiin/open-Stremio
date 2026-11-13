@@ -66,6 +66,7 @@
     <string name="settings_section_player">Lecteur</string>
     <string name="settings_audio_preferred_lang">Piste audio préférée</string>
     <string name="settings_auto_play_next_episode">Lire automatiquement l’épisode suivant</string>
+    <string name="settings_skip_segments">Afficher le bouton Passer l’intro</string>
     <string name="lang_pt">Portugais</string>
     <string name="lang_en">Anglais</string>
     <string name="lang_es">Espagnol</string>
@@ -209,6 +210,9 @@
     <string name="player_stop_next_episode">Interrompre</string>
     <string name="player_play_next_episode">Lire l’épisode suivant</string>
     <string name="player_next_episode_number">Saison %1$d · Épisode %2$d</string>
+    <string name="player_skip_intro">Passer l’intro</string>
+    <string name="player_skip_recap">Passer le récap</string>
+    <string name="player_skip_credits">Passer le générique</string>
     <string name="player_no_addons">Aucun addon installé. Les sources proviennent des addons.</string>
     <string name="player_no_imdb">Ce titre n’a pas d’identifiant IMDb, utilisé par les addons pour l’indexation.</string>
     <string name="player_generic_error">Impossible de lire ce titre.</string>

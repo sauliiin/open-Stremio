@@ -15,6 +15,7 @@ import com.mdblisthub.tv.core.model.ClockPosition
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PersonSummary
 import com.mdblisthub.tv.core.model.ScrobbleTarget
+import com.mdblisthub.tv.core.model.SkipSegment
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.model.WikipediaLookup
 import com.mdblisthub.tv.player.NO_TRACK
@@ -52,6 +53,8 @@ data class PlayerUiState(
     val noAddons: Boolean = false,
     val missingImdbId: Boolean = false,
     val nextEpisode: NextEpisodeTarget? = null,
+    /** Intro/recap/credits that can be skipped, ordered by start; empty when unknown. */
+    val skipSegments: List<SkipSegment> = emptyList(),
 )
 
 data class NextEpisodeTarget(
@@ -259,6 +262,8 @@ class PlayerViewModel(
             }
         }
 
+        loadSkipSegments(session.target?.imdbId)
+
         val stremioId = session.target?.stremioId() ?: return
         val options = graph.streams.subtitles(type, stremioId)
         _ui.update { it.copy(subtitles = options) }
@@ -331,6 +336,10 @@ class PlayerViewModel(
         target = scrobbleTarget
         val stremioId = scrobbleTarget.stremioId() ?: imdbId
 
+        // Beside the cascade, never in front of it: the button is needed
+        // seconds into the episode at the earliest, the picture right away.
+        loadSkipSegments(imdbId)
+
         if (graph.addons.addons().isEmpty()) {
             _ui.update { it.copy(searching = false, noAddons = true) }
             return
@@ -369,6 +378,23 @@ class PlayerViewModel(
         viewModelScope.launch {
             val options = graph.streams.subtitles(type, stremioId)
             _ui.update { it.copy(subtitles = options) }
+        }
+    }
+
+    /**
+     * Where this episode's intro, recap and credits are — see
+     * `SkipSegmentsRepository`. Episodes only: IntroDB's film timings are
+     * too sparse and too often wrong to put a button on.
+     */
+    private fun loadSkipSegments(imdbId: String?) {
+        val seasonNumber = season
+        val episodeNumber = episode
+        if (type != MediaType.SHOW || seasonNumber == null || episodeNumber == null) return
+        if (imdbId.isNullOrBlank()) return
+        viewModelScope.launch {
+            if (!graph.uiPreferences.skipSegmentsEnabled.first()) return@launch
+            val segments = graph.skipSegments.segmentsFor(imdbId, seasonNumber, episodeNumber)
+            if (segments.isNotEmpty()) _ui.update { it.copy(skipSegments = segments) }
         }
     }
 

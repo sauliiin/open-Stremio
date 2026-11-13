@@ -110,6 +110,13 @@ object ApiConfig {
         private set
 
     /**
+     * IntroDB, the community index of where an episode's intro, recap and
+     * credits sit — what the player's "Skip intro" button reads. Reads are
+     * anonymous: no key, nothing to install.
+     */
+    const val INTRODB_BASE = "https://api.introdb.app/"
+
+    /**
      * Metadata language, with an English fallback wherever TMDB supports one.
      *
      * A `var`, deliberately, and the one piece of mutable state in this file.

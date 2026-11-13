@@ -71,6 +71,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
@@ -115,6 +116,8 @@ import com.mdblisthub.tv.core.data.DataGraph
 import com.mdblisthub.tv.core.model.CastMember
 import com.mdblisthub.tv.core.model.MediaType
 import com.mdblisthub.tv.core.model.PlayableStream
+import com.mdblisthub.tv.core.model.SkipSegment
+import com.mdblisthub.tv.core.model.SkipSegmentKind
 import com.mdblisthub.tv.core.model.SubtitleOption
 import com.mdblisthub.tv.core.ui.component.FanartBackdrop
 import com.mdblisthub.tv.core.ui.component.HubSpinner
@@ -302,12 +305,17 @@ fun PlayerScreen(
     val latestPlayNextAtCountdownEnd by rememberUpdatedState(playNextAtCountdownEnd)
     val latestNextEpisode by rememberUpdatedState(ui.nextEpisode)
 
+    // Where the credits begin, when IntroDB knows: the handoff card then
+    // arrives as they start rather than at a flat 93% of the runtime.
+    val creditsStartMs = creditsStartMs(ui.skipSegments, position.durationMs)
+
     LaunchedEffect(
         autoPlayNextEpisode,
         ui.nextEpisode?.season,
         ui.nextEpisode?.episode,
         playback.phase,
-        position.progress,
+        position,
+        creditsStartMs,
     ) {
         if (!autoPlayNextEpisode) {
             nextPromptVisible = false
@@ -320,6 +328,8 @@ fun PlayerScreen(
                 phase = playback.phase,
                 progress = position.progress,
                 alreadyTriggered = nextPromptTriggered,
+                positionMs = position.positionMs,
+                creditsStartMs = creditsStartMs,
             )
         ) {
             playNextAtCountdownEnd = true
@@ -433,8 +443,27 @@ fun PlayerScreen(
 
     // Tells the controller whether anything is reading the position, so it can
     // drop from polling twice a second to once every four while the OSD is
-    // away — which is most of a film.
-    LaunchedEffect(osdVisible) { viewModel.controller.setOsdVisible(osdVisible) }
+    // away — which is most of a film. A skip button about to appear counts as
+    // reading it: at the slow rate it would show up to four seconds late.
+    val watchingSkip = nearSkipSegment(ui.skipSegments, position.positionMs)
+    LaunchedEffect(osdVisible, watchingSkip) {
+        viewModel.controller.setOsdVisible(osdVisible || watchingSkip)
+    }
+
+    // The intro, recap or credits the viewer is inside, if any. Pickers and
+    // the cast rail cover the corner it would sit in, and the next-episode
+    // card already *is* the credits action, so none of them share the screen.
+    val activeSkip = activeSkipSegment(ui.skipSegments, position.positionMs, position.durationMs)
+        ?.takeIf { playback.canShowVideo && !overlayOpen && !castRailOpen }
+
+    fun skip(segment: SkipSegment) {
+        val next = ui.nextEpisode
+        if (segment.kind == SkipSegmentKind.OUTRO && next != null) {
+            onPlayNextEpisode(next.season, next.episode)
+        } else {
+            viewModel.controller.seekTo(segment.endMs)
+        }
+    }
 
     // Closing a picker and re-composing the OSD happen in the same snapshot.
     // Wait a frame so a disappearing focus target cannot clear the new OSD
@@ -571,6 +600,14 @@ fun PlayerScreen(
                 // first and would re-wake it right before (or after)
                 // `BackHandler` puts it away.
                 if (event.key == Key.Back) return@onPreviewKeyEvent false
+                // The skip button is the one thing OK means while it is up,
+                // as long as no OSD control holds focus — the same rule as
+                // the streaming apps, where the button simply has focus. It
+                // skips without waking the OSD: the press was for the film.
+                if (activeSkip != null && !controlsFocused && event.key in CONFIRM_KEYS) {
+                    skip(activeSkip)
+                    return@onPreviewKeyEvent true
+                }
                 // Read before the poke() below moves it, so this still
                 // reflects whether the OSD was hidden *before* this press.
                 val wasHidden = !osdVisible
@@ -754,6 +791,17 @@ fun PlayerScreen(
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+
+        SkipSegmentLayer(
+            segment = activeSkip,
+            hasNextEpisode = ui.nextEpisode != null,
+            // Solid when OK would press it, outlined when an OSD control has
+            // focus and OK belongs to that instead.
+            armed = !controlsFocused,
+            liftForOsd = osdOnScreen,
+            onSkip = ::skip,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
 
         if (osdOnScreen) {
             // Inside the OSD's own `if`, which is the whole rule for the
@@ -1040,14 +1088,140 @@ private fun NextEpisodePrompt(
     }
 }
 
+/**
+ * Whether the next-episode card should slide in now: at the start of the
+ * credits when [creditsStartMs] knows where that is, at [AUTO_NEXT_THRESHOLD]
+ * of the runtime otherwise.
+ */
 internal fun shouldOfferNextEpisode(
     enabled: Boolean,
     hasNextEpisode: Boolean,
     phase: PlaybackPhase,
     progress: Float,
     alreadyTriggered: Boolean,
-): Boolean = enabled && hasNextEpisode && !alreadyTriggered &&
-    phase == PlaybackPhase.PLAYING && progress >= AUTO_NEXT_THRESHOLD
+    positionMs: Long = 0,
+    creditsStartMs: Long? = null,
+): Boolean {
+    if (!enabled || !hasNextEpisode || alreadyTriggered || phase != PlaybackPhase.PLAYING) return false
+    return if (creditsStartMs != null) positionMs >= creditsStartMs else progress >= AUTO_NEXT_THRESHOLD
+}
+
+/**
+ * The last stretch of a segment gets no button: with this little left, the
+ * press would land after the segment has already ended on its own.
+ */
+private const val SKIP_TAIL_MS = 1_500L
+
+/**
+ * How far ahead of a segment the position is read at full rate. Has to
+ * clear the controller's idle tick (4s), or the slow tick can step straight
+ * over the start and show the button seconds late.
+ */
+private const val SKIP_LOOKAHEAD_MS = 6_000L
+
+/** The segment [positionMs] sits inside, if it still has a button's worth left. */
+internal fun activeSkipSegment(
+    segments: List<SkipSegment>,
+    positionMs: Long,
+    durationMs: Long,
+): SkipSegment? = segments.firstOrNull { segment ->
+    positionMs >= segment.startMs &&
+        positionMs < segment.endMs - SKIP_TAIL_MS &&
+        // A segment past the end of this file was timed on a longer cut.
+        (durationMs <= 0 || segment.startMs < durationMs)
+}
+
+/** Whether a segment is current or about to be — see [SKIP_LOOKAHEAD_MS]. */
+internal fun nearSkipSegment(segments: List<SkipSegment>, positionMs: Long): Boolean =
+    segments.any { positionMs >= it.startMs - SKIP_LOOKAHEAD_MS && positionMs < it.endMs }
+
+/**
+ * Where the credits start, for the next-episode card. Ignored when it lands in
+ * the first half of the file: that is a timing from a different cut, and the
+ * card arriving mid-episode would be far worse than arriving at 93%.
+ */
+internal fun creditsStartMs(segments: List<SkipSegment>, durationMs: Long): Long? {
+    if (durationMs <= 0) return null
+    val outro = segments.firstOrNull { it.kind == SkipSegmentKind.OUTRO } ?: return null
+    return outro.startMs.takeIf { it >= durationMs / 2 && it < durationMs }
+}
+
+/**
+ * The "Skip intro" button, bottom-right like the streaming services'.
+ *
+ * Not focusable, on purpose. The remote reaches it through the screen's key
+ * handler — OK skips whenever no OSD control has focus — so it never takes
+ * focus from the controls, and never strands it when it disappears mid-press
+ * at the end of its segment. Touch still taps it directly.
+ */
+@Composable
+private fun SkipSegmentLayer(
+    segment: SkipSegment?,
+    hasNextEpisode: Boolean,
+    armed: Boolean,
+    liftForOsd: Boolean,
+    onSkip: (SkipSegment) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Held through the exit fade, so the label does not blank out as it goes.
+    // A plain holder rather than state: it only ever lags [segment], and
+    // writing state during composition would schedule a recomposition.
+    val held = remember { arrayOfNulls<SkipSegment>(1) }
+    if (segment != null) held[0] = segment
+    val shown = segment ?: held[0]
+
+    val bottomPadding by animateDpAsState(
+        if (liftForOsd) 168.dp else 48.dp,
+        focusTween(),
+        label = "skip-lift",
+    )
+    val background by animateColorAsState(
+        if (armed) Color.White else Color.Black.copy(alpha = 0.6f),
+        focusTween(),
+        label = "skip-background",
+    )
+    val content by animateColorAsState(
+        if (armed) Color.Black else Color.White,
+        focusTween(),
+        label = "skip-content",
+    )
+
+    AnimatedVisibility(
+        visible = segment != null,
+        enter = fadeIn(animationSpec = tween(HubMotion.Content)),
+        exit = fadeOut(animationSpec = tween(HubMotion.Quick)),
+        modifier = modifier.padding(end = 48.dp, bottom = bottomPadding),
+    ) {
+        val current = shown ?: return@AnimatedVisibility
+        val label = when {
+            // With an episode to follow, the action on the credits is that
+            // episode — see `skip` in PlayerScreen — not the end of the file.
+            current.kind == SkipSegmentKind.OUTRO && hasNextEpisode -> R.string.player_next_episode
+            current.kind == SkipSegmentKind.OUTRO -> R.string.player_skip_credits
+            current.kind == SkipSegmentKind.RECAP -> R.string.player_skip_recap
+            else -> R.string.player_skip_intro
+        }
+        val shape = RoundedCornerShape(6.dp)
+        Box(
+            Modifier
+                .clip(shape)
+                .background(background)
+                .border(HubStrokes.Focus, Color.White.copy(alpha = 0.85f), shape)
+                .focusProperties { canFocus = false }
+                .clickable { onSkip(current) }
+                .padding(horizontal = 28.dp, vertical = 12.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+        ) {
+            Text(
+                text = stringResource(label),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = content,
+                maxLines = 1,
+            )
+        }
+    }
+}
 
 @Composable
 private fun AutoScrollText(

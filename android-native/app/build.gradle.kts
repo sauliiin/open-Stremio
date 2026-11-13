@@ -31,8 +31,8 @@ android {
         applicationId = "mdblist_hub.apk.S84"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 67
-        versionName = "1.1.38"
+        versionCode = 68
+        versionName = "1.1.39"
 
         // Credentials live outside version control. They are still public to
         // anyone reverse-engineering a client APK, so quota-bearing services

@@ -272,6 +272,18 @@ class UiPreferencesStore(context: Context) {
     }
 
     /**
+     * The player's "Skip intro / recap / credits" button. On by default, like
+     * the streaming services it imitates: it only appears where IntroDB has
+     * the episode timed, and never skips anything on its own.
+     */
+    val skipSegmentsEnabled: Flow<Boolean> = store.data.map { prefs ->
+        prefs[KEY_SKIP_SEGMENTS_ENABLED] ?: true
+    }
+    suspend fun saveSkipSegmentsEnabled(enabled: Boolean) {
+        store.edit { it[KEY_SKIP_SEGMENTS_ENABLED] = enabled }
+    }
+
+    /**
      * Whether an unwatched episode's still is blurred on the detail screen, so
      * what is left to watch stands apart from what is already seen. Off by
      * default: `WatchedBadge` already marks watched episodes card by card,
@@ -386,6 +398,7 @@ class UiPreferencesStore(context: Context) {
         val KEY_SUBTITLE_BACKGROUND_OPACITY = intPreferencesKey("subtitle_background_opacity")
         val KEY_AUDIO_LANGUAGE = stringPreferencesKey("audio_language")
         val KEY_AUTO_PLAY_NEXT_EPISODE = booleanPreferencesKey("auto_play_next_episode")
+        val KEY_SKIP_SEGMENTS_ENABLED = booleanPreferencesKey("skip_segments_enabled")
         val KEY_DIM_UNWATCHED_EPISODES = booleanPreferencesKey("dim_unwatched_episodes")
     }
 }

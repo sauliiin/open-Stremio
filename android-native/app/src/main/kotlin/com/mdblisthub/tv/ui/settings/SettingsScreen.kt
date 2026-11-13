@@ -145,6 +145,7 @@ data class SettingsUiState(
     val subtitleBackgroundOpacity: Int = 40,
     val audioLanguage: String = "en",
     val autoPlayNextEpisode: Boolean = false,
+    val skipSegmentsEnabled: Boolean = true,
     val libraryProvider: LibraryProvider = LibraryProvider.MDBLIST,
     val dimUnwatchedEpisodes: Boolean = false,
     /** No overlay by default, matching `UiPreferencesStore.clockScope`. */
@@ -203,6 +204,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
                 }
                 .combine(graph.uiPreferences.autoPlayNextEpisode) { partial, enabled ->
                     partial.copy(autoPlayNextEpisode = enabled)
+                }
+                .combine(graph.uiPreferences.skipSegmentsEnabled) { partial, enabled ->
+                    partial.copy(skipSegmentsEnabled = enabled)
                 }
                 .combine(graph.uiPreferences.libraryProvider) { partial, provider ->
                     partial.copy(libraryProvider = provider)
@@ -390,6 +394,9 @@ class SettingsViewModel(private val graph: DataGraph) : ViewModel() {
     fun setAudioLanguage(lang: String) = viewModelScope.launch { graph.uiPreferences.saveAudioLanguage(lang) }
     fun toggleAutoPlayNextEpisode() = viewModelScope.launch {
         graph.uiPreferences.saveAutoPlayNextEpisode(!_state.value.autoPlayNextEpisode)
+    }
+    fun toggleSkipSegments() = viewModelScope.launch {
+        graph.uiPreferences.saveSkipSegmentsEnabled(!_state.value.skipSegmentsEnabled)
     }
     fun setTheme(theme: HubThemeVariant) = viewModelScope.launch { graph.uiPreferences.saveTheme(theme) }
     fun toggleDimUnwatchedEpisodes() = viewModelScope.launch { graph.uiPreferences.saveDimUnwatchedEpisodes(!_state.value.dimUnwatchedEpisodes) }
@@ -633,6 +640,7 @@ fun SettingsScreen(
                                 state = state,
                                 onOpenLanguage = { audioPickerOpen = true },
                                 onToggleAutoPlayNextEpisode = viewModel::toggleAutoPlayNextEpisode,
+                                onToggleSkipSegments = viewModel::toggleSkipSegments,
                             )
                             SettingsSection.ADDONS -> AddonsScreen(
                                 graph = graph,
@@ -1218,6 +1226,7 @@ private fun PlayerSettingsContent(
     state: SettingsUiState,
     onOpenLanguage: () -> Unit,
     onToggleAutoPlayNextEpisode: () -> Unit,
+    onToggleSkipSegments: () -> Unit,
 ) {
     SettingsContentList {
         item {
@@ -1229,6 +1238,11 @@ private fun PlayerSettingsContent(
                     label = stringResource(R.string.settings_auto_play_next_episode),
                     enabled = state.autoPlayNextEpisode,
                     onToggle = onToggleAutoPlayNextEpisode,
+                )
+                ToggleSettingsRow(
+                    label = stringResource(R.string.settings_skip_segments),
+                    enabled = state.skipSegmentsEnabled,
+                    onToggle = onToggleSkipSegments,
                 )
                 SettingsRow(label = stringResource(R.string.settings_audio_preferred_lang)) {
                     val currentName = ALL_LANGUAGES.find { it.first == state.audioLanguage }?.second ?: state.audioLanguage

@@ -66,6 +66,7 @@
     <string name="settings_section_player">Reproductor</string>
     <string name="settings_audio_preferred_lang">Pista de audio preferida</string>
     <string name="settings_auto_play_next_episode">Reproducir el siguiente episodio automáticamente</string>
+    <string name="settings_skip_segments">Mostrar botón Saltar intro</string>
     <string name="lang_pt">Portugués</string>
     <string name="lang_en">Inglés</string>
     <string name="lang_es">Español</string>
@@ -214,6 +215,9 @@
     <string name="player_stop_next_episode">Detener</string>
     <string name="player_play_next_episode">Reproducir siguiente episodio</string>
     <string name="player_next_episode_number">Temporada %1$d · Episodio %2$d</string>
+    <string name="player_skip_intro">Saltar intro</string>
+    <string name="player_skip_recap">Saltar resumen</string>
+    <string name="player_skip_credits">Saltar créditos</string>
     <string name="player_no_addons">No hay addons instalados. Las fuentes vienen de los addons.</string>
     <string name="player_no_imdb">Este título no tiene IMDb ID, y los addons se indexan por él.</string>
     <string name="player_generic_error">No se pudo reproducir este título.</string>

@@ -75,6 +75,13 @@ class NetworkModule(context: Context) {
      */
     val wyzie: WyzieApi by lazy { retrofit(ApiConfig.WYZIE_BASE, metadataClient).create() }
 
+    /**
+     * On the addon client for its short timeouts: a community host the
+     * player only asks once per episode, whose answer is a nicety — a slow
+     * one should give up quickly rather than hold a socket for the episode.
+     */
+    val introDb: IntroDbApi by lazy { retrofit(ApiConfig.INTRODB_BASE, addonClient).create() }
+
     val fanartTv: FanartTvApi by lazy {
         retrofit(ApiConfig.FANART_TV_BASE, metadataClient).create()
     }

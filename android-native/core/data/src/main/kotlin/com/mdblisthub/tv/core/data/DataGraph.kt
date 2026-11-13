@@ -16,6 +16,7 @@ import com.mdblisthub.tv.core.data.repository.StremioAccountRepository
 import com.mdblisthub.tv.core.data.repository.TrailerRepository
 import com.mdblisthub.tv.core.data.repository.TraktAuthRepository
 import com.mdblisthub.tv.core.data.repository.SimklAuthRepository
+import com.mdblisthub.tv.core.data.repository.SkipSegmentsRepository
 import com.mdblisthub.tv.core.data.repository.WikipediaRepository
 import com.mdblisthub.tv.core.data.repository.source.MdblistHomeFeedSource
 import com.mdblisthub.tv.core.data.repository.source.MdblistLibrarySource
@@ -138,6 +139,7 @@ class DataGraph(context: Context) {
     val streams by lazy { StreamsRepository(
         network.stremio, addons, network.addonClient, network.openSubtitles, network.wyzie,
     ) }
+    val skipSegments by lazy { SkipSegmentsRepository(network.introDb) }
     val library by lazy { LibraryRepository(
         mdblist = MdblistLibrarySource(network.mdblist, session),
         trakt = TraktLibrarySource(network.trakt, traktTokenStore),
